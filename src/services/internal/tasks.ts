@@ -197,6 +197,7 @@ function sameTaskInput(task: InternalTask, input: TaskWriteInput): boolean {
     (input.priority === undefined || (task.priority ?? null) === input.priority) &&
     (input.memo === undefined || (task.memo ?? null) === input.memo) &&
     (input.recurrence === undefined || (task.recurrence ?? null) === input.recurrence) &&
+    (input.progress === undefined || (task.progress ?? null) === input.progress) &&
     (input.tags === undefined || sameTags(task.tags ?? [], input.tags))
   );
 }
