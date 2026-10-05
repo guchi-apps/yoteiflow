@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server";
 
-import { externalApiError } from "@/lib/api-error";
+import { externalApiError, externalApiMessage } from "@/lib/api-error";
 import { requireInternalApiKey, requireInternalTasksApiKey, resolveInternalUserId } from "@/lib/internal-auth";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
-import { createTask, TaskNotEditableError } from "@/services/notion/tasks";
+import { TaskNotEditableError } from "@/services/notion/tasks";
 import {
   assertWritableFields,
-  claimTaskOperation,
-  completeTaskOperation,
-  getInternalTask,
   InternalTaskConflictError,
   InternalTaskInputError,
   listInternalTasks,
-  markTaskOperationUnknown,
+  operationStore,
   parseInternalTaskWrite,
   requestHash,
+  taskGateway,
 } from "@/services/internal/tasks";
+import { assertIdempotencyKey, runCreateOperation, type OperationOutcome } from "@/services/internal/task-operations";
 
 export const dynamic = "force-dynamic";
 const MAX_LIMIT = 100;
@@ -68,30 +67,62 @@ export async function POST(request: Request) {
     const input = parseInternalTaskWrite(raw, { create: true });
     assertWritableFields(connection, input);
     const key = request.headers.get("idempotency-key") ?? "";
-    const claim = await claimTaskOperation(userId, key, "create", null, requestHash(input));
-    if (claim.kind === "existing") return existingOperation(claim.record);
-    try {
-      const created = await createTask(createNotionClient(connection), connection, input);
-      const task = await getInternalTask(createNotionClient(connection), connection, created.id);
-      const result = { task };
-      await completeTaskOperation(claim.record.id, result);
-      return json(result, 201);
-    } catch (error) {
-      await markTaskOperationUnknown(claim.record.id);
-      throw error;
-    }
+    assertIdempotencyKey(key);
+    const outcome = await runCreateOperation(
+      { store: operationStore, gateway: taskGateway(createNotionClient(connection), connection), now: () => new Date() },
+      { userId, idempotencyKey: key, requestHash: requestHash(input) },
+      input,
+    );
+    return operationResponse(outcome, 201, "内部タスクの作成");
   } catch (error) { return taskError(error, "内部タスクの作成"); }
 }
 
-export function existingOperation(record: { state: string; result: unknown }) {
-  if (record.state === "SUCCEEDED") return json(record.result, 200);
-  return json({ error: record.state === "RESULT_UNKNOWN" ? "result_unknown" : "operation_in_progress", retryWithSameKey: true }, 409);
+/**
+ * 冪等キー付きの操作の結果を応答にする。失敗は「未実行」（`executed: false`。内容を直して
+ * 同じキーでも新しいキーでも再試行してよい）と「結果未確定」（`executed: "unknown"`。
+ * 同じキー・同じ内容で再送すると照合・回復する）に分けて返す（issue #1082）。
+ */
+export function operationResponse(outcome: OperationOutcome<unknown>, successStatus: number, operation: string): NextResponse {
+  switch (outcome.kind) {
+    case "succeeded":
+      return json(outcome.result, outcome.replayed ? 200 : successStatus);
+    case "in_progress":
+      return retryLater({ error: "operation_in_progress", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
+    case "pending":
+      return retryLater({ error: "result_unknown", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
+    case "not_executed":
+      return json({ ...errorBody(outcome.error, operation), executed: false }, errorStatus(outcome.error));
+    case "unknown":
+      return json(
+        { error: "result_unknown", executed: "unknown", retryWithSameKey: true, message: externalApiMessage("notion", operation, outcome.error) },
+        502,
+      );
+  }
+}
+
+function retryLater(body: object, retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    { ...body, retryAfterSeconds },
+    { status: 409, headers: { "Cache-Control": "no-store", "Retry-After": String(retryAfterSeconds) } },
+  );
+}
+
+function errorStatus(error: unknown): number {
+  if (error instanceof InternalTaskInputError) return 400;
+  if (error instanceof InternalTaskConflictError) return 409;
+  if (error instanceof TaskNotEditableError) return 403;
+  return 502;
+}
+
+function errorBody(error: unknown, operation: string): Record<string, string> {
+  if (error instanceof InternalTaskInputError || error instanceof InternalTaskConflictError) return { error: error.message };
+  if (error instanceof TaskNotEditableError) return { error: "not_editable" };
+  return { error: "notion_request_failed", message: externalApiMessage("notion", operation, error) };
 }
 
 export function taskError(error: unknown, operation: string): NextResponse {
-  if (error instanceof InternalTaskInputError) return json({ error: error.message }, 400);
-  if (error instanceof InternalTaskConflictError) return json({ error: error.message }, 409);
-  if (error instanceof TaskNotEditableError) return json({ error: "not_editable" }, 403);
+  if (error instanceof InternalTaskInputError || error instanceof InternalTaskConflictError || error instanceof TaskNotEditableError)
+    return json(errorBody(error, operation), errorStatus(error));
   return externalApiError("notion", operation, error);
 }
 

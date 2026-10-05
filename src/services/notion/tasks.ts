@@ -459,11 +459,17 @@ export async function completeTask(
   // 未完了へ戻す操作では次回分を作らない。二重に増えてしまうため。
   if (!done || !current) return { nextTaskId: null };
 
+  return { nextTaskId: (await createNextRecurrence(notion, connection, current))?.id ?? null };
+}
+
+type RecurringTask = Pick<TaskItem, "title" | "due" | "planned" | "priority" | "memo" | "tags" | "recurrence">;
+
+/** 完了した回から作る次回分の内容。繰り返しが無い・次の期限が決まらないときは null。 */
+export function nextRecurrenceInput(current: RecurringTask): TaskWriteInput | null {
   const recurrence = parseRecurrence(current.recurrence);
   const due = nextDue(current.due, recurrence);
-  if (!due) return { nextTaskId: null };
-
-  const created = await createTask(notion, connection, {
+  if (!due) return null;
+  return {
     title: current.title,
     due,
     // 予定日も同じ繰り返しで進める。前回の予定日をそのまま写すと、次回分が
@@ -474,9 +480,42 @@ export async function completeTask(
     memo: current.memo,
     tags: current.tags,
     recurrence: formatRecurrence(recurrence),
-  });
+  };
+}
 
-  return { nextTaskId: created.id };
+/** 完了した回の次回分を作る。内部APIは重複作成を防ぐ確保を挟んでからこれを呼ぶ。 */
+export async function createNextRecurrence(
+  notion: Client,
+  connection: NotionConnection,
+  current: RecurringTask,
+): Promise<{ id: string } | null> {
+  const input = nextRecurrenceInput(current);
+  return input ? createTask(notion, connection, input) : null;
+}
+
+/**
+ * 指定時刻以降に作られた、同じタイトルのタスクページを作成順に返す。
+ * 内部APIで作成の成否が分からなくなった要求を、もう一度作る前に照合するために使う。
+ * Notionの `created_time` は分単位に丸められるため、呼び出し側で余裕を持たせる。
+ */
+export async function findTaskPagesCreatedSince(
+  notion: Client,
+  connection: NotionConnection,
+  title: string,
+  onOrAfter: string,
+): Promise<NotionTaskPage[]> {
+  const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
+  if (!connection.taskDataSourceId || !propertyMap.title) return [];
+  const filter: NotionQueryFilter = {
+    and: [
+      { timestamp: "created_time", created_time: { on_or_after: onOrAfter } },
+      { property: propertyMap.title, title: { equals: title } },
+    ],
+  };
+  const pages = await queryTaskPages(notion, connection.taskDataSourceId, filter);
+  return pages
+    .map((page) => page as NotionTaskPage & { created_time?: string })
+    .sort((a, b) => (a.created_time ?? "").localeCompare(b.created_time ?? ""));
 }
 
 /**

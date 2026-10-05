@@ -49,11 +49,27 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
 
 ## タスクの書き込み
 
-`POST /api/internal/tasks`（作成）、`PATCH /api/internal/tasks/:taskId`（許可項目の部分更新）、`POST /api/internal/tasks/:taskId/actions`（`complete` / `reopen` / `skip` / `unskip`）は `Authorization: Bearer <DAYSPAN_INTERNAL_TASKS_API_KEY>` と `X-Target-Email` を必須とする。作成と状態変更には `Idempotency-Key` も必須で、同じキー・同じ要求は保存済みの結果を返す。実行中は `409 operation_in_progress`、外部書き込み後に結果を確認できない場合は `409 result_unknown` を返すため、同じキーで再照会する。
+`POST /api/internal/tasks`（作成）、`PATCH /api/internal/tasks/:taskId`（許可項目の部分更新）、`POST /api/internal/tasks/:taskId/actions`（`complete` / `reopen` / `skip` / `unskip`）は `Authorization: Bearer <DAYSPAN_INTERNAL_TASKS_API_KEY>` と `X-Target-Email` を必須とする。作成と状態変更には `Idempotency-Key`（空白を含まない印字可能ASCII・1〜191文字）も必須で、同じキー・同じ要求は保存済みの結果を `200` で返す。
+
+### 再送・失敗の扱い（issue #1082）
+
+失敗の応答には `executed` を付け、「未実行」と「結果未確定」を分ける。記録（`InternalTaskOperation.state`）も同じ区別で残す。
+
+| 応答 | `executed` | 意味 | 呼び出し側の対応 |
+| --- | --- | --- | --- |
+| `400` / `403 not_editable` / `409 task_version_conflict` / `502 notion_request_failed` | `false` | Notionへ書く前に失敗した、またはNotionが受け付けずに断った（`NOT_EXECUTED`） | 内容を直して（版を取り直して）再試行する。**同じキーを使い直してよい**（未実行のキーは別の内容でも使える） |
+| `409 operation_in_progress`（`Retry-After`） | `"unknown"` | 同じキーの要求、または同じ回の完了が実行中 | `retryAfterSeconds` 待って同じキーで再送する |
+| `502 result_unknown` | `"unknown"` | 書き込みを始めた後に失敗した（`RESULT_UNKNOWN`） | **同じキー・同じ本文で再送する**。サーバーが照合して、済んでいれば成功を返し、済んでいなければ実行し直す |
+| `409 result_unknown`（`Retry-After`） | `"unknown"` | 照合したが、作成されたかをまだ確定できない | `retryAfterSeconds` 待って同じキーで再送する |
+
+- 結果未確定の再送では、作成はNotionが返したページIDを記録していればそれを読み直す。記録が無ければ、作成を投げた時刻以降に作られた同じタイトル・同じ日付のタスクを探し、見つかればそれを結果にする。見つからないときは、作成直後のページが問い合わせに出るまでの遅れを見込んで2分間は作り直さず `409 result_unknown` を返し、過ぎてから1回だけ作り直す。
+- 状態変更はどれも「その状態にする」操作のため、結果未確定の再送で現在の状態がすでに行き先なら版を問わず成功を返す。行き先でなければ通常どおり版を照合して実行し直す。
+- `PROCESSING`（実行中）の記録は5分を過ぎたら停止したものとして、同じキーの再送で引き取る。それまでは `409 operation_in_progress` を返す。
+- 同じキーで本文が違う要求は `409 idempotency_key_reused`（未実行の記録を除く）。
 
 更新可能な項目は `title`、`due`、`planned`、`priority`、`memo`、`tags`、`recurrence`、`progress` だけである。`null` は期限・予定日・任意の選択肢・メモをクリアする。未知の項目・不正な日付・設定済みDBに対応プロパティが無い項目は `400` で拒否し、黙って成功とはしない。期限または予定日を直接変更したときは、その日付の紐づけだけを既存画面と同じ規則で外す。
 
-`complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。同じ回の完了を再送しても次回を二重作成しない。
+`complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。**次回分の作成は元タスク1件につき1回に限る。** 冪等キーと同じ一意制約に、元タスクごとの確保行（キー `complete-guard <taskId>`。空白を含むため呼び出し側のキーとは重ならない）を置いて確保してから作るため、同じキーの再送・別キーでの完了・同時の完了・応答が失われた後の再完了（`RESULT_UNKNOWN` を含む）のどれでも二重に作られない。確保中に別の完了が来たら `409 operation_in_progress`（未実行）にする。一度確保した回は、`reopen` してから `complete` し直しても次回を作らず、`nextTaskId` には最初に作った次回分のIDを返す。内部API以外（画面）ですでに完了済みの回を `complete` しても次回は作らない（画面の経路が作っているため）。
 
 ## `GET /api/internal/schedule`
 
