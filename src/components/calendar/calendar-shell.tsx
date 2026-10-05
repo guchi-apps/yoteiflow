@@ -47,6 +47,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
+import { HANDOFF_QUERY_KEYS, handoffLocationText, parseShareHandoff } from "@/lib/share-import/handoff";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -315,6 +316,58 @@ export function CalendarShell({
   const openActivity = () => {
     startTransition(() => router.push("/activity"));
   };
+
+  // iOS共有拡張から渡された場所・経路（issue #1083）。マウント時に1回だけ読み、
+  // 予定・移動の入力を開く。クエリは検証し、読んだらURLから外して再読み込みで再度開かないようにする。
+  useEffect(() => {
+    // 同期でsetStateしない（react-hooks/set-state-in-effect）。StrictModeの再実行でも、
+    // 解析とURLの掃除をタイマー内で行うため、取り消された1回目に読み取りを奪われない。
+    const timer = setTimeout(() => {
+    const handoff = parseShareHandoff(window.location.search);
+    if (!handoff) return;
+
+    const url = new URL(window.location.href);
+    for (const key of HANDOFF_QUERY_KEYS) url.searchParams.delete(key);
+    window.history.replaceState(window.history.state, "", url.toString());
+
+    const date = utils.todayKey();
+    if (handoff.kind === "place") {
+      const draft = toQuickEventDraft(date, DEFAULT_START_MINUTES);
+      setItemDialog({
+        initialKind: "event",
+        drafts: {
+          event: {
+            allDay: false,
+            start: `${draft.date}T${draft.startTime}`,
+            end: `${draft.date}T${draft.endTime}`,
+            title: handoff.title || undefined,
+            location: handoffLocationText(handoff) || undefined,
+            description: handoff.url ?? undefined,
+          },
+        },
+      });
+      return;
+    }
+    const start = toQuickEventDraft(date, DEFAULT_START_MINUTES);
+    const departAt = `${start.date}T${start.startTime}`;
+    const minutes = handoff.minutes ?? 30;
+    const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
+    setItemDialog({
+      initialKind: "travel",
+      drafts: {
+        travel: {
+          origin: handoff.origin,
+          destination: handoff.destination,
+          mode: handoff.mode,
+          departAt,
+          arriveAt: arrive,
+          roundTrip: false,
+        },
+      },
+    });
+      }, 0);
+    return () => clearTimeout(timer);
+  }, [utils]);
 
   const closeDialogs = () => {
     setItemDialog(null);
