@@ -8,6 +8,7 @@ export type InternalTaskDateField = (typeof INTERNAL_TASK_DATE_FIELDS)[number];
 export const INTERNAL_TASK_ACTIONS = ["complete", "reopen", "skip", "unskip"] as const;
 export type InternalTaskAction = (typeof INTERNAL_TASK_ACTIONS)[number];
 export class InternalTaskInputError extends Error {}
+export class InternalTaskConflictError extends Error {}
 
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const EDITABLE_FIELDS = new Set(["title", "due", "planned", "priority", "memo", "tags", "recurrence", "progress"]);
@@ -65,4 +66,10 @@ export function matchesInternalDate(
   if (!value) return false;
   const key = value.slice(0, 10);
   return (!input.from || key >= input.from) && (!input.to || key <= input.to);
+}
+
+/** 更新・状態変更の前に、呼び出し元が読んだ版と現在の版を突き合わせる。 */
+export function assertTaskVersion(current: { version: string }, version: unknown): void {
+  if (typeof version !== "string" || !version) throw new InternalTaskInputError("version_required");
+  if (current.version !== version) throw new InternalTaskConflictError("task_version_conflict");
 }

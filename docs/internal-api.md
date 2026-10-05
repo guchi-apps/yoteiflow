@@ -49,11 +49,27 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
 
 ## タスクの書き込み
 
-`POST /api/internal/tasks`（作成）、`PATCH /api/internal/tasks/:taskId`（許可項目の部分更新）、`POST /api/internal/tasks/:taskId/actions`（`complete` / `reopen` / `skip` / `unskip`）は `Authorization: Bearer <DAYSPAN_INTERNAL_TASKS_API_KEY>` と `X-Target-Email` を必須とする。作成と状態変更には `Idempotency-Key` も必須で、同じキー・同じ要求は保存済みの結果を返す。実行中は `409 operation_in_progress`、外部書き込み後に結果を確認できない場合は `409 result_unknown` を返すため、同じキーで再照会する。
+`POST /api/internal/tasks`（作成）、`PATCH /api/internal/tasks/:taskId`（許可項目の部分更新）、`POST /api/internal/tasks/:taskId/actions`（`complete` / `reopen` / `skip` / `unskip`）は `Authorization: Bearer <DAYSPAN_INTERNAL_TASKS_API_KEY>` と `X-Target-Email` を必須とする。作成と状態変更には `Idempotency-Key`（空白を含まない印字可能ASCII・1〜191文字）も必須で、同じキー・同じ要求は保存済みの結果を `200` で返す。
+
+### 再送・失敗の扱い（issue #1082）
+
+失敗の応答には `executed` を付け、「未実行」と「結果未確定」を分ける。記録（`InternalTaskOperation.state`）も同じ区別で残す。
+
+| 応答 | `executed` | 意味 | 呼び出し側の対応 |
+| --- | --- | --- | --- |
+| `400` / `403 not_editable` / `409 task_version_conflict` / `502 notion_request_failed` | `false` | Notionへ書く前に失敗した、またはNotionが受け付けずに断った（`NOT_EXECUTED`） | 内容を直して（版を取り直して）再試行する。**同じキーを使い直してよい**（未実行のキーは別の内容でも使える） |
+| `409 operation_in_progress`（`Retry-After`） | `"unknown"` | 同じキーの要求、または同じ回の完了が実行中 | `retryAfterSeconds` 待って同じキーで再送する |
+| `502 result_unknown` | `"unknown"` | 書き込みを始めた後に失敗した（`RESULT_UNKNOWN`） | `retryWithSameKey: true` なら**同じキー・同じ本文で再送する**。保存済みIDや状態から回復する |
+| `502 result_unknown`・`reconciliationRequired: true` | `"unknown"` | 作成の応答を失い、作成IDを記録できなかった | 自動再送を停止し、Notionと操作記録を確認する。別キーで作り直さない |
+
+- 結果未確定の作成は、記録したNotionページIDがあれば読み直す。IDが無い場合は `retryWithSameKey: false`・`reconciliationRequired: true` を返す。同名・同日・同じ入力や作成時刻だけでは別経路のタスクと区別できないため成功確定に使わず、時間が経っても自動で作り直さない。操作記録を未実行に戻したり、キーを変えて再作成したりする前に、実際のNotion書き込み結果の確認が必要。安全に対応付ける仕組みが無い限り、このケースの自動回復は行わない。
+- 状態変更はどれも「その状態にする」操作のため、結果未確定の再送で現在の状態がすでに行き先なら版を問わず成功を返す。行き先でなければ通常どおり版を照合して実行し直す。
+- `PROCESSING`（実行中）の記録は5分を過ぎたら停止したものとして、同じキーの再送で引き取る。それまでは `409 operation_in_progress` を返す。
+- 同じキーで本文が違う要求は `409 idempotency_key_reused`（未実行の記録を除く）。
 
 更新可能な項目は `title`、`due`、`planned`、`priority`、`memo`、`tags`、`recurrence`、`progress` だけである。`null` は期限・予定日・任意の選択肢・メモをクリアする。未知の項目・不正な日付・設定済みDBに対応プロパティが無い項目は `400` で拒否し、黙って成功とはしない。期限または予定日を直接変更したときは、その日付の紐づけだけを既存画面と同じ規則で外す。
 
-`complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。同じ回の完了を再送しても次回を二重作成しない。
+`complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。**次回分の作成は元タスク1件につき1回に限る。** 冪等キーと同じ一意制約に、元タスクごとの確保行（キー `complete-guard <taskId>`。空白を含むため呼び出し側のキーとは重ならない）を置いて確保してから作るため、同じキーの再送・別キーでの完了・同時の完了・応答が失われた後の再完了（`RESULT_UNKNOWN` を含む）のどれでも二重に作られない。確保中に別の完了が来たら `409 operation_in_progress`（未実行）にする。一度確保した回は、`reopen` してから `complete` し直しても次回を作らず、`nextTaskId` には最初に作った次回分のIDを返す。内部API以外（画面）ですでに完了済みの回を `complete` しても次回は作らない（画面の経路が作っているため）。
 
 ## `GET /api/internal/schedule`
 
@@ -475,3 +491,5 @@ curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/sch
 | GitHub Secret・本番 `.env` | 3鍵自体は置かない。共有トークンAPIへの接続情報だけを配る |
 
 キーを更新するときはissue-deckの共有トークンを更新する。DaySpanは最大10分のキャッシュを使うため、反映まで待ってから呼び出し元（AIDE）側も同じ共有トークンを取得できることを確かめる。**3鍵の値を統合せず、読み取り・予定書き込み・タスク書き込みの分離を維持する。**
+
+完了更新後に次回作成だけがNotionから4xxで拒否された場合は、操作と確保行を結果未確定のまま保持し、次回作成の未実行だけを記録する。同じキー・別キーとも、再送で次回作成を再試行する。完了更新の応答消失や、再送中の読み取り失敗でも未実行へ戻さない。

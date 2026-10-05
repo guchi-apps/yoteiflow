@@ -59,6 +59,8 @@ model InternalTaskOperation {
   operation      String
   taskId         String?
   requestHash    String   @db.VarChar(64)
+  // PROCESSING / SUCCEEDED / NOT_EXECUTED（書く前の失敗）/ RESULT_UNKNOWN（書き始めた後の失敗）。
+  // 繰り返しの次回分の確保行（idempotencyKey が `complete-guard <taskId>`）も同じ表に置く（issue #1082）。
   state          String   @default("PROCESSING")
   result         Json?
   createdAt      DateTime @default(now())

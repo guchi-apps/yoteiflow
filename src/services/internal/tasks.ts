@@ -1,14 +1,17 @@
 import { createHash } from "node:crypto";
 
-import type { NotionConnection } from "@prisma/client";
+import { Prisma, type NotionConnection } from "@prisma/client";
 import type { Client } from "@notionhq/client";
 
 import { db } from "@/lib/db";
 import { SKIPPED_OUTCOME, type PropertyMap } from "@/services/notion/task-database";
 import {
+  createTask,
   getTaskPage,
+  nextRecurrenceInput,
   normalizeTask,
   queryTaskPage,
+  updateTask,
   type NotionTaskPage,
   type TaskWriteInput,
 } from "@/services/notion/tasks";
@@ -17,6 +20,8 @@ import {
   INTERNAL_TASK_ACTIONS,
   INTERNAL_TASK_DATE_FIELDS,
   INTERNAL_TASK_STATUSES,
+  assertTaskVersion,
+  InternalTaskConflictError,
   InternalTaskInputError,
   matchesInternalDate,
   parseInternalTaskWrite,
@@ -25,11 +30,19 @@ import {
   type InternalTaskDateField,
   type InternalTaskStatus,
 } from "./task-contract";
+import {
+  DuplicateOperationKeyError,
+  OPERATION_STATES,
+  type OperationStore,
+  type TaskGateway,
+} from "./task-operations";
 
 export {
+  assertTaskVersion,
   INTERNAL_TASK_ACTIONS,
   INTERNAL_TASK_DATE_FIELDS,
   INTERNAL_TASK_STATUSES,
+  InternalTaskConflictError,
   InternalTaskInputError,
   parseInternalTaskWrite,
   parseTaskAction,
@@ -50,8 +63,6 @@ export type InternalTaskListInput = {
   limit: number;
   cursor?: string;
 };
-
-export class InternalTaskConflictError extends Error {}
 
 function taskStatus(task: TaskItem): InternalTaskStatus {
   if (task.skipped) return "skipped";
@@ -124,44 +135,64 @@ export function assertWritableFields(connection: NotionConnection, input: TaskWr
   }
 }
 
-export function assertTaskVersion(current: InternalTask, version: unknown): void {
-  if (typeof version !== "string" || !version) throw new InternalTaskInputError("version_required");
-  if (current.version !== version) throw new InternalTaskConflictError("task_version_conflict");
-}
 
 export function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export async function claimTaskOperation(
-  userId: string,
-  idempotencyKey: string,
-  operation: string,
-  taskId: string | null,
-  hash: string,
-) {
-  if (!/^[\x21-\x7e]{1,191}$/.test(idempotencyKey)) throw new InternalTaskInputError("invalid_idempotency_key");
-  try {
-    return { kind: "claimed" as const, record: await db.internalTaskOperation.create({ data: { userId, idempotencyKey, operation, taskId, requestHash: hash } }) };
-  } catch (error) {
-    if (!(typeof error === "object" && error && "code" in error && error.code === "P2002")) throw error;
-    const record = await db.internalTaskOperation.findUniqueOrThrow({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
-    if (record.requestHash !== hash || record.operation !== operation || record.taskId !== taskId)
-      throw new InternalTaskConflictError("idempotency_key_reused");
-    return { kind: "existing" as const, record };
-  }
-}
+/** 冪等キーの記録をDaySpanのDBへ置く実装。一意制約と `updatedAt` の照合で同時の引き取りを1件に絞る。 */
+export const operationStore: OperationStore = {
+  async create(data) {
+    try {
+      return await db.internalTaskOperation.create({ data });
+    } catch (error) {
+      if (typeof error === "object" && error && "code" in error && error.code === "P2002") throw new DuplicateOperationKeyError();
+      throw error;
+    }
+  },
+  find(userId, idempotencyKey) {
+    return db.internalTaskOperation.findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
+  },
+  async takeOver(record, data) {
+    const { count } = await db.internalTaskOperation.updateMany({
+      where: { id: record.id, state: record.state, updatedAt: record.updatedAt },
+      data: {
+        state: OPERATION_STATES.processing,
+        operation: data.operation,
+        taskId: data.taskId,
+        requestHash: data.requestHash,
+        result: data.result === null || data.result === undefined ? Prisma.DbNull : (data.result as Prisma.InputJsonValue),
+      },
+    });
+    if (count === 0) return null;
+    return db.internalTaskOperation.findUnique({ where: { id: record.id } });
+  },
+  async update(id, data) {
+    await db.internalTaskOperation.update({
+      where: { id },
+      data: {
+        ...(data.state ? { state: data.state } : {}),
+        ...("result" in data ? { result: data.result === null ? Prisma.DbNull : (data.result as Prisma.InputJsonValue) } : {}),
+      },
+    });
+  },
+};
 
-export async function completeTaskOperation(id: string, result: object): Promise<void> {
-  await db.internalTaskOperation.update({ where: { id }, data: { state: "SUCCEEDED", result } });
-}
-
-export async function markTaskOperationUnknown(id: string): Promise<void> {
-  await db.internalTaskOperation.update({ where: { id }, data: { state: "RESULT_UNKNOWN" } });
-}
-
-export async function completedActionForTask(userId: string, taskId: string) {
-  return db.internalTaskOperation.findFirst({ where: { userId, taskId, operation: "complete", state: "SUCCEEDED" } });
+/** Notionのタスクを内部API向けの形で読み書きする実装。 */
+export function taskGateway(notion: Client, connection: NotionConnection): TaskGateway<InternalTask> {
+  return {
+    getTask: (taskId) => getInternalTask(notion, connection, taskId),
+    createTask: (input) => createTask(notion, connection, input),
+    async setStatus(taskId, current, target) {
+      // 「対応しない」から離れるときだけ対応状況を外す。他の値（利用者が足した選択肢）は触らない。
+      const leavingSkip = current.status === "skipped" && target !== "skipped";
+      await updateTask(notion, connection, taskId, {
+        done: target !== "open",
+        ...(target === "skipped" ? { outcome: SKIPPED_OUTCOME } : leavingSkip ? { outcome: null } : {}),
+      });
+    },
+    nextRecurrence: (current) => nextRecurrenceInput(current),
+  };
 }
 
 export { SKIPPED_OUTCOME };
