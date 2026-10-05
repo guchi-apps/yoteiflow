@@ -503,6 +503,16 @@ async function findOverlapping(
   );
 }
 
+/** 勤務記録を1件読む（勤務予定・移動の同期で、更新後の最新の中身を引くのに使う）。 */
+export async function getWorkRecord(
+  notion: Client,
+  connection: NotionConnection,
+  pageId: string,
+): Promise<WorkRecordItem | null> {
+  const page = await assertWorkPage(notion, connection, pageId);
+  return normalizeWorkPage(page, workPropertyMap(connection));
+}
+
 export async function createWorkRecord(
   notion: Client,
   connection: NotionConnection,

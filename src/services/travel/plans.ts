@@ -38,6 +38,8 @@ export type TravelWriteInput = {
   estimated?: boolean;
   linkedEventId?: string | null;
   linkedCalendarId?: string | null;
+  /** 復路として作るか。省略時は、`createTravel` が往路・復路の並びから決める。 */
+  returnLeg?: boolean;
 };
 
 /** 復路。行きと同じ経路を入れ替えて作るため、時刻だけを受け取る。 */
@@ -147,7 +149,7 @@ export async function createTravel(
 
   for (const [index, leg] of legs.entries()) {
     const plan = await db.travelPlan.create({
-      data: { ...toWriteData(leg), userId, returnLeg: index > 0 },
+      data: { ...toWriteData(leg), userId, returnLeg: leg.returnLeg ?? index > 0 },
     });
 
     const exported = await exportTravelToGoogle(userId, plan, calendarId, timeZone);
