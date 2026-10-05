@@ -4,6 +4,7 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionWorkConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
+import { saveRecordOverride } from "@/services/work-sync/config";
 import { removeWorkRecordGenerated, syncWorkRecord } from "@/services/work-sync/sync";
 import {
   deleteWorkRecord,
@@ -11,10 +12,16 @@ import {
   updateWorkRecord,
   WorkDateTakenError,
   WorkRecordNotEditableError,
-  type WorkWriteInput,
 } from "@/services/notion/work-logs";
 
-import { dateTaken, notEditable, validateWorkBody } from "../../shared";
+import {
+  checkWorkSync,
+  dateTaken,
+  notEditable,
+  splitWorkSync,
+  validateWorkBody,
+  type WorkRequestBody,
+} from "../../shared";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ pageId: string }> }) {
   const userId = await requireUserId();
@@ -28,13 +35,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pa
   }
 
   const { pageId } = await params;
-  const body = (await request.json()) as WorkWriteInput;
+  const raw = (await request.json()) as WorkRequestBody;
+  const { input: body, override, error: badSync } = splitWorkSync(raw);
+  if (badSync) return badSync;
   const invalid = validateWorkBody(body, { requireStartDate: false });
   if (invalid) return invalid;
 
   try {
     const notion = createNotionClient(connection);
+    if (override) {
+      const base = await getWorkRecord(notion, connection, pageId);
+      const incomplete = await checkWorkSync(userId, base, body, override);
+      if (incomplete) return incomplete;
+    }
     await updateWorkRecord(notion, connection, pageId, body);
+    if (override) await saveRecordOverride(userId, pageId, override);
     // 部分更新でも最新の中身から再計算する。同期の失敗は保存の成否と切り離して応答へ載せる。
     const sync = await getWorkRecord(notion, connection, pageId)
       .then((record) => (record ? syncWorkRecord(userId, record) : null))

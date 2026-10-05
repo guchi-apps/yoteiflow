@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
+import { useWorkSyncFields } from "@/components/work/work-sync-fields";
 import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { tagChipClass } from "@/components/tags/tag-color";
@@ -202,6 +203,16 @@ export function WorkRecordDialog({
   // 期間を持てるのは出張・全休の年休・会社休業日。半休・時間休は単日に限る（半日ずつ2日ぶん
   // という形が無い）。会社休業日はお盆・年末年始のように続くため、出張と同じく期間で1件にする。
   const spanned = businessTrip || (isLeave && !partialDay) || isHoliday;
+  // 勤務予定・移動のカレンダー反映（issue #1099）。全休・休みの日は作らない。
+  const workSync = useWorkSyncFields({
+    recordId: existing?.id ?? null,
+    text: businessTrip ? destination : place,
+    isTrip: businessTrip,
+    annualLeave: isLeave ? annualLeave : null,
+    fullDayOff: isHoliday || (isLeave && !partialDay),
+    startDate,
+    endDate: spanned && endDate ? endDate : startDate,
+  });
   /** 残りの勤務場所の呼び方。半休は半日、時間休は残りの時間ぶん。 */
   const restPlaceLabel = hourlyLeave ? "残りの勤務場所" : "残り半日の勤務場所";
   // 使える種類だけを出す。揃っていないプロパティの種類を出すと、押しても保存されない道が残る。
@@ -301,6 +312,12 @@ export function WorkRecordDialog({
       return;
     }
 
+    const sync = workSync.build();
+    if (sync.error) {
+      setError(sync.error);
+      return;
+    }
+
     // 通常の勤務は勤務場所の名前をそのままタイトルにする。Notionの一覧で開かずに読めるようにし、
     // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。会社休業日は名称を
     // 入れなくても登録できるため、空なら種類の名前をそのまま置く。
@@ -345,6 +362,7 @@ export function WorkRecordDialog({
         : {}),
       ...(capabilities.annualLeave && isLeave ? { preApplied: nextPreApplied } : {}),
       ...(capabilities.memo ? { memo: memo.trim() || null } : {}),
+      ...(sync.payload ? { workSync: sync.payload } : {}),
     };
 
     if (existing) {
@@ -636,6 +654,8 @@ export function WorkRecordDialog({
             )}
           </div>
         )}
+
+        {workSync.node}
 
         {capabilities.memo && (
           <Textarea
