@@ -17,7 +17,13 @@ import {
 } from "@/components/ui/dialog";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
-import { TRAVEL_MODE_LABELS, type TaskItem, type TravelItem } from "@/types/calendar";
+import {
+  TRAVEL_MODE_LABELS,
+  type TaskEventStage,
+  type TaskItem,
+  type TaskLinkTarget,
+  type TravelItem,
+} from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { TaskLinkDialog } from "./task-link-dialog";
@@ -41,6 +47,7 @@ export function TravelDetailDialog({
   linkedTasks = [],
   onOpenTask,
   onLinked,
+  onCreateTask,
 }: {
   travel: TravelItem;
   timeZone: string;
@@ -55,6 +62,8 @@ export function TravelDetailDialog({
   onOpenTask?: (task: TaskItem) => void;
   /** タスクを紐づけたあと。変わった期間を渡して取り直す。 */
   onLinked?: (touched: TouchedRange[] | null) => void;
+  /** 紐づけた状態で新しいタスクを作る（issue #1079）。入力画面へ渡す。 */
+  onCreateTask?: (stage: TaskEventStage, target: TaskLinkTarget) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -99,6 +108,7 @@ export function TravelDetailDialog({
         timeZone={timeZone}
         onCancel={onClose}
         onLinked={(touched) => onLinked?.(touched)}
+        onCreateTask={onCreateTask}
       />
     );
   }
