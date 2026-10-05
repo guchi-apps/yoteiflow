@@ -1,6 +1,66 @@
 import { NextResponse } from "next/server";
 
+import { parseWorkOverride } from "@/lib/work-sync/override";
+import type { WorkRecordOverride } from "@/lib/work-sync/plan";
 import type { WorkWriteInput } from "@/services/notion/work-logs";
+import { getWorkAutoSettings } from "@/services/work-sync/settings";
+import { validateOverrideForRecord } from "@/services/work-sync/sync";
+import type { WorkRecordItem } from "@/types/work";
+
+/** リクエスト本文のうち、Notionへ書かない「勤務予定・移動の反映の指定」。 */
+export type WorkRequestBody = WorkWriteInput & { workSync?: unknown };
+
+/**
+ * 本文から `workSync` を取り出して検証する（issue #1099）。指定が無ければ `override` は undefined
+ * （既存の指定・既定をそのまま使う）。不正なら400の応答を返す。
+ */
+export function splitWorkSync(
+  body: WorkRequestBody,
+): { input: WorkWriteInput; override?: WorkRecordOverride; error?: NextResponse } {
+  const { workSync, ...input } = body;
+  if (workSync === undefined) return { input };
+  const parsed = parseWorkOverride(workSync);
+  if (!parsed.ok) {
+    return {
+      input,
+      error: NextResponse.json({ error: "invalid_work_sync", message: parsed.message }, { status: 400 }),
+    };
+  }
+  return { input, override: parsed.override };
+}
+
+/**
+ * 保存前に、指定で反映ONの項目に必要な時間が揃っているかを確かめる。Notionへ書く前に断るのは、
+ * 勤務記録だけ保存されて指定が通らない食い違いを作らないため。自動生成がオフなら確かめない。
+ */
+export async function checkWorkSync(
+  userId: string,
+  base: WorkRecordItem | null,
+  input: WorkWriteInput,
+  override: WorkRecordOverride,
+): Promise<NextResponse | null> {
+  if (!(await getWorkAutoSettings(userId)).enabled) return null;
+  const startDate = input.startDate ?? base?.startDate;
+  if (!startDate) return null;
+  const record: WorkRecordItem = {
+    id: base?.id ?? "pending",
+    title: input.title ?? base?.title ?? "",
+    startDate,
+    endDate: input.endDate ?? (input.startDate ? input.startDate : (base?.endDate ?? startDate)),
+    place: input.place !== undefined ? input.place : (base?.place ?? null),
+    annualLeave: input.annualLeave !== undefined ? input.annualLeave : (base?.annualLeave ?? null),
+    businessTrip: input.businessTrip ?? base?.businessTrip ?? false,
+    companyHoliday: input.companyHoliday ?? base?.companyHoliday ?? false,
+    preApplied: false,
+    postRegistered: false,
+    memo: null,
+    url: null,
+  };
+  const message = await validateOverrideForRecord(userId, record, override);
+  return message
+    ? NextResponse.json({ error: "work_sync_incomplete", message }, { status: 400 })
+    : null;
+}
 
 /**
  * 勤務記録の入力の検証（docs/spec.md §34）。

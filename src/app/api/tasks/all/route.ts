@@ -8,6 +8,7 @@ import { createNotionClient } from "@/services/notion/client";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
 import { listAllTasks } from "@/services/notion/tasks";
+import { attachBringInfo, listBringItems } from "@/services/task-links/bring-items";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 
 /**
@@ -26,15 +27,16 @@ export async function GET() {
   if (!connection) return NextResponse.json({ error: "not_connected" }, { status: 404 });
 
   try {
-    const [tasks, tagCatalog, placeCatalog, calendars, links] = await Promise.all([
+    const [tasks, tagCatalog, placeCatalog, calendars, links, bringItems] = await Promise.all([
       listAllTasks(createNotionClient(connection), connection),
       loadTagCatalog(connection),
       loadPlaceCatalog(connection),
       loadWritableCalendars(userId),
       listTaskLinks(userId),
+      listBringItems(userId),
     ]);
     return NextResponse.json({
-      tasks: attachTaskLinks(tasks, links),
+      tasks: attachBringInfo(attachTaskLinks(tasks, links), bringItems),
       tagCatalog,
       placeCatalog,
       calendars,

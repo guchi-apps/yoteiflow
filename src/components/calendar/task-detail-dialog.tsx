@@ -331,6 +331,16 @@ export function TaskDetailDialog({
             紐づけは行き先ごとに1件で、期限と予定日の両方に持てる（docs/spec.md §31）。
             2つ並んだときにどちらの日付の話なのかが読めるよう、見出しに行き先を入れる。
           */}
+          {/* 持ち物タスク（issue #1080）。対象の予定と、期限の基準の移動を示す。 */}
+          {task.bring && (
+            <DetailField
+              label="持ち物"
+              value={`「${task.bring.eventTitle}」の持ち物${
+                dueLink?.travelId ? `（期限の基準: ${dueLink.eventTitle} の出発）` : "（移動未設定）"
+              }`}
+            />
+          )}
+
           {links.map((link) => (
             <div key={link.id} className="flex min-w-0 flex-col gap-2 px-4">
               <span className="text-xs text-muted-foreground">

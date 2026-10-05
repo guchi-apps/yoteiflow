@@ -41,6 +41,7 @@ import {
   type TravelItem,
 } from "@/types/calendar";
 
+import { BringItemsSection } from "./bring-items-section";
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventOutcomeDialog } from "./event-outcome-dialog";
@@ -73,6 +74,7 @@ export function EventDetailDialog({
   linkedTravels,
   onOpenTravel,
   onLinkTask,
+  onBringChanged,
   linkedTasks,
   onOpenTask,
   places = [],
@@ -102,6 +104,8 @@ export function EventDetailDialog({
    * （`TaskLinkDialog`）が開き、既存タスクから選ぶか、その場で新しく作れる（issue #835）。
    */
   onLinkTask: () => void;
+  /** 持ち物の追加・完了のあと、カレンダーの取り直しを頼む（issue #1080）。 */
+  onBringChanged?: () => void;
   /**
    * この予定に紐づいているタスク（issue #835）。
    *
@@ -462,6 +466,14 @@ export function EventDetailDialog({
               })}
             </div>
           )}
+
+          {/* 予定の持ち物（issue #1080）。期限は向かう移動の出発から自動で決まる。 */}
+          <BringItemsSection
+            event={event}
+            timeZone={timeZone}
+            readOnly={readOnly}
+            onChanged={() => onBringChanged?.()}
+          />
 
           {/*
             この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
