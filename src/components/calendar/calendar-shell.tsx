@@ -1742,6 +1742,7 @@ function CalendarBody({
           )}
           onOpenTravel={onOpenTravelForEvent}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
+          onBringChanged={() => handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }])}
           // この予定に紐づいているタスク。通常表示では一覧を出し、削除の確認では
           // 消すと紐づけが外れるタイトルだけを取り出して示す（docs/spec.md §31・issue #835）。
           linkedTasks={data.tasks.filter((task) =>
