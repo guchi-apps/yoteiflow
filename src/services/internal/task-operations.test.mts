@@ -5,7 +5,6 @@ import type { TaskWriteInput } from "@/services/notion/tasks";
 import type { InternalTaskStatus } from "@/services/internal/task-contract";
 import {
   completionGuardKey,
-  CREATE_SETTLE_MS,
   DuplicateOperationKeyError,
   runActionOperation,
   runCreateOperation,
@@ -106,6 +105,7 @@ class FakeNotion implements TaskGateway<FakeTask> {
   tasks = new Map<string, FakeTask>();
   seq = 0;
   createFaults: Fault[] = [];
+  statusFaults: Fault[] = [];
   clock: Clock;
   constructor(clock: Clock) {
     this.clock = clock;
@@ -134,18 +134,15 @@ class FakeNotion implements TaskGateway<FakeTask> {
     return { id: task.id };
   }
 
-  async findCreatedTaskIds(input: TaskWriteInput, onOrAfter: string) {
-    await yieldTurn();
-    return [...this.tasks.values()]
-      .filter((task) => task.title === input.title && (input.due === undefined || task.due === input.due) && task.createdAt >= Date.parse(onOrAfter))
-      .map((task) => task.id);
-  }
-
   async setStatus(taskId: string, _current: FakeTask, target: InternalTaskStatus) {
     await yieldTurn();
+    const fault = this.statusFaults.shift();
+    if (fault === "rejected") throw Object.assign(new Error("validation_error"), { status: 400 });
+    if (fault === "timeout_before_write") throw new Error("socket hang up");
     const task = this.tasks.get(taskId)!;
     task.status = target;
     task.version = `v${Number(task.version.slice(1)) + 1}`;
+    if (fault === "lost_response") throw new Error("socket hang up");
   }
 
   nextRecurrence(current: FakeTask): TaskWriteInput | null {
@@ -185,32 +182,28 @@ test("作成: 同じキーの再送は保存済みの結果を返し、作り直
   assert.equal(notion.tasks.size, 1);
 });
 
-test("作成: 書いた後に応答を失っても、同じキーの再送で作られたタスクを見つけて返す", async () => {
-  const { deps, notion, store } = setup();
-  notion.createFaults.push("lost_response");
-  const first = await create(deps, "k1");
-  assert.equal(first.kind, "unknown");
-  assert.equal(store.get("k1")?.state, "RESULT_UNKNOWN");
+for (const fault of ["lost_response", "timeout_before_write"] as const) {
+  test(`作成: ${fault}でIDが不明なら別タスクを採用せず、時間が経っても再作成しない`, async () => {
+    const { deps, notion, store, clock } = setup();
+    notion.add({ title: "買い物", due: "2026-10-06" });
+    notion.createFaults.push(fault);
+    assert.equal((await create(deps, "k1")).kind, "unknown");
+    const count = notion.tasks.size;
+    for (const delay of [0, 120_000, 600_000]) {
+      clock.advance(delay);
+      assert.equal((await create(deps, "k1")).kind, "reconciliation_required");
+      assert.equal(notion.tasks.size, count);
+      assert.equal(store.get("k1")?.state, "RESULT_UNKNOWN");
+    }
+  });
+}
 
-  const again = await create(deps, "k1");
-  assert.equal(again.kind, "succeeded");
-  assert.equal(notion.tasks.size, 1);
-  assert.equal(store.get("k1")?.state, "SUCCEEDED");
-});
-
-test("作成: 作られていない結果未確定は、確定できるまで待たせてから1回だけ作り直す", async () => {
-  const { deps, notion, clock } = setup();
-  notion.createFaults.push("timeout_before_write");
+test("作成: ID記録後の読み取り失敗は同じIDで回復する", async () => {
+  const { deps, notion } = setup();
+  const getTask = notion.getTask.bind(notion);
+  notion.getTask = async () => { throw new Error("read failed"); };
   assert.equal((await create(deps, "k1")).kind, "unknown");
-
-  const waiting = await create(deps, "k1");
-  assert.equal(waiting.kind, "pending");
-  assert.equal(notion.tasks.size, 0);
-
-  clock.advance(CREATE_SETTLE_MS);
-  const recovered = await create(deps, "k1");
-  assert.equal(recovered.kind, "succeeded");
-  assert.equal(notion.tasks.size, 1);
+  notion.getTask = getTask;
   assert.equal((await create(deps, "k1")).kind, "succeeded");
   assert.equal(notion.tasks.size, 1);
 });
@@ -285,32 +278,62 @@ test("繰り返しの完了: 別キーの同時の完了でも次回分は1件",
   assert.equal(notion.nextCount(task), 1);
 });
 
-test("繰り返しの完了: 次回分の応答を失った後、別キーで完了し直しても次回分は1件", async () => {
-  const { deps, notion, store } = setup();
-  const task = notion.add({ title: "ゴミ出し", due: "2026-10-05", recurrence: "毎週" });
-  notion.createFaults.push("lost_response");
-  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
-  assert.equal(store.get(completionGuardKey(task.id))?.state, "RESULT_UNKNOWN");
+for (const fault of ["lost_response", "timeout_before_write"] as const) {
+  test(`繰り返しの完了: ${fault}で次回IDが不明なら別キーでも再作成しない`, async () => {
+    const { deps, notion, store, clock } = setup();
+    const task = notion.add({ title: "ゴミ出し", due: "2026-10-05", recurrence: "毎週" });
+    notion.createFaults.push(fault);
+    assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
+    const count = notion.nextCount(task);
+    clock.advance(600_000);
+    assert.equal((await act(deps, "k2", task.id, "complete", task.version)).kind, "reconciliation_required");
+    assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "reconciliation_required");
+    assert.equal(notion.nextCount(task), count);
+    assert.equal(store.get(completionGuardKey(task.id))?.state, "RESULT_UNKNOWN");
+  });
+}
 
-  const version = notion.tasks.get(task.id)!.version;
-  const retried = await act(deps, "k2", task.id, "complete", version);
-  assert.equal(retried.kind, "succeeded");
-  assert.equal(notion.nextCount(task), 1);
-  // 同じキーの再送も、完了済みを確かめて成功として返す。
+for (const differentKey of [false, true]) {
+  test(`繰り返しの完了: 次回作成の4xxを${differentKey ? "別" : "同じ"}キーで再送し欠落させない`, async () => {
+    const { deps, notion, store } = setup();
+    const task = notion.add({ title: "ゴミ出し", due: "2026-10-05", recurrence: "毎週" });
+    notion.createFaults.push("rejected", "rejected");
+    assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
+    assert.equal(task.status, "completed");
+    assert.equal(store.get(completionGuardKey(task.id))?.state, "RESULT_UNKNOWN");
+    const key = differentKey ? "k2" : "k1";
+    const version = differentKey ? task.version : "v1";
+    // 2回目の拒否は、この試行で状態更新が無くても未実行に戻してはいけない。
+    assert.equal((await act(deps, key, task.id, "complete", version)).kind, "unknown");
+    const recovered = await act(deps, key, task.id, "complete", version);
+    assert.equal(recovered.kind, "succeeded");
+    assert.ok(recovered.kind === "succeeded" && recovered.result.nextTaskId);
+    assert.equal(notion.nextCount(task), 1);
+    assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "succeeded");
+    assert.equal(notion.nextCount(task), 1);
+  });
+}
+
+test("繰り返しの完了: 完了更新の応答喪失後も次回を作成する", async () => {
+  const { deps, notion } = setup();
+  const task = notion.add({ title: "掃除", due: "2026-10-05", recurrence: "毎週" });
+  notion.statusFaults.push("lost_response");
+  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
   assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "succeeded");
   assert.equal(notion.nextCount(task), 1);
 });
 
-test("繰り返しの完了: 次回分を作れたか分からないときは確定まで待たせ、作られていなければ1回だけ作る", async () => {
-  const { deps, notion, clock } = setup();
-  const task = notion.add({ title: "ゴミ出し", due: "2026-10-05", recurrence: "毎週" });
-  notion.createFaults.push("timeout_before_write");
-  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
-  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "pending");
-  assert.equal(notion.nextCount(task), 0);
-  clock.advance(CREATE_SETTLE_MS);
-  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "succeeded");
-  assert.equal(notion.nextCount(task), 1);
+test("結果未確定の状態変更は再送時の読み取り失敗でも未実行に戻らない", async () => {
+  const { deps, notion, store } = setup();
+  const task = notion.add({ title: "掃除" });
+  notion.statusFaults.push("lost_response");
+  assert.equal((await act(deps, "k1", task.id, "skip", "v1")).kind, "unknown");
+  const getTask = notion.getTask.bind(notion);
+  notion.getTask = async () => { throw new Error("read failed"); };
+  assert.equal((await act(deps, "k1", task.id, "skip", "v1")).kind, "unknown");
+  assert.equal(store.get("k1")?.state, "RESULT_UNKNOWN");
+  notion.getTask = getTask;
+  assert.equal((await act(deps, "k1", task.id, "skip", "v1")).kind, "succeeded");
 });
 
 test("繰り返しの完了→未完了→再完了でも次回分は1件", async () => {
@@ -334,4 +357,35 @@ test("繰り返しの完了: 画面など別の経路で完了済みの回から
   const result = await act(deps, "k1", task.id, "complete", "v1");
   assert.equal(result.kind, "succeeded");
   assert.equal(notion.nextCount(task), 0);
+});
+
+test("繰り返しの完了: 完了更新自体の4xxは未実行として再試行する", async () => {
+  const { deps, notion, store } = setup();
+  const task = notion.add({ title: "掃除", due: "2026-10-05", recurrence: "毎週" });
+  notion.statusFaults.push("rejected");
+  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "not_executed");
+  assert.equal(store.get(completionGuardKey(task.id))?.state, "NOT_EXECUTED");
+  assert.equal(task.status, "open");
+  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "succeeded");
+  assert.equal(notion.nextCount(task), 1);
+});
+
+test("繰り返しの完了: ID記録後の成功保存失敗は、記録済みIDで回復する", async () => {
+  const { deps, notion, store } = setup();
+  const task = notion.add({ title: "掃除", due: "2026-10-05", recurrence: "毎週" });
+  const update = store.update.bind(store);
+  let fail = true;
+  store.update = async (id, data) => {
+    if (fail && data.state === "SUCCEEDED" && store.byId(id)?.operation === "complete_guard") {
+      fail = false;
+      throw new Error("database unavailable");
+    }
+    return update(id, data);
+  };
+  assert.equal((await act(deps, "k1", task.id, "complete", "v1")).kind, "unknown");
+  const nextId = [...notion.tasks.values()].find((item) => item.id !== task.id)!.id;
+  const recovered = await act(deps, "k1", task.id, "complete", "v1");
+  assert.equal(recovered.kind, "succeeded");
+  assert.equal(recovered.kind === "succeeded" && recovered.result.nextTaskId, nextId);
+  assert.equal(notion.nextCount(task), 1);
 });

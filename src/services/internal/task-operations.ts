@@ -30,14 +30,6 @@ export const OPERATION_STATES = {
 
 /** これより長く `PROCESSING` のままの記録は、プロセスが止まったものとして引き取る。 */
 export const STALE_PROCESSING_MS = 5 * 60 * 1000;
-/**
- * 作成の成否が分からない要求を照合するとき、見つからなくても作り直さずに待つ時間。
- * Notionの問い合わせは作成直後のページをすぐには返さないことがあり、見つからないことを
- * 「作られていない」と確定させるには時間を置く必要がある。
- */
-export const CREATE_SETTLE_MS = 2 * 60 * 1000;
-/** Notionの `created_time` は分単位に丸められるため、照合の起点をこれだけ前へずらす。 */
-export const CREATED_TIME_SLACK_MS = 2 * 60 * 1000;
 /** 実行中の要求へ返す、次に試すまでの目安。 */
 export const IN_PROGRESS_RETRY_SECONDS = 5;
 
@@ -59,6 +51,8 @@ export type OperationIdentity = Pick<OperationRecord, "userId" | "idempotencyKey
 export type OperationProgress = {
   /** Notionへ作成を投げた時刻。投げていなければ無い */
   writeAttemptedAt?: string;
+  /** 完了への更新を開始した印。次回作成の拒否でも消さない */
+  completionStarted?: boolean;
   /** 作成が返したページID */
   createdTaskId?: string;
 };
@@ -83,8 +77,6 @@ export type OperationTask = {
 export interface TaskGateway<T extends OperationTask> {
   getTask(taskId: string): Promise<T>;
   createTask(input: TaskWriteInput): Promise<{ id: string }>;
-  /** `onOrAfter` 以降に作られた、`input` と同じ内容のタスクIDを作成順に返す */
-  findCreatedTaskIds(input: TaskWriteInput, onOrAfter: string): Promise<string[]>;
   setStatus(taskId: string, current: T, target: InternalTaskStatus): Promise<void>;
   /** 完了した回から作る次回分。繰り返しが無ければ null */
   nextRecurrence(current: T): TaskWriteInput | null;
@@ -98,20 +90,14 @@ export type Claim =
 export type OperationOutcome<R> =
   | { kind: "succeeded"; result: R; replayed: boolean }
   | { kind: "in_progress"; retryAfterSeconds: number }
-  | { kind: "pending"; retryAfterSeconds: number }
+  | { kind: "reconciliation_required" }
   | { kind: "not_executed"; error: unknown }
   | { kind: "unknown"; error: unknown };
 
 /** 他の要求が同じ回の次回分を作っている最中。書き込み前に断るので未実行になる。 */
 export class OperationInProgressError extends Error {}
-/** 作成の成否をまだ確定できない。時間を置いて同じキーで再送させる。 */
-export class ResultPendingError extends Error {
-  readonly retryAfterSeconds: number;
-  constructor(retryAfterSeconds: number) {
-    super("result_pending");
-    this.retryAfterSeconds = retryAfterSeconds;
-  }
-}
+/** 作成IDが不明な書き込みは、推測や再作成で確定させない。 */
+export class ReconciliationRequiredError extends Error {}
 
 const IDEMPOTENCY_KEY = /^[\x21-\x7e]{1,191}$/;
 
@@ -183,6 +169,7 @@ class WriteTracker {
   started = 0;
   completed = 0;
   rejectedBeforeAnyWrite = false;
+  uncertainBefore = false;
 
   async write<R>(fn: () => Promise<R>): Promise<R> {
     this.started++;
@@ -198,7 +185,7 @@ class WriteTracker {
 
   /** この試行で何かを書いた（書いたかもしれない）か */
   get mayHaveWritten(): boolean {
-    return this.started > 0 && !(this.completed === 0 && this.rejectedBeforeAnyWrite);
+    return this.uncertainBefore || (this.started > 0 && !(this.completed === 0 && this.rejectedBeforeAnyWrite));
   }
 }
 
@@ -214,9 +201,9 @@ async function finish<R>(
     await store.update(claim.record.id, { state: OPERATION_STATES.succeeded, result: result as object });
     return { kind: "succeeded", result, replayed: false };
   } catch (error) {
-    if (error instanceof ResultPendingError) {
+    if (error instanceof ReconciliationRequiredError) {
       await store.update(claim.record.id, { state: OPERATION_STATES.unknown });
-      return { kind: "pending", retryAfterSeconds: error.retryAfterSeconds };
+      return { kind: "reconciliation_required" };
     }
     if (uncertainBefore || tracker.mayHaveWritten) {
       // 進み具合（`result.progress`）は残す。次の再送がそこから照合する。
@@ -240,15 +227,6 @@ function claimToOutcome<R>(claim: Exclude<Claim, { kind: "claimed" }>): Operatio
   return claim;
 }
 
-function minus(iso: string, ms: number): string {
-  return new Date(new Date(iso).getTime() - ms).toISOString();
-}
-
-function settleRetrySeconds(attemptedAt: string, now: Date): number | null {
-  const age = now.getTime() - new Date(attemptedAt).getTime();
-  return age < CREATE_SETTLE_MS ? Math.max(1, Math.ceil((CREATE_SETTLE_MS - age) / 1000)) : null;
-}
-
 type Deps<T extends OperationTask> = {
   store: OperationStore;
   gateway: TaskGateway<T>;
@@ -256,7 +234,7 @@ type Deps<T extends OperationTask> = {
 };
 
 /**
- * タスクを作る。結果未確定の再送では、前回作ったページを探してから作り直すかを決める。
+ * タスクを作る。結果未確定の再送は、記録できた作成IDだけで回復する。
  */
 export async function runCreateOperation<T extends OperationTask>(
   deps: Deps<T>,
@@ -272,12 +250,7 @@ export async function runCreateOperation<T extends OperationTask>(
     let taskId = progress.createdTaskId ?? null;
     let latest = progress;
     if (!taskId && claim.recovering && progress.writeAttemptedAt) {
-      const found = await gateway.findCreatedTaskIds(input, minus(progress.writeAttemptedAt, CREATED_TIME_SLACK_MS));
-      taskId = found[0] ?? null;
-      if (!taskId) {
-        const wait = settleRetrySeconds(progress.writeAttemptedAt, now());
-        if (wait !== null) throw new ResultPendingError(wait);
-      }
+      throw new ReconciliationRequiredError("creation_result_requires_confirmation");
     }
     if (!taskId) {
       latest = { writeAttemptedAt: now().toISOString() };
@@ -314,7 +287,7 @@ export async function runActionOperation<T extends OperationTask>(
   if (claim.kind !== "claimed") return claimToOutcome(claim);
 
   const target = ACTION_TARGET[action];
-  return finish(store, claim, false, async (tracker) => {
+  return finish(store, claim, claim.recovering, async (tracker) => {
     const current = await gateway.getTask(taskId);
     if (!(claim.recovering && current.status === target)) assertTaskVersion(current, version);
 
@@ -353,49 +326,48 @@ async function ensureNextRecurrence<T extends OperationTask>(
     return result?.nextTaskId ?? null;
   }
 
-  const progress = guard.progress;
-  const uncertainBefore = guard.recovering && Boolean(progress.writeAttemptedAt);
-  let createAttempted = false;
-  let createRejected = false;
-  // 完了への更新の応答だけが失われた場合、再送では「別経路で完了済み」と見分けられないため結果未確定にする。
-  let statusAttempted = false;
+  tracker.uncertainBefore ||= guard.recovering;
+  let progress = guard.progress;
+  // 過去の試行の書き込みを、今回の読み取り失敗や4xxで未実行へ戻さない。
+  const uncertainBefore = guard.recovering;
+  let statusRejected = false;
   try {
     const next = gateway.nextRecurrence(current);
     let nextTaskId = progress.createdTaskId ?? null;
-    if (next && !nextTaskId && uncertainBefore && progress.writeAttemptedAt) {
-      const found = await gateway.findCreatedTaskIds(next, minus(progress.writeAttemptedAt, CREATED_TIME_SLACK_MS));
-      nextTaskId = found[0] ?? null;
-      if (!nextTaskId) {
-        const wait = settleRetrySeconds(progress.writeAttemptedAt, now());
-        if (wait !== null) throw new ResultPendingError(wait);
-      }
+    if (!nextTaskId && progress.writeAttemptedAt) {
+      throw new ReconciliationRequiredError("creation_result_requires_confirmation");
     }
-    // 確保が初めてで、すでに完了していた回は、画面など内部API以外の経路で完了された
-    // もの（その経路が次回分を作っている）。ここで作るともう1件増える。
     const completedElsewhere = !guard.recovering && current.status === "completed";
     if (current.status !== "completed") {
-      statusAttempted = true;
-      await tracker.write(() => gateway.setStatus(current.id, current, "completed"));
-      statusAttempted = false;
+      progress = { ...progress, completionStarted: true };
+      await store.update(guard.record.id, { result: { progress } });
+      try {
+        await tracker.write(() => gateway.setStatus(current.id, current, "completed"));
+      } catch (error) {
+        statusRejected = isDefiniteRejection(error);
+        throw error;
+      }
     }
     if (next && !nextTaskId && !completedElsewhere) {
-      await store.update(guard.record.id, { result: { progress: { writeAttemptedAt: now().toISOString() } } });
-      createAttempted = true;
+      progress = { ...progress, writeAttemptedAt: now().toISOString() };
+      await store.update(guard.record.id, { result: { progress } });
       try {
         nextTaskId = (await tracker.write(() => gateway.createTask(next))).id;
       } catch (error) {
-        createRejected = isDefiniteRejection(error);
+        if (isDefiniteRejection(error)) {
+          // 次回作成だけが未実行。完了更新の印を残し、再送では作成だけを再試行する。
+          delete progress.writeAttemptedAt;
+          await store.update(guard.record.id, { result: { progress } });
+        }
         throw error;
       }
+      progress = { ...progress, createdTaskId: nextTaskId };
+      await store.update(guard.record.id, { result: { progress } });
     }
     await store.update(guard.record.id, { state: OPERATION_STATES.succeeded, result: { nextTaskId } });
     return nextTaskId;
   } catch (error) {
-    const unknown =
-      error instanceof ResultPendingError ||
-      uncertainBefore ||
-      (createAttempted && !createRejected) ||
-      (statusAttempted && !isDefiniteRejection(error));
+    const unknown = uncertainBefore || Boolean(progress.writeAttemptedAt) || (Boolean(progress.completionStarted) && !statusRejected);
     await store.update(guard.record.id, unknown ? { state: OPERATION_STATES.unknown } : { state: OPERATION_STATES.notExecuted, result: null });
     throw error;
   }

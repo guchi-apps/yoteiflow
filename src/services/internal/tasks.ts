@@ -7,7 +7,6 @@ import { db } from "@/lib/db";
 import { SKIPPED_OUTCOME, type PropertyMap } from "@/services/notion/task-database";
 import {
   createTask,
-  findTaskPagesCreatedSince,
   getTaskPage,
   nextRecurrenceInput,
   normalizeTask,
@@ -179,41 +178,11 @@ export const operationStore: OperationStore = {
   },
 };
 
-/** Notionは時刻付きの日付を秒・ミリ秒まで補って返すため、時刻付きは時点として比べる。 */
-function sameDate(stored: string | null, requested: string | null): boolean {
-  if (stored === null || requested === null) return stored === requested;
-  if (stored.includes("T") && requested.includes("T")) return Date.parse(stored) === Date.parse(requested);
-  return stored === requested;
-}
-
-function sameTags(stored: string[], requested: string[]): boolean {
-  return stored.length === requested.length && [...stored].sort().join("\n") === [...requested].sort().join("\n");
-}
-
-function sameTaskInput(task: InternalTask, input: TaskWriteInput): boolean {
-  return (
-    (input.due === undefined || sameDate(task.due ?? null, input.due)) &&
-    (input.planned === undefined || sameDate(task.planned ?? null, input.planned)) &&
-    (input.priority === undefined || (task.priority ?? null) === input.priority) &&
-    (input.memo === undefined || (task.memo ?? null) === input.memo) &&
-    (input.recurrence === undefined || (task.recurrence ?? null) === input.recurrence) &&
-    (input.progress === undefined || (task.progress ?? null) === input.progress) &&
-    (input.tags === undefined || sameTags(task.tags ?? [], input.tags))
-  );
-}
-
 /** Notionのタスクを内部API向けの形で読み書きする実装。 */
 export function taskGateway(notion: Client, connection: NotionConnection): TaskGateway<InternalTask> {
-  const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
   return {
     getTask: (taskId) => getInternalTask(notion, connection, taskId),
     createTask: (input) => createTask(notion, connection, input),
-    async findCreatedTaskIds(input, onOrAfter) {
-      if (!input.title) return [];
-      const pages = await findTaskPagesCreatedSince(notion, connection, input.title, onOrAfter);
-      // 同じ名前の別タスクを取り違えないよう、日付も要求と同じものに絞る。
-      return pages.filter((page) => sameTaskInput(toInternalTask(page, propertyMap), input)).map((page) => page.id);
-    },
     async setStatus(taskId, current, target) {
       // 「対応しない」から離れるときだけ対応状況を外す。他の値（利用者が足した選択肢）は触らない。
       const leavingSkip = current.status === "skipped" && target !== "skipped";

@@ -88,8 +88,8 @@ export function operationResponse(outcome: OperationOutcome<unknown>, successSta
       return json(outcome.result, outcome.replayed ? 200 : successStatus);
     case "in_progress":
       return retryLater({ error: "operation_in_progress", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
-    case "pending":
-      return retryLater({ error: "result_unknown", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
+    case "reconciliation_required":
+      return json({ error: "result_unknown", executed: "unknown", retryWithSameKey: false, reconciliationRequired: true }, 502);
     case "not_executed":
       return json({ ...errorBody(outcome.error, operation), executed: false }, errorStatus(outcome.error));
     case "unknown":

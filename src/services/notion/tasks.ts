@@ -494,31 +494,6 @@ export async function createNextRecurrence(
 }
 
 /**
- * 指定時刻以降に作られた、同じタイトルのタスクページを作成順に返す。
- * 内部APIで作成の成否が分からなくなった要求を、もう一度作る前に照合するために使う。
- * Notionの `created_time` は分単位に丸められるため、呼び出し側で余裕を持たせる。
- */
-export async function findTaskPagesCreatedSince(
-  notion: Client,
-  connection: NotionConnection,
-  title: string,
-  onOrAfter: string,
-): Promise<NotionTaskPage[]> {
-  const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
-  if (!connection.taskDataSourceId || !propertyMap.title) return [];
-  const filter: NotionQueryFilter = {
-    and: [
-      { timestamp: "created_time", created_time: { on_or_after: onOrAfter } },
-      { property: propertyMap.title, title: { equals: title } },
-    ],
-  };
-  const pages = await queryTaskPages(notion, connection.taskDataSourceId, filter);
-  return pages
-    .map((page) => page as NotionTaskPage & { created_time?: string })
-    .sort((a, b) => (a.created_time ?? "").localeCompare(b.created_time ?? ""));
-}
-
-/**
  * タスクを「対応しない」にする、または戻す（issue #750）。
  * 完了と違い、繰り返しの次回分は作らない。やらないと決めた回は次へ進めない扱いにする。
  * 完了状態も合わせて動かすのは、Notion側の一覧でも片付いたものとして並ぶようにするため。
