@@ -22,6 +22,7 @@ import {
   type CalendarEventItem,
   type TaskEventStage,
   type TaskLinkTarget,
+  type TravelItem,
 } from "@/types/calendar";
 
 import { isoToLocalInput } from "./datetime-fields";
@@ -35,6 +36,8 @@ export type PendingEventLink = {
   calendarId: string;
   eventId: string;
   eventTitle: string;
+  /** 紐づけ先が移動のとき（issue #1079）。calendarId / eventId は空文字になる。 */
+  travelId?: string;
   stage: TaskEventStage;
   /** 選んだ時点で決まる日時。入力画面に見せるための値で、実際に入る値は保存時にサーバーが決める。 */
   date: string;
@@ -76,16 +79,46 @@ export function EventPickerDialog({
   );
   const [monthKey, setMonthKey] = useState(() => todayKey.slice(0, 7));
   const [events, setEvents] = useState<CalendarEventItem[] | null>(null);
+  // 紐づけ先の種類（予定・移動。issue #1079）。移動は予定と同じ形に直して以降は共通に扱う。
+  const [source, setSource] = useState<"event" | "travel">("event");
+  const [travels, setTravels] = useState<TravelItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 月グリッドか日付ごとの一覧か（issue #809）。端末には覚えさせない。
   const [mode, setMode] = useState<"month" | "list">("month");
   const [focusDay, setFocusDay] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<CalendarEventItem | null>(null);
+  const [chosen, setChosen] = useState<(CalendarEventItem & { travelId?: string }) | null>(null);
   const [stage, setStage] = useState<TaskEventStage>("BEFORE_START");
   // 月を素早く送ったときに、遅れて届いた古い月の応答で上書きしない。
   const requestId = useRef(0);
 
   useEffect(() => {
+    if (source !== "travel") return;
+    let cancelled = false;
+
+    fetch(`/api/travels?month=${monthKey}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readErrorMessage(response, "移動を取得できませんでした。"));
+        return (await response.json()) as { travels: TravelItem[] };
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setTravels(data.travels ?? []);
+          setError(null);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setTravels([]);
+        setError(cause instanceof Error ? cause.message : "移動を取得できませんでした。");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey, source]);
+
+  useEffect(() => {
+    if (source !== "event") return;
     const id = ++requestId.current;
     let cancelled = false;
 
@@ -112,7 +145,7 @@ export function EventPickerDialog({
     return () => {
       cancelled = true;
     };
-  }, [monthKey]);
+  }, [monthKey, source]);
 
   const weeks = useMemo(
     () => getVisibleDays("month", parseMonthKey(monthKey), weekStartsOn).weeks,
@@ -135,6 +168,19 @@ export function EventPickerDialog({
     setStage("BEFORE_START");
   };
 
+  const chooseTravel = (travel: TravelItem) => {
+    choose({
+      kind: "event",
+      id: "",
+      calendarId: "",
+      title: travel.title,
+      allDay: false,
+      start: travel.start,
+      end: travel.end,
+      travelId: travel.id,
+    } as unknown as CalendarEventItem & { travelId?: string });
+  };
+
   const confirm = () => {
     if (!chosen) return;
     const resolved = resolveStageDate(chosen, stage);
@@ -146,6 +192,7 @@ export function EventPickerDialog({
           calendarId: chosen.calendarId,
           eventId: chosen.id,
           eventTitle: chosen.title,
+          ...(chosen.travelId ? { travelId: chosen.travelId } : {}),
           stage,
           date: resolved.date,
         }),
@@ -174,7 +221,7 @@ export function EventPickerDialog({
         {chosen ? (
           <>
             <DialogHeader>
-              <DialogTitle>この予定に紐づけますか</DialogTitle>
+              <DialogTitle>{chosen.travelId ? "この移動に紐づけますか" : "この予定に紐づけますか"}</DialogTitle>
               <DialogDescription className="sr-only">
                 選んだ予定の段階から{targetLabel}の日時が決まります。
               </DialogDescription>
@@ -190,14 +237,14 @@ export function EventPickerDialog({
                 </span>
               </div>
 
-              <TaskStagePicker value={stage} onChange={setStage} />
+              <TaskStagePicker value={stage} travel={Boolean(chosen.travelId)} onChange={setStage} />
 
               <p className="text-sm text-on-surface-variant">
                 {targetLabel}は{" "}
                 <b className="text-on-surface">
                   {formatLinkedDate(resolveStageDate(chosen, stage).date, timeZone)}
                 </b>{" "}
-                になります。予定を動かすと{targetLabel}も動きます。
+                になります。{chosen.travelId ? "移動" : "予定"}を動かすと{targetLabel}も動きます。
                 タスクを保存すると紐づけが確定します。
               </p>
             </div>
@@ -212,13 +259,28 @@ export function EventPickerDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>{targetLabel}にする予定を選ぶ</DialogTitle>
+              <DialogTitle>{targetLabel}にする{source === "travel" ? "移動" : "予定"}を選ぶ</DialogTitle>
               <DialogDescription className="type-body-small text-on-surface-variant">
-                予定を押すと確認に進みます。
+                {source === "travel" ? "移動" : "予定"}を押すと確認に進みます。
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex gap-1">
+                {(["event", "travel"] as const).map((value) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={source === value ? "secondary" : "outline"}
+                    className={cn(source === value && "text-on-secondary-container")}
+                    onClick={() => setSource(value)}
+                  >
+                    {value === "event" ? "予定" : "移動"}
+                  </Button>
+                ))}
+              </div>
+
               <div className="flex items-center justify-between gap-2">
                 <Button
                   variant="ghost"
@@ -246,6 +308,7 @@ export function EventPickerDialog({
                 </Button>
               </div>
 
+              {source === "event" && (
               <div className="flex gap-1">
                 {(["month", "list"] as const).map((value) => (
                   <Button
@@ -260,8 +323,28 @@ export function EventPickerDialog({
                   </Button>
                 ))}
               </div>
+              )}
 
-              {mode === "list" ? (
+              {source === "travel" ? (
+                <div className="flex max-h-[50dvh] flex-col overflow-y-auto rounded-md border border-outline-variant">
+                  {travels !== null && travels.length === 0 && (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">移動がありません。</p>
+                  )}
+                  {(travels ?? []).map((travel) => (
+                    <button
+                      key={travel.id}
+                      type="button"
+                      onClick={() => chooseTravel(travel)}
+                      className="flex w-full items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
+                    >
+                      <span className="clip-nowrap">{travel.title}</span>
+                      <span className="shrink-0 text-xs text-on-surface-variant">
+                        {formatLinkedDate(travel.start, timeZone)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : mode === "list" ? (
                 <div
                   className={cn(
                     "flex max-h-[50dvh] flex-col overflow-y-auto rounded-md border border-outline-variant transition-opacity",
@@ -359,7 +442,7 @@ export function EventPickerDialog({
               </div>
               )}
 
-              {mode === "month" && focusDay && (
+              {source === "event" && mode === "month" && focusDay && (
                 <div className="flex flex-col rounded-md border border-outline-variant">
                   <p className="border-b border-outline-variant px-3 py-1.5 text-xs text-on-surface-variant">
                     {formatLinkedDate(focusDay, timeZone)}の予定
@@ -385,7 +468,7 @@ export function EventPickerDialog({
                 </div>
               )}
 
-              {events === null && <p className="text-xs text-muted-foreground">読み込んでいます…</p>}
+              {(source === "travel" ? travels === null : events === null) && <p className="text-xs text-muted-foreground">読み込んでいます…</p>}
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
 
