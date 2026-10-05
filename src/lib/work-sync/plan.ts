@@ -1,4 +1,4 @@
-import { matchPlaceByText } from "@/lib/place-text";
+import { matchPlaceByText, toLocationText } from "@/lib/place-text";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TravelMode } from "@/types/calendar";
 import { annualLeaveHours, type WorkRecordItem } from "@/types/work";
@@ -113,6 +113,15 @@ export function workWindow(
 /** 出張の行き先。場所DBの名前へ照合でき（`名前 住所` でも可）れば場所名、なければタイトルそのまま。 */
 export function tripDestination(title: string, places: PlaceItem[]): string {
   return matchPlaceByText(title, places)?.name ?? title.trim();
+}
+
+/**
+ * 移動の出発地・目的地へ入れる文字列。場所DBに当たれば `名前 住所`、当たらなければ元のまま。
+ * 既定の移動時間（`WorkRouteDefault`）の引き当てキーは変えないため、`lookup` には使わない。
+ */
+export function placeLocationText(text: string, places: PlaceItem[]): string {
+  const place = matchPlaceByText(text, places);
+  return place ? toLocationText(place.name, place.address) : text;
 }
 
 /** `YYYY-MM-DD` の並び。UTCで数える（時刻を持たない）。 */
@@ -235,6 +244,8 @@ export function planWorkItems(
   }
 
   const home = settings.homeOrigin?.trim() || null;
+  const homeText = home ? placeLocationText(home, places) : null;
+  const destinationText = placeLocationText(destination, places);
   if (!home) {
     missingRoutes.push({ origin: null, destination });
     return { items, missingRoutes };
@@ -255,8 +266,8 @@ export function planWorkItems(
         start: new Date(arrive.getTime() - minutes * 60_000),
         end: arrive,
         title: `${home} → ${destination}`,
-        origin: home,
-        destination,
+        origin: homeText!,
+        destination: destinationText,
         mode: route?.mode ?? "PUBLIC_TRANSIT",
       });
     } else {
@@ -275,8 +286,8 @@ export function planWorkItems(
         start: depart,
         end: new Date(depart.getTime() + minutes * 60_000),
         title: `${destination} → ${home}`,
-        origin: destination,
-        destination: home,
+        origin: destinationText,
+        destination: homeText!,
         mode: route?.mode ?? "PUBLIC_TRANSIT",
       });
     } else {
