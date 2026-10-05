@@ -17,6 +17,7 @@ import { AppMenuButton } from "@/components/nav/app-drawer";
 import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
@@ -129,6 +130,42 @@ function WorkMonthScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<WorkDraft | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+
+  // 勤務予定・移動の再計算（docs/spec.md §46）。同期の契機は勤務記録の作成・更新・削除だけで、
+  // Notionを直接編集した分は追従しないため、その取りこぼしを拾う手動の入口。
+  const recalculate = async () => {
+    setRecalculating(true);
+    setSyncNote(null);
+    try {
+      const response = await fetch("/api/work/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: monthKey }),
+      });
+      const body = (await response.json().catch(() => null)) as
+        | (SyncSummary & { message?: string; created?: number; updated?: number; deleted?: number })
+        | null;
+      if (!response.ok) {
+        setSyncNote(body?.message ?? "勤務予定・移動を再計算できませんでした。");
+      } else if (body?.status === "disabled") {
+        setSyncNote("設定の「勤務」で、勤務予定・移動の自動作成をオンにしてください。");
+      } else {
+        const changed = (body?.created ?? 0) + (body?.updated ?? 0) + (body?.deleted ?? 0);
+        setSyncNote(
+          describeSync(body) ??
+            (changed > 0
+              ? `勤務予定・移動を反映しました（作成${body?.created ?? 0}・更新${body?.updated ?? 0}・削除${body?.deleted ?? 0}）。`
+              : "変更はありませんでした。"),
+        );
+      }
+    } catch {
+      setSyncNote("勤務予定・移動を再計算できませんでした。");
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   const days = useMemo(() => daysOfMonth(monthKey), [monthKey]);
   const todayRecord = records.find((record) => coversDate(record, todayKey)) ?? null;
@@ -296,6 +333,17 @@ function WorkMonthScreen({
       </header>
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}
+      {syncNote && (
+        <p
+          role="status"
+          className="type-body-small mx-4 mt-2 flex items-start justify-between gap-2 rounded-lg bg-secondary-container px-3 py-2 text-on-secondary-container"
+        >
+          <span>{syncNote}</span>
+          <button type="button" className="shrink-0 underline" onClick={() => setSyncNote(null)}>
+            閉じる
+          </button>
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/*
           広い画面では「片付ける手続き（出張・年休）」を左、「この月」を右に分ける（issue #636）。
@@ -405,6 +453,18 @@ function WorkMonthScreen({
                 <ChevronRight className="size-4" />
               </Button>
             </div>
+
+            {!offline && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="self-center"
+                disabled={recalculating}
+                onClick={() => void recalculate()}
+              >
+                {recalculating ? "再計算中…" : "勤務予定・移動を再計算"}
+              </Button>
+            )}
 
             {showsToday && (
               <Card>
@@ -690,8 +750,9 @@ function WorkMonthScreen({
           todayKey={todayKey}
           workMinutesPerDay={workMinutesPerDay}
           onClose={() => setDraft(null)}
-          onSaved={() => {
+          onSaved={(syncNote) => {
             setDraft(null);
+            setSyncNote(syncNote ?? null);
             resource.reload();
           }}
         />

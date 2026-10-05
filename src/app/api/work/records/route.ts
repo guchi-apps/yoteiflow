@@ -9,6 +9,7 @@ import {
   WorkDateTakenError,
   type WorkWriteInput,
 } from "@/services/notion/work-logs";
+import { syncWorkRecord } from "@/services/work-sync/sync";
 import { HOLIDAY_TITLE } from "@/types/work";
 
 import { dateTaken, validateWorkBody } from "../shared";
@@ -43,7 +44,9 @@ export async function POST(request: Request) {
       // タイトルを送ってこない経路（API・将来のMCP）でも、Notionの一覧で開かずに読める名前にする。
       title: body.title?.trim() || defaultWorkTitle(body),
     });
-    return NextResponse.json({ record: created });
+    // 勤務予定・移動の同期の失敗は、勤務記録の保存の成否とは切り離して応答へ載せる。
+    const sync = await syncWorkRecord(userId, created).catch(() => null);
+    return NextResponse.json({ record: created, sync });
   } catch (error) {
     if (error instanceof WorkDateTakenError) return dateTaken();
     return externalApiError("notion", "勤務記録の作成", error);

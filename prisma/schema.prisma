@@ -35,6 +35,8 @@ model User {
   sleepHealthSent      SleepHealthSent[]
   sleepHealthExport    SleepHealthExport?
   travelPlans          TravelPlan[]
+  workRouteDefaults    WorkRouteDefault[]
+  workGenerated        WorkGenerated[]
   taskEventLinks       TaskEventLink[]
   eventOutcomes        EventOutcome[]
   annualLeaveGrants    AnnualLeaveGrant[]
@@ -258,6 +260,19 @@ model UiSetting {
   // 移動をGoogle Calendarへ書き出す先。未設定なら予定作成の既定の保存先へ入れる。
   travelCalendarId    String?
 
+  // 勤務記録から勤務予定・通勤/出張移動を自動生成する設定（docs/spec.md §46）。
+  // 既存の利用者の予定が突然増えないよう、既定はオフ（オプトイン）。
+  workAutoGenerate Boolean @default(false)
+  // 勤務時間（0時からの分）。既定は8:45〜17:15。昼休みは半休の勤務時間帯を決めるために使う。
+  workStartMinutes      Int @default(525)
+  workEndMinutes        Int @default(1035)
+  workLunchStartMinutes Int @default(720)
+  workLunchEndMinutes   Int @default(780)
+  // 勤務予定の書き出し先。未設定なら予定作成の既定の保存先へ入れる。
+  workCalendarId String?
+  // 在宅扱いの勤務場所名（string[]）。通勤の移動を生成しない。
+  workRemotePlaces Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -395,6 +410,68 @@ model TravelPlan {
   @@index([userId, departAt])
   // 書き出した予定はGoogleからも取得される。二重に描かないよう、取得した予定のIDで引いて落とす。
   @@index([userId, googleEventId])
+}
+
+// --- 勤務記録からの自動生成（docs/spec.md §46） ---
+
+/// 勤務先・出張先への既定の移動。「出発地 → 行き先」の組ごとに1行持つので、往路と復路で所要時間が
+/// 違っても個別に置け、将来は自宅以外の出発地へも広げられる。あくまで既定値で、特定の日の移動を
+/// 手で直しても更新しない。Notionの場所DBへ項目を足すと利用者のDBの構成を変えることになるため、
+/// DaySpan固有設定としてここに置く。
+model WorkRouteDefault {
+  id     String @id @default(cuid())
+  userId String
+
+  origin      String
+  destination String
+  mode        TravelMode @default(PUBLIC_TRANSIT)
+  minutes     Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, origin, destination])
+}
+
+enum WorkGeneratedKind {
+  WORK
+  OUTBOUND
+  RETURN
+}
+
+enum WorkGeneratedStatus {
+  ACTIVE
+  MANUAL
+}
+
+/// 勤務記録から自動生成した勤務予定（Google）・移動（TravelPlan）の対応表。ここに無いものは
+/// 手動で作ったものとして一切触らない。snapshot は生成した直後の中身で、現在の値と違えば利用者が
+/// 直接直したとみなし（MANUAL）、以後は更新も削除もしない。
+model WorkGenerated {
+  id     String @id @default(cuid())
+  userId String
+
+  workRecordId String
+  /// YYYY-MM-DD。出張は期間の日ごとに勤務予定を持つ。
+  date         String
+  kind         WorkGeneratedKind
+  status       WorkGeneratedStatus @default(ACTIVE)
+
+  googleCalendarId String?
+  googleEventId    String?
+  travelPlanId     String?
+
+  snapshot Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workRecordId, date, kind])
+  @@index([userId, workRecordId])
 }
 
 // --- iPhoneウィジェット連携 ---
