@@ -2,21 +2,10 @@ import { NextResponse } from "next/server";
 
 import { analyzeGoogleMapsRoute } from "@/lib/ai-google-maps-route";
 import { requireUserId } from "@/lib/auth-user";
-import { isGoogleMapsHost, parseGoogleMapsRouteUrl } from "@/lib/google-maps-route";
-
-const MAX_REDIRECTS = 3;
-const TIMEOUT_MS = 8_000;
+import { expandGoogleMapsUrl, validGoogleMapsUrl } from "@/lib/google-maps-expand";
+import { parseGoogleMapsRouteUrl } from "@/lib/google-maps-route";
 
 type RouteBody = { url?: unknown };
-
-function validGoogleMapsUrl(value: string): URL | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && isGoogleMapsHost(url.hostname) ? url : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Googleマップの共有URLを展開する。HTML本文は読まず、許可したGoogleホストへのリダイレクトだけを追う。
@@ -32,37 +21,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを入力してください。" }, { status: 400 });
   }
 
-  let current = validGoogleMapsUrl(value);
-  if (!current) {
+  if (!validGoogleMapsUrl(value)) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを貼り付けてください。" }, { status: 400 });
   }
 
   try {
-    for (let count = 0; count <= MAX_REDIRECTS; count += 1) {
-      const parsed = parseGoogleMapsRouteUrl(current.toString());
-      if (parsed) {
-        const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-        if (!token) {
-          return NextResponse.json(
-            { error: "not_configured", message: "Googleマップ経路のAI解析が設定されていません。" },
-            { status: 503 },
-          );
-        }
-        const route = await analyzeGoogleMapsRoute(token, { ...parsed, url: current.toString() });
-        return NextResponse.json({ route: { ...parsed, ...route } });
+    const found = await expandGoogleMapsUrl(value, parseGoogleMapsRouteUrl);
+    if (found) {
+      const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      if (!token) {
+        return NextResponse.json(
+          { error: "not_configured", message: "Googleマップ経路のAI解析が設定されていません。" },
+          { status: 503 },
+        );
       }
-
-      const response = await fetch(current, {
-        redirect: "manual",
-        cache: "no-store",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      const location = response.headers.get("location");
-      if (!location || response.status < 300 || response.status >= 400) break;
-
-      const next = validGoogleMapsUrl(new URL(location, current).toString());
-      if (!next) break;
-      current = next;
+      const route = await analyzeGoogleMapsRoute(token, { ...found.result, url: found.url });
+      return NextResponse.json({ route: { ...found.result, ...route } });
     }
   } catch (error) {
     console.error("[dayspan] Google Maps route URL resolve failed:", error instanceof Error ? error.message : error);
