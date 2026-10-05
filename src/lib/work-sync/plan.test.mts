@@ -186,3 +186,58 @@ test("半休は記録ごとに指定した勤務時間帯を使い、全休で�
   });
   assert.equal(full.items.length, 0);
 });
+
+test("移動の出発地・目的地は場所DBに当たれば名前と住所、キー・タイトルは元の文字列のまま（#1106）", () => {
+  const place = (name: string, address: string | null) => ({
+    id: name,
+    name,
+    address,
+    tags: [],
+    coordinates: null,
+    station: null,
+  });
+  const places = [place("自宅", "大阪府吹田市1-1"), place("栗東", "滋賀県栗東市2-2")];
+  const seen: string[] = [];
+  const spy: RouteLookup = (o, d) => {
+    seen.push(`${o}→${d}`);
+    return lookup(o, d);
+  };
+  const { items, missingRoutes } = planWorkItems(record({}), settings, places, spy);
+  const by = Object.fromEntries(items.map((item) => [item.kind, item]));
+  assert.deepEqual(missingRoutes, []);
+  assert.equal(by.OUTBOUND.origin, "自宅 大阪府吹田市1-1");
+  assert.equal(by.OUTBOUND.destination, "栗東 滋賀県栗東市2-2");
+  assert.equal(by.RETURN.origin, "栗東 滋賀県栗東市2-2");
+  assert.equal(by.RETURN.destination, "自宅 大阪府吹田市1-1");
+  assert.equal(by.OUTBOUND.title, "自宅 → 栗東");
+  assert.deepEqual(seen, ["自宅→栗東", "栗東→自宅"]);
+});
+
+test("homeOriginが名前と住所の形でも引き当てキーは変えない（#1106）", () => {
+  const places = [
+    { id: "h", name: "自宅", address: "大阪府吹田市1-1", tags: [], coordinates: null, station: null },
+  ];
+  const home = "自宅 大阪府吹田市1-1";
+  const keyed: RouteLookup = (o, d) =>
+    o === home && d === "栗東" ? { minutes: 40, mode: "PUBLIC_TRANSIT" } : null;
+  const { items, missingRoutes } = planWorkItems(
+    record({}),
+    { ...settings, homeOrigin: home },
+    places,
+    keyed,
+  );
+  const outbound = items.find((item) => item.kind === "OUTBOUND")!;
+  assert.equal(outbound.origin, home);
+  assert.equal(outbound.title, `${home} → 栗東`);
+  assert.deepEqual(missingRoutes, [{ origin: "栗東", destination: home }]);
+});
+
+test("場所DBに当たらない・住所が無いときは名前のまま（#1106）", () => {
+  const places = [
+    { id: "x", name: "自宅", address: null, tags: [], coordinates: null, station: null },
+  ];
+  const { items } = planWorkItems(record({}), settings, places, lookup);
+  const outbound = items.find((item) => item.kind === "OUTBOUND")!;
+  assert.equal(outbound.origin, "自宅");
+  assert.equal(outbound.destination, "栗東");
+});

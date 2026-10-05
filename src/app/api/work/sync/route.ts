@@ -5,7 +5,7 @@ import { requireUserId } from "@/lib/auth-user";
 import { getNotionWorkConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
 import { listWorkRecordsInRange } from "@/services/notion/work-logs";
-import { syncWorkRecord } from "@/services/work-sync/sync";
+import { loadPlacesForSync, syncWorkRecord } from "@/services/work-sync/sync";
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -46,8 +46,10 @@ export async function POST(request: Request) {
   const total = { created: 0, updated: 0, deleted: 0, manual: 0, errors: [] as string[] };
   const missing = new Map<string, { origin: string | null; destination: string }>();
   let disabled = false;
+  // 場所DBは記録ごとではなく1回だけ読む（Notionへの往復を月の件数ぶん積まない）。
+  const syncPlaces = await loadPlacesForSync(userId);
   for (const record of records) {
-    const result = await syncWorkRecord(userId, record);
+    const result = await syncWorkRecord(userId, record, syncPlaces);
     if (result.status === "disabled") {
       disabled = true;
       break;
