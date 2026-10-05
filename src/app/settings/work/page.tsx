@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 
+import { WorkAutoSection } from "@/components/settings/work-auto-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TagSection, type TagSectionState } from "@/components/settings/tag-section";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { loadWritableCalendars } from "@/services/calendar/load";
+import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { loadTagOptions } from "@/services/notion/tag-options";
 import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
 
@@ -19,7 +22,15 @@ export default async function WorkSettingsPage() {
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");
 
-  const options = await loadTagOptions(connection, "work");
+  const [options, autoSettings, routes, calendars] = await Promise.all([
+    loadTagOptions(connection, "work"),
+    getWorkAutoSettings(user.id),
+    db.workRouteDefault.findMany({
+      where: { userId: user.id },
+      orderBy: [{ destination: "asc" }, { origin: "asc" }],
+    }),
+    loadWritableCalendars(user.id),
+  ]);
 
   const state: TagSectionState = {
     kind: "work",
@@ -40,11 +51,23 @@ export default async function WorkSettingsPage() {
   return (
     <SettingsShell
       title="勤務"
-      description="勤務場所を色つきで登録しておけます。"
+      description="勤務場所を色つきで登録しておけます。勤務記録から勤務予定・移動を自動で作る設定もここにあります。"
       backHref="/settings"
       backLabel="設定"
     >
       <TagSection state={state} />
+      <WorkAutoSection
+        settings={autoSettings}
+        routes={routes.map((route) => ({
+          id: route.id,
+          origin: route.origin,
+          destination: route.destination,
+          mode: route.mode,
+          minutes: route.minutes,
+        }))}
+        calendars={calendars}
+        placeNames={(options ?? []).map((option) => option.name)}
+      />
     </SettingsShell>
   );
 }

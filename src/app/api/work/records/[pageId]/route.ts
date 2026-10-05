@@ -4,8 +4,10 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionWorkConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
+import { removeWorkRecordGenerated, syncWorkRecord } from "@/services/work-sync/sync";
 import {
   deleteWorkRecord,
+  getWorkRecord,
   updateWorkRecord,
   WorkDateTakenError,
   WorkRecordNotEditableError,
@@ -31,8 +33,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pa
   if (invalid) return invalid;
 
   try {
-    await updateWorkRecord(createNotionClient(connection), connection, pageId, body);
-    return NextResponse.json({ ok: true });
+    const notion = createNotionClient(connection);
+    await updateWorkRecord(notion, connection, pageId, body);
+    // 部分更新でも最新の中身から再計算する。同期の失敗は保存の成否と切り離して応答へ載せる。
+    const sync = await getWorkRecord(notion, connection, pageId)
+      .then((record) => (record ? syncWorkRecord(userId, record) : null))
+      .catch(() => null);
+    return NextResponse.json({ ok: true, sync });
   } catch (error) {
     if (error instanceof WorkRecordNotEditableError) return notEditable();
     if (error instanceof WorkDateTakenError) return dateTaken();
@@ -58,7 +65,8 @@ export async function DELETE(
 
   try {
     await deleteWorkRecord(createNotionClient(connection), connection, pageId);
-    return NextResponse.json({ ok: true });
+    const sync = await removeWorkRecordGenerated(userId, pageId).catch(() => null);
+    return NextResponse.json({ ok: true, sync });
   } catch (error) {
     if (error instanceof WorkRecordNotEditableError) return notEditable();
     return externalApiError("notion", "勤務記録の削除", error);

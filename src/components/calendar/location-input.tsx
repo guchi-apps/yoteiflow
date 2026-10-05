@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { MapPin, MapPlus, Plus, Sparkles } from "lucide-react";
 
@@ -31,6 +31,9 @@ const MAX_CANDIDATES = 6;
  * 地図から登録する導線（欄の右のアイコン）もここに置く。予定の場所・移動の出発地と目的地は
  * すべてこの部品を使っているため、1か所に足せば3つの欄すべてに入口ができる。
  */
+const GOOGLE_MAPS_URL_PATTERN =
+  /^https:\/\/(?:maps\.app\.goo\.gl|(?:www\.)?google\.com\/maps|maps\.google\.com)(?:[/?#]\S*)?$/;
+
 export function LocationInput({
   id = "event-location",
   label = "場所",
@@ -79,12 +82,42 @@ export function LocationInput({
   // 登録済みの場所で足りるなら、同じ場所を作り直す必要もAIを呼ぶ必要もない。
   const noCandidates = open && query.length > 0 && candidates.length === 0;
 
+  // GoogleマップのURLを貼り付けたときの解析の通し番号。古い応答や、URLを直した後の応答を捨てる（issue #1083）
+  const mapsRequestRef = useRef(0);
+
+  /**
+   * 欄全体が1つのGoogleマップURL（短縮URLを含む）のときだけ、共有取り込みと同じ解析で
+   * 場所名・住所へ置き換える。読めなければURLのまま残す（会議リンクと同じ扱い・docs/spec.md §7）。
+   */
+  const resolveMapsUrl = async (url: string) => {
+    const requestId = (mapsRequestRef.current += 1);
+    try {
+      const response = await fetch("/api/share-import/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok || mapsRequestRef.current !== requestId) return;
+      const { item } = (await response.json()) as { item: { type: string; title: string; address: string | null } };
+      if (item.type !== "place" || !item.title) return;
+      const text = toLocationText(item.title, item.address);
+      onChange(text);
+      onCommit?.(text);
+      setOpen(false);
+      setNotice("Googleマップの場所を反映しました。");
+    } catch {
+      // 読めないときはURLのまま残す
+    }
+  };
+
   const change = (next: string) => {
+    mapsRequestRef.current += 1;
     onChange(next);
     setOpen(true);
     setSuggestions(null);
     setError(null);
     setNotice(null);
+    if (!offline && GOOGLE_MAPS_URL_PATTERN.test(next.trim())) void resolveMapsUrl(next.trim());
   };
 
   /**

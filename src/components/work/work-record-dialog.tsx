@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
+import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
@@ -97,7 +98,8 @@ export function WorkRecordDialog({
   /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
   workMinutesPerDay?: number;
   onClose: () => void;
-  onSaved: () => void;
+  /** 勤務予定・移動の同期で知らせることがあれば、その文面を渡す。 */
+  onSaved: (syncNote?: string | null) => void;
 }) {
   const existing = draft.mode === "edit" ? draft.record : null;
 
@@ -252,10 +254,10 @@ export function WorkRecordDialog({
     setTimeout(onClose, 150);
   };
 
-  const finish = () => {
+  const finish = (syncNote: string | null = null) => {
     blurTextInput();
     setOpen(false);
-    setTimeout(onSaved, 150);
+    setTimeout(() => onSaved(syncNote), 150);
   };
 
   const send = async (path: string, init: RequestInit, fallback: string) => {
@@ -272,7 +274,8 @@ export function WorkRecordDialog({
         setError(await readErrorMessage(response, fallback));
         return;
       }
-      finish();
+      const body = (await response.json().catch(() => null)) as { sync?: SyncSummary } | null;
+      finish(describeSync(body?.sync));
     } catch {
       setError(fallback);
     } finally {

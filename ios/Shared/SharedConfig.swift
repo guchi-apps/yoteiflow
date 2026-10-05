@@ -27,13 +27,43 @@ enum SharedConfig {
         return components.url!
     }
 
-    /// ウィジェットのディープリンクから開く先のパス。許可した画面でなければ nil
+    /// 共有拡張から本体へ引き継ぐ入力のクエリのキー（issue #1083）。
+    /// Web側の `src/lib/share-import/handoff.ts`（`HANDOFF_QUERY_KEYS`）と揃えること
+    /// （`ios/scripts/check-consistency.mjs` が照合する）。引き継げるのは `/calendar` だけ。
+    static let handoffQueryKeys: [String] = [
+        "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes",
+    ]
+    static let handoffPath = "/calendar"
+    private static let handoffValueLimit = 2_048
+
+    /// 共有拡張が本体へ渡すURL。`yoteiflow://open?path=/calendar&newEvent=place&…` の形
+    static func handoffURL(query: [String: String]) -> URL {
+        var components = URLComponents()
+        components.scheme = deepLinkScheme
+        components.host = deepLinkHost
+        var items = [URLQueryItem(name: "path", value: handoffPath)]
+        for key in handoffQueryKeys {
+            if let value = query[key], !value.isEmpty { items.append(URLQueryItem(name: key, value: String(value.prefix(handoffValueLimit)))) }
+        }
+        components.queryItems = items
+        return components.url!
+    }
+
+    /// ウィジェット・共有拡張のディープリンクから開く先のパス。許可した画面でなければ nil。
+    /// パスは許可リストの完全一致で検証し、`/calendar` のときだけ許可したキーのクエリを引き継ぐ
+    /// （値の検証はWeb側でも行う）
     static func path(fromDeepLink url: URL) -> String? {
         guard url.scheme == deepLinkScheme, url.host == deepLinkHost,
-              let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                  .queryItems?.first(where: { $0.name == "path" })?.value,
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let path = items.first(where: { $0.name == "path" })?.value,
               deepLinkPaths.contains(path)
         else { return nil }
-        return path
+        guard path == handoffPath else { return path }
+
+        var components = URLComponents()
+        components.path = path
+        let handoff = items.filter { handoffQueryKeys.contains($0.name) && ($0.value?.count ?? 0) <= handoffValueLimit }
+        if !handoff.isEmpty { components.queryItems = handoff }
+        return components.string ?? path
     }
 }

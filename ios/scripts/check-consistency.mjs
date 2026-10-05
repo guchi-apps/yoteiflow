@@ -66,6 +66,15 @@ export function checkConsistency() {
     problems.push("認証シートがエフェメラルではありません");
   }
 
+  // 共有拡張 → 本体の引き継ぎクエリのキー（#1083）。Web側の許可キーと同じ並びにする
+  const sharedConfig = read("ios/Shared/SharedConfig.swift");
+  const handoffTs = read("src/lib/share-import/handoff.ts");
+  const swiftKeys = sharedConfig.match(/handoffQueryKeys: \[String\] = \[([^\]]+)\]/)?.[1].match(/"([^"]+)"/g)?.map((key) => key.slice(1, -1)).sort();
+  const tsKeys = handoffTs.match(/HANDOFF_QUERY_KEYS = \[([^\]]+)\]/)?.[1].match(/"([^"]+)"/g)?.map((key) => key.slice(1, -1)).sort();
+  if (!swiftKeys || !tsKeys || swiftKeys.join(",") !== tsKeys.join(",")) {
+    problems.push(`引き継ぎクエリのキーが一致しません: Swift=${swiftKeys} / TS=${tsKeys}`);
+  }
+
   // Bundle ID・表示名
   if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;")) problems.push("Bundle ID が com.gucchii.yoteiflow ではありません");
   if (!pbxproj.includes("INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;")) problems.push("表示名が YoteiFlow ではありません");
@@ -102,7 +111,6 @@ export function checkConsistency() {
   }
 
   // 開発用のURLをコミットしていない（アプリもウィジェットも Shared/SharedConfig.swift の値を読む）
-  const sharedConfig = read("ios/Shared/SharedConfig.swift");
   if (!/baseURL = URL\(string: "https:\/\/dayspan\.gucchii\.com\/"\)!/.test(sharedConfig)) {
     problems.push("SharedConfig.baseURL が本番URLではありません（開発用のまま？）");
   }
