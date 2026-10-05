@@ -18,6 +18,7 @@ import { listRemindersInRange } from "@/services/notion/reminders";
 import { listShoppingPlansInRange, shoppingPlanReady } from "@/services/notion/shopping-plans";
 import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
+import { attachBringInfo, listBringItems } from "@/services/task-links/bring-items";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 import type {
   CalendarEventItem,
@@ -90,11 +91,12 @@ export async function loadCalendarData(
   options?: { todayKey?: string },
 ): Promise<CalendarLoadResult> {
   // 移動と紐づけはDaySpanのDBにあるため、外部APIの往復は増えない。Google・Notionと並行に読む。
-  const [events, notion, travelPlans, taskLinks] = await Promise.all([
+  const [events, notion, travelPlans, taskLinks, bringItems] = await Promise.all([
     loadGoogleEvents(userId, range),
     loadNotionItems(userId, range, options?.todayKey),
     listTravelsInRange(userId, range),
     listTaskLinks(userId),
+    listBringItems(userId),
   ]);
 
   // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
@@ -114,11 +116,14 @@ export async function loadCalendarData(
 
   // 紐づけの解決とずれの判定はここで済ませる（docs/spec.md §31）。月表示は1度の描画で
   // 全てのタスクを何度も見るため、描くたびに判定すると同じ計算がその回数ぶん積み上がる。
-  const tasks = attachTaskLinks(
-    notion.tasks,
-    taskLinks,
-    new Map(events.items.map((item) => [item.id, item])),
-    new Map(travels.map((travel) => [travel.id, travel])),
+  const tasks = attachBringInfo(
+    attachTaskLinks(
+      notion.tasks,
+      taskLinks,
+      new Map(events.items.map((item) => [item.id, item])),
+      new Map(travels.map((travel) => [travel.id, travel])),
+    ),
+    bringItems,
   );
 
   return {

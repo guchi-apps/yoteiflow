@@ -38,6 +38,7 @@ model User {
   workRouteDefaults    WorkRouteDefault[]
   workGenerated        WorkGenerated[]
   taskEventLinks       TaskEventLink[]
+  taskBringItems       TaskBringItem[]
   eventOutcomes        EventOutcome[]
   annualLeaveGrants    AnnualLeaveGrant[]
   internalTaskOperations InternalTaskOperation[]
@@ -605,6 +606,27 @@ model TaskEventLink {
   @@index([userId, eventId])
   // 移動を動かした・消したときに、その移動に紐づくタスクを引くため。
   @@index([userId, travelId])
+}
+
+/// 予定の「持ち物」（issue #1080）。1項目 = 1 Task で、タスク本体はNotionにある。
+/// 「何のための持ち物か」（対象の予定）だけをここに持つ。「いつまでに」は、その予定へ向かう
+/// 移動の出発へ紐づけた TaskEventLink（DUE・BEFORE_START）が表す。TaskEventLink は行き先ごとに
+/// 1件で、移動へ紐づけると予定を指せなくなるため、予定との関係は別に持つ。
+model TaskBringItem {
+  id     String @id @default(cuid())
+  userId String
+
+  taskId     String // Notionのページ ID
+  calendarId String
+  eventId    String // 繰り返し予定は展開した1回分のID
+  eventTitle String // 表示用の予定名の写し
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+  @@index([userId, eventId])
 }
 
 // --- 通知 ---

@@ -151,7 +151,20 @@ export type TaskItem = {
    * 行き先ごとに1件のため、多くても期限と予定日の2件になる。
    */
   links: TaskEventLinkItem[];
+  /**
+   * 予定の「持ち物」として登録されたタスクなら、その対象の予定（issue #1080）。DaySpanのDBで
+   * 持つ情報のため、読み込み側（services/task-links/bring-items）で埋める。無い応答（古い保存済み）は
+   * 通常のタスクとして扱う。
+   */
+  bring?: TaskBringInfo | null;
   url: string | null;
+};
+
+/** 持ち物タスクの対象の予定。 */
+export type TaskBringInfo = {
+  calendarId: string;
+  eventId: string;
+  eventTitle: string;
 };
 
 /** タスクを予定のどの段階に置くか。Prismaの TaskEventStage と同じ並びにする。 */

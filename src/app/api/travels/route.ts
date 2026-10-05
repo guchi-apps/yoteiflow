@@ -10,6 +10,7 @@ import {
   type TravelReturnInput,
   type TravelWriteInput,
 } from "@/services/travel/plans";
+import { attachBringItemsForEvent } from "@/services/task-links/bring-items";
 
 type CreateBody = Partial<TravelWriteInput> & { returnTrip?: TravelReturnInput | null };
 
@@ -59,6 +60,14 @@ export async function POST(request: Request) {
       },
       body.returnTrip ?? null,
     );
+
+    // その予定の持ち物のうち移動が無くて期限が未設定のものを、この移動の出発へ紐づける
+    // （issue #1080）。失敗しても移動の作成は成功のまま。
+    if (body.linkedEventId) {
+      await attachBringItemsForEvent(userId, body.linkedEventId).catch((error) =>
+        console.error("[dayspan] bring item attach failed:", error),
+      );
+    }
 
     return NextResponse.json(result);
   } catch (error) {

@@ -426,6 +426,8 @@ export async function unlinkTask(userId: string, linkId: string): Promise<boolea
 /** タスクを消した・完了で作り直したときに、そのタスクの紐づけを外す。 */
 export async function unlinkTaskByTaskId(userId: string, taskId: string): Promise<void> {
   await db.taskEventLink.deleteMany({ where: { userId, taskId } });
+  // 持ち物の対象情報も、指す先のタスクが無くなるため一緒に外す（issue #1080）。
+  await db.taskBringItem.deleteMany({ where: { userId, taskId } });
 }
 
 /**
@@ -480,18 +482,20 @@ export async function dropLinksForEvent(
 ): Promise<number> {
   const separator = eventId.indexOf("_");
 
+  // 持ち物の対象情報も同じ範囲で外す（タスクそのものは残す・issue #1080）。
   if (scope === "single" || separator < 0) {
+    await db.taskBringItem.deleteMany({ where: { userId, eventId } });
     const result = await db.taskEventLink.deleteMany({ where: { userId, eventId } });
     return result.count;
   }
 
   const prefix = `${eventId.slice(0, separator)}_`;
+  // 回のIDは `<親のID>_YYYYMMDDTHHMMSSZ` で桁が揃っているため、文字列の大小で前後を比べられる。
+  const eventIdFilter =
+    scope === "all" ? { startsWith: prefix } : { startsWith: prefix, gte: eventId };
+  await db.taskBringItem.deleteMany({ where: { userId, eventId: eventIdFilter } });
   const result = await db.taskEventLink.deleteMany({
-    where: {
-      userId,
-      // 回のIDは `<親のID>_YYYYMMDDTHHMMSSZ` で桁が揃っているため、文字列の大小で前後を比べられる。
-      eventId: scope === "all" ? { startsWith: prefix } : { startsWith: prefix, gte: eventId },
-    },
+    where: { userId, eventId: eventIdFilter },
   });
 
   return result.count;
