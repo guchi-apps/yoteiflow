@@ -43,6 +43,24 @@ export type PendingEventLink = {
   date: string;
 };
 
+/** 予定と移動をまとめて選ぶための共通の形。移動は travelId を持ち、calendarId / id は空文字。 */
+type PickItem = CalendarEventItem & { travelId?: string };
+
+function travelToPickItem(travel: TravelItem): PickItem {
+  return {
+    kind: "event",
+    id: "",
+    calendarId: "",
+    title: travel.title,
+    allDay: false,
+    start: travel.start,
+    end: travel.end,
+    travelId: travel.id,
+  } as unknown as PickItem;
+}
+
+const pickKey = (item: PickItem) => (item.travelId ? `travel:${item.travelId}` : item.id);
+
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 // セルに並べる予定の数。それを超えた分は日付を押して下の一覧から選ぶ。
 const CELL_LIMIT = 2;
@@ -79,20 +97,19 @@ export function EventPickerDialog({
   );
   const [monthKey, setMonthKey] = useState(() => todayKey.slice(0, 7));
   const [events, setEvents] = useState<CalendarEventItem[] | null>(null);
-  // 紐づけ先の種類（予定・移動。issue #1079）。移動は予定と同じ形に直して以降は共通に扱う。
-  const [source, setSource] = useState<"event" | "travel">("event");
+  // 移動も予定と同じ形に直して、予定とまとめて1つの一覧・月グリッドに並べる（issue #1097）。
   const [travels, setTravels] = useState<TravelItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [travelError, setTravelError] = useState<string | null>(null);
   // 月グリッドか日付ごとの一覧か（issue #809）。端末には覚えさせない。
   const [mode, setMode] = useState<"month" | "list">("month");
   const [focusDay, setFocusDay] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<(CalendarEventItem & { travelId?: string }) | null>(null);
+  const [chosen, setChosen] = useState<PickItem | null>(null);
   const [stage, setStage] = useState<TaskEventStage>("BEFORE_START");
   // 月を素早く送ったときに、遅れて届いた古い月の応答で上書きしない。
   const requestId = useRef(0);
 
   useEffect(() => {
-    if (source !== "travel") return;
     let cancelled = false;
 
     fetch(`/api/travels?month=${monthKey}`)
@@ -103,22 +120,21 @@ export function EventPickerDialog({
       .then((data) => {
         if (!cancelled) {
           setTravels(data.travels ?? []);
-          setError(null);
+          setTravelError(null);
         }
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
         setTravels([]);
-        setError(cause instanceof Error ? cause.message : "移動を取得できませんでした。");
+        setTravelError(cause instanceof Error ? cause.message : "移動を取得できませんでした。");
       });
 
     return () => {
       cancelled = true;
     };
-  }, [monthKey, source]);
+  }, [monthKey]);
 
   useEffect(() => {
-    if (source !== "event") return;
     const id = ++requestId.current;
     let cancelled = false;
 
@@ -145,15 +161,20 @@ export function EventPickerDialog({
     return () => {
       cancelled = true;
     };
-  }, [monthKey, source]);
+  }, [monthKey]);
+
+  const items = useMemo<PickItem[] | null>(() => {
+    if (events === null || travels === null) return null;
+    return [...events, ...travels.map(travelToPickItem)];
+  }, [events, travels]);
 
   const weeks = useMemo(
     () => getVisibleDays("month", parseMonthKey(monthKey), weekStartsOn).weeks,
     [monthKey, weekStartsOn],
   );
 
-  const eventsOn = (dateKey: string): CalendarEventItem[] =>
-    (events ?? [])
+  const eventsOn = (dateKey: string): PickItem[] =>
+    (items ?? [])
       .filter((event) => utils.eventCoversDay(event, dateKey))
       // 終日を先に、続いて開始の早い順。
       .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
@@ -163,22 +184,9 @@ export function EventPickerDialog({
     setTimeout(onCancel, 150);
   };
 
-  const choose = (event: CalendarEventItem) => {
+  const choose = (event: PickItem) => {
     setChosen(event);
     setStage("BEFORE_START");
-  };
-
-  const chooseTravel = (travel: TravelItem) => {
-    choose({
-      kind: "event",
-      id: "",
-      calendarId: "",
-      title: travel.title,
-      allDay: false,
-      start: travel.start,
-      end: travel.end,
-      travelId: travel.id,
-    } as unknown as CalendarEventItem & { travelId?: string });
   };
 
   const confirm = () => {
@@ -211,7 +219,7 @@ export function EventPickerDialog({
         .filter((day) => day.dayEvents.length > 0),
     // eventsOn は events と utils だけに依存する。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [weeks, monthKey, events, utils],
+    [weeks, monthKey, items, utils],
   );
   const focusEvents = focusDay ? eventsOn(focusDay) : [];
 
@@ -259,28 +267,13 @@ export function EventPickerDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>{targetLabel}にする{source === "travel" ? "移動" : "予定"}を選ぶ</DialogTitle>
+              <DialogTitle>{targetLabel}にする予定・移動を選ぶ</DialogTitle>
               <DialogDescription className="type-body-small text-on-surface-variant">
-                {source === "travel" ? "移動" : "予定"}を押すと確認に進みます。
+                予定・移動を押すと確認に進みます。
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex min-w-0 flex-col gap-3">
-              <div className="flex gap-1">
-                {(["event", "travel"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    size="sm"
-                    variant={source === value ? "secondary" : "outline"}
-                    className={cn(source === value && "text-on-secondary-container")}
-                    onClick={() => setSource(value)}
-                  >
-                    {value === "event" ? "予定" : "移動"}
-                  </Button>
-                ))}
-              </div>
-
               <div className="flex items-center justify-between gap-2">
                 <Button
                   variant="ghost"
@@ -308,7 +301,6 @@ export function EventPickerDialog({
                 </Button>
               </div>
 
-              {source === "event" && (
               <div className="flex gap-1">
                 {(["month", "list"] as const).map((value) => (
                   <Button
@@ -323,36 +315,16 @@ export function EventPickerDialog({
                   </Button>
                 ))}
               </div>
-              )}
 
-              {source === "travel" ? (
-                <div className="flex max-h-[50dvh] flex-col overflow-y-auto rounded-md border border-outline-variant">
-                  {travels !== null && travels.length === 0 && (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">移動がありません。</p>
-                  )}
-                  {(travels ?? []).map((travel) => (
-                    <button
-                      key={travel.id}
-                      type="button"
-                      onClick={() => chooseTravel(travel)}
-                      className="flex w-full items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
-                    >
-                      <span className="clip-nowrap">{travel.title}</span>
-                      <span className="shrink-0 text-xs text-on-surface-variant">
-                        {formatLinkedDate(travel.start, timeZone)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : mode === "list" ? (
+              {mode === "list" ? (
                 <div
                   className={cn(
                     "flex max-h-[50dvh] flex-col overflow-y-auto rounded-md border border-outline-variant transition-opacity",
-                    events === null && "opacity-50",
+                    items === null && "opacity-50",
                   )}
                 >
-                  {events !== null && listDays.length === 0 && (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">予定がありません。</p>
+                  {items !== null && listDays.length === 0 && (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">予定・移動がありません。</p>
                   )}
                   {listDays.map(({ dateKey, dayEvents }) => (
                     <div key={dateKey}>
@@ -361,7 +333,7 @@ export function EventPickerDialog({
                       </p>
                       {dayEvents.map((event) => (
                         <button
-                          key={event.id}
+                          key={pickKey(event)}
                           type="button"
                           onClick={() => choose(event)}
                           className="flex w-full items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
@@ -381,7 +353,7 @@ export function EventPickerDialog({
               <div
                 className={cn(
                   "grid grid-cols-7 border-t border-l border-outline-variant transition-opacity",
-                  events === null && "opacity-50",
+                  items === null && "opacity-50",
                 )}
               >
                 {Array.from({ length: 7 }, (_, i) => WEEKDAYS[(weekStartsOn + i) % 7]).map((name) => (
@@ -418,7 +390,7 @@ export function EventPickerDialog({
                       </button>
                       {dayEvents.slice(0, CELL_LIMIT).map((event) => (
                         <button
-                          key={event.id}
+                          key={pickKey(event)}
                           type="button"
                           title={event.title}
                           onClick={() => choose(event)}
@@ -442,17 +414,17 @@ export function EventPickerDialog({
               </div>
               )}
 
-              {source === "event" && mode === "month" && focusDay && (
+              {mode === "month" && focusDay && (
                 <div className="flex flex-col rounded-md border border-outline-variant">
                   <p className="border-b border-outline-variant px-3 py-1.5 text-xs text-on-surface-variant">
-                    {formatLinkedDate(focusDay, timeZone)}の予定
+                    {formatLinkedDate(focusDay, timeZone)}の予定・移動
                   </p>
                   {focusEvents.length === 0 && (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">予定がありません。</p>
+                    <p className="px-3 py-3 text-sm text-muted-foreground">予定・移動がありません。</p>
                   )}
                   {focusEvents.map((event) => (
                     <button
-                      key={event.id}
+                      key={pickKey(event)}
                       type="button"
                       onClick={() => choose(event)}
                       className="flex items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
@@ -468,8 +440,8 @@ export function EventPickerDialog({
                 </div>
               )}
 
-              {(source === "travel" ? travels === null : events === null) && <p className="text-xs text-muted-foreground">読み込んでいます…</p>}
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {items === null && <p className="text-xs text-muted-foreground">読み込んでいます…</p>}
+              {(error ?? travelError) && <p className="text-sm text-destructive">{error ?? travelError}</p>}
             </div>
 
             <DialogFooter>
