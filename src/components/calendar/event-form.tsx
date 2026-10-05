@@ -11,7 +11,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { dateKeyDiffDays } from "@/lib/calendar-range";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
@@ -493,18 +492,14 @@ export function toEventDraft(event: CalendarEventItem, timeZone: string): EventD
 }
 
 /**
- * 複製用の初期値。日時だけ現在の時間に置き換え、それ以外は元の予定を引き継ぐ。
+ * 複製用の初期値。日時も含めて元の予定をそのまま引き継ぐ（issue #1084）。
  * `event` を含めないため新規作成として扱われ、繰り返しの入力欄も選び直せる。
  */
 export function duplicateEventDraft(event: CalendarEventItem, timeZone: string): EventDraft {
-  const { start, end } = event.allDay
-    ? duplicateAllDayRange(event, timeZone)
-    : duplicateTimedRange(event, timeZone);
-
   return {
     allDay: event.allDay,
-    start,
-    end,
+    start: event.allDay ? event.start : isoToLocalInput(event.start, timeZone),
+    end: event.allDay ? event.end : isoToLocalInput(event.end, timeZone),
     title: event.title,
     // 使用していないカレンダーの予定を複製するときは、元のカレンダーを引き継がない。
     // 保存先の選択肢に出ないカレンダーが初期値になると、そのままでは保存できない。
@@ -514,25 +509,4 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     tentative: event.tentative,
     notification: event.notification ?? null,
   };
-}
-
-function duplicateTimedRange(event: CalendarEventItem, timeZone: string) {
-  const durationMs = new Date(event.end).getTime() - new Date(event.start).getTime();
-  const now = new Date();
-  return {
-    start: isoToLocalInput(now.toISOString(), timeZone),
-    end: isoToLocalInput(new Date(now.getTime() + durationMs).toISOString(), timeZone),
-  };
-}
-
-function duplicateAllDayRange(event: CalendarEventItem, timeZone: string) {
-  const durationDays = dateKeyDiffDays(event.start, event.end);
-  const todayKey = isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
-  return { start: todayKey, end: shiftDateKeyByDays(todayKey, durationDays) };
-}
-
-function shiftDateKeyByDays(dateKey: string, days: number): string {
-  const date = new Date(`${dateKey}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
