@@ -57,7 +57,7 @@ export function TaskLinkDialog({
 }: {
   /** 紐づけ先が予定のとき。移動のときは travel を渡す。 */
   event?: CalendarEventItem;
-  /** 紐づけ先が移動のとき（issue #914）。段階は出発・到着の呼び名になり、新規作成は出さない。 */
+  /** 紐づけ先が移動のとき（issue #914）。段階は出発・到着の呼び名になる。 */
   travel?: TravelItem;
   timeZone: string;
   onCancel: () => void;
@@ -250,7 +250,7 @@ export function TaskLinkDialog({
                 （issue #794）ため、一覧の先頭に固定し、既存タスクから選ぶのと対等な選択肢にする。
                 読み込み中・0件でも押せる（既存タスクの有無に関わらず新規作成はできるため）。
               */}
-              {!travel && (
+              {onCreateTask && (
                 <button
                   type="button"
                   onClick={createTask}
