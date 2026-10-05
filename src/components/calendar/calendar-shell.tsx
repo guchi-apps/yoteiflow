@@ -661,6 +661,33 @@ export function CalendarShell({
     });
   };
 
+  /** 移動の詳細から「新しいタスクを作る」。入力画面を移動への紐づけつきで開く（issue #1079）。 */
+  const createTaskForTravel = (
+    travel: TravelItem,
+    stage: TaskEventStage,
+    target: TaskLinkTarget,
+  ) => {
+    if (offline) return;
+    setViewingTravel(null);
+    setItemDialog({
+      initialKind: "task",
+      drafts: {
+        task: {
+          dueMode: "none",
+          due: "",
+          linkTo: {
+            calendarId: "",
+            eventId: "",
+            travelId: travel.id,
+            eventTitle: travel.title,
+            stage,
+            target,
+          },
+        },
+      },
+    });
+  };
+
   /** 新規作成の初期値。指定の日時から1時間ぶんで開く。 */
   const newEventDraft = (dateKey: string, minutes: number): EventDraft => ({
     allDay: false,
@@ -1061,6 +1088,7 @@ export function CalendarShell({
         onAddTravelForEvent={addTravelForEvent}
         onLinkTaskForEvent={linkTaskForEvent}
         onCreateTaskForEvent={createTaskForEvent}
+        onCreateTaskForTravel={createTaskForTravel}
         onSelectSlot={(dateKey, minutes) => {
           if (offline) return;
           setQuickDraft(toQuickEventDraft(dateKey, minutes));
@@ -1178,6 +1206,7 @@ function CalendarBody({
   onAddTravelForEvent,
   onLinkTaskForEvent,
   onCreateTaskForEvent,
+  onCreateTaskForTravel,
   onSelectSlot,
   onSelectRange,
   onQuickAddOnDay,
@@ -1260,6 +1289,11 @@ function CalendarBody({
   /** 予定の詳細からタスクを紐づける（docs/spec.md §31）。 */
   onLinkTaskForEvent: (event: CalendarEventItem) => void;
   /** 紐づけダイアログから、紐づけた状態のタスクを新しく作る。 */
+  onCreateTaskForTravel: (
+    travel: TravelItem,
+    stage: TaskEventStage,
+    target: TaskLinkTarget,
+  ) => void;
   onCreateTaskForEvent: (
     event: CalendarEventItem,
     stage: TaskEventStage,
@@ -1719,6 +1753,7 @@ function CalendarBody({
           )}
           onOpenTask={onOpenTaskForEvent}
           onLinked={handleSaved}
+          onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}
 

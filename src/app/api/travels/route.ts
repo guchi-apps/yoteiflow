@@ -1,14 +1,35 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
+import { getMonthsFetchRange } from "@/lib/calendar-range";
 import {
   createTravel,
+  listTravelsInRange,
+  toTravelItem,
   validateTravelInput,
   type TravelReturnInput,
   type TravelWriteInput,
 } from "@/services/travel/plans";
 
 type CreateBody = Partial<TravelWriteInput> & { returnTrip?: TravelReturnInput | null };
+
+/**
+ * 指定した月の移動だけを返す（`?month=YYYY-MM`）。タスクの入力画面で紐づける移動を選ぶために使う
+ * （issue #1079）。DaySpanのDBだけを読み、外部APIの往復は増えない。
+ */
+export async function GET(request: Request) {
+  const userId = await requireUserId();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const month = new URL(request.url).searchParams.get("month") ?? "";
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return NextResponse.json({ error: "month is required" }, { status: 400 });
+  }
+
+  const plans = await listTravelsInRange(userId, getMonthsFetchRange([month]));
+
+  return NextResponse.json({ travels: plans.map((plan) => toTravelItem(plan)) });
+}
 
 /** 移動を作る（docs/spec.md §29）。往復のときは復路も同じ呼び出しで作る。 */
 export async function POST(request: Request) {

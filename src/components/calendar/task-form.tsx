@@ -24,6 +24,7 @@ import type { TagOption } from "@/services/notion/tag-options";
 import { cn } from "@/lib/utils";
 import {
   TASK_EVENT_STAGE_LABELS,
+  TRAVEL_TASK_STAGE_LABELS,
   TASK_LINK_TARGETS,
   TASK_LINK_TARGET_LABELS,
   type TaskEventLinkItem,
@@ -57,7 +58,7 @@ type DueMode = "datetime" | "date" | "none";
 const DATE_MODES: [DueMode | "link", string][] = [
   ["datetime", "日時指定"],
   ["date", "日付のみ"],
-  ["link", "予定と紐付け"],
+  ["link", "予定・移動と紐付け"],
   ["none", "未設定"],
 ];
 
@@ -81,6 +82,8 @@ export type TaskDraft = {
   linkTo?: {
     calendarId: string;
     eventId: string;
+    /** 紐づけ先が移動のとき（issue #1079）。calendarId / eventId は空文字。 */
+    travelId?: string;
     eventTitle: string;
     stage: TaskEventStage;
     /** 決まった日時の行き先。期限と予定日のどちらへ入れるか。 */
@@ -182,7 +185,7 @@ export function TaskForm({
 
     if (linkTo?.target === target) {
       return {
-        label: `${linkTo.eventTitle} の${TASK_EVENT_STAGE_LABELS[linkTo.stage]}`,
+        label: `${linkTo.eventTitle} の${(linkTo.travelId ? TRAVEL_TASK_STAGE_LABELS : TASK_EVENT_STAGE_LABELS)[linkTo.stage]}`,
         stage: linkTo.stage,
         link: null,
       };
@@ -229,15 +232,22 @@ export function TaskForm({
   /** 保存したタスクを予定へ紐づける。行き先へ入った日時を返す。 */
   const linkCreatedTask = async (
     taskId: string,
-    linkTo: { calendarId: string; eventId: string; stage: TaskEventStage; target: TaskLinkTarget },
+    linkTo: {
+      calendarId: string;
+      eventId: string;
+      travelId?: string;
+      stage: TaskEventStage;
+      target: TaskLinkTarget;
+    },
   ): Promise<string | null> => {
     const response = await fetch("/api/task-links", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         taskId,
-        calendarId: linkTo.calendarId,
-        eventId: linkTo.eventId,
+        ...(linkTo.travelId
+          ? { travelId: linkTo.travelId }
+          : { calendarId: linkTo.calendarId, eventId: linkTo.eventId }),
         stage: linkTo.stage,
         target: linkTo.target,
       }),
@@ -276,6 +286,7 @@ export function TaskForm({
       const linkOps: {
         calendarId: string;
         eventId: string;
+        travelId?: string;
         stage: TaskEventStage;
         target: TaskLinkTarget;
       }[] = [
@@ -445,6 +456,7 @@ export function TaskForm({
               </div>
             </div>
             <TaskStagePicker
+              travel={Boolean(draft.linkTo.travelId)}
               value={linkStage}
               disabled={busy || savedTaskId !== null}
               onChange={setLinkStage}
@@ -695,7 +707,7 @@ function PendingLinkField({
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-secondary-container px-2.5 py-1 text-sm text-on-secondary-container">
           <TaskStageMark stage={pending.stage} className="h-3.5 w-4.5 text-on-secondary-container" />
-          {pending.eventTitle} の{TASK_EVENT_STAGE_LABELS[pending.stage]}
+          {pending.eventTitle} の{(pending.travelId ? TRAVEL_TASK_STAGE_LABELS : TASK_EVENT_STAGE_LABELS)[pending.stage]}
         </span>
         <Button variant="ghost" size="sm" disabled={disabled} onClick={onReselect}>
           選び直す
