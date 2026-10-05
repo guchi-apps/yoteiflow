@@ -11,6 +11,7 @@ import {
 } from "@/types/calendar";
 
 import { dropLinksForTravel, syncLinksForTravel } from "@/services/task-links/links";
+import type { TravelLinkInput } from "./link-input";
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
 import { resolveTravelCalendarId } from "./settings";
 
@@ -229,6 +230,31 @@ export async function updateTravel(
 }
 
 /**
+ * 既存の予定と移動を後から結ぶ・外す（issue #1105）。linkがnullなら解除。
+ *
+ * 紐づけ先の予定は存在を確かめない。Googleへの往復が増えるうえ、予定は取得範囲の外にもありうる
+ * （タスクの紐づけと同じ割り切り）。Googleへ書き出す内容に紐づけは含まれないため再書き出しもしない。
+ * 画面の判定は予定IDだけで、カレンダーIDは保存するだけ。
+ */
+export async function setTravelLink(
+  userId: string,
+  travelId: string,
+  link: TravelLinkInput | null,
+): Promise<TravelItem | null> {
+  const existing = await getTravel(userId, travelId);
+  if (!existing) return null;
+
+  const updated = await db.travelPlan.update({
+    where: { id: existing.id },
+    data: link
+      ? { linkedEventId: link.eventId, linkedCalendarId: link.calendarId, returnLeg: link.returnLeg }
+      : { linkedEventId: null, linkedCalendarId: null, returnLeg: false },
+  });
+
+  return toTravelItem(updated);
+}
+
+/**
  * 移動を消す。Google側の予定も消す。
  *
  * Googleを先に消すのは、DBの行を先に消すと書き出し先のIDが分からなくなり、
@@ -266,8 +292,11 @@ function toWriteData(input: TravelWriteInput) {
     arriveAt,
     note: input.note?.trim() || null,
     estimateSource: resolveEstimateSource(input),
-    linkedEventId: input.linkedEventId ?? null,
-    linkedCalendarId: input.linkedCalendarId ?? null,
+    // 項目ごと渡されなかったときは触らない。編集の保存で紐づけが外れないようにするため
+    // （issue #1105）。作成のときは未指定でもnullで入る（列の既定値）。紐づけの付け外しは
+    // setTravelLink の入口だけが行う。
+    ...(input.linkedEventId !== undefined ? { linkedEventId: input.linkedEventId } : {}),
+    ...(input.linkedCalendarId !== undefined ? { linkedCalendarId: input.linkedCalendarId } : {}),
   };
 }
 

@@ -44,7 +44,7 @@ export type PendingEventLink = {
 };
 
 /** 予定と移動をまとめて選ぶための共通の形。移動は travelId を持ち、calendarId / id は空文字。 */
-type PickItem = CalendarEventItem & { travelId?: string };
+type PickItem = CalendarEventItem & { travelId?: string; travel?: TravelItem };
 
 function travelToPickItem(travel: TravelItem): PickItem {
   return {
@@ -56,8 +56,21 @@ function travelToPickItem(travel: TravelItem): PickItem {
     start: travel.start,
     end: travel.end,
     travelId: travel.id,
+    travel,
   } as unknown as PickItem;
 }
+
+/** `onSelect` が返す項目。移動のとき travelId を持ち、calendarId / eventId は空文字。 */
+export type PickedItem = {
+  calendarId: string;
+  eventId: string;
+  travelId?: string;
+  title: string;
+  start: string;
+  end: string;
+  /** 移動のとき、選んだ移動そのもの（いまの紐づけ先の判定に使う）。 */
+  travel?: TravelItem;
+};
 
 const pickKey = (item: PickItem) => (item.travelId ? `travel:${item.travelId}` : item.id);
 
@@ -74,17 +87,31 @@ const CELL_LIMIT = 2;
  * 使用オフのカレンダーの予定も選べる。紐づけはGoogleへ書き込まないため。
  */
 export function EventPickerDialog({
-  target,
+  target = "DUE",
   timeZone,
   weekStartsOn,
+  kinds = "both",
+  title,
+  description,
   onCancel,
   onPick,
+  onSelect,
 }: {
-  target: TaskLinkTarget;
+  /** タスクの紐づけ先として選ぶときの行き先。`onSelect` を使うときは不要。 */
+  target?: TaskLinkTarget;
   timeZone: string;
   weekStartsOn: number;
+  /** 並べるもの。既定は予定と移動の両方（タスクの紐づけ）。移動と予定の結び直しでは片方だけ出す（issue #1105）。 */
+  kinds?: "event" | "travel" | "both";
+  title?: string;
+  description?: string;
   onCancel: () => void;
-  onPick: (link: PendingEventLink) => void;
+  onPick?: (link: PendingEventLink) => void;
+  /**
+   * 渡すと、タスク用の段階の選択・確認を出さず、押した項目をそのまま返す（issue #1105）。
+   * 予定と移動を結び直す入口が、確認を自前で持つため。
+   */
+  onSelect?: (item: PickedItem) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -165,8 +192,11 @@ export function EventPickerDialog({
 
   const items = useMemo<PickItem[] | null>(() => {
     if (events === null || travels === null) return null;
-    return [...events, ...travels.map(travelToPickItem)];
-  }, [events, travels]);
+    return [
+      ...(kinds === "travel" ? [] : events),
+      ...(kinds === "event" ? [] : travels.map(travelToPickItem)),
+    ];
+  }, [events, travels, kinds]);
 
   const weeks = useMemo(
     () => getVisibleDays("month", parseMonthKey(monthKey), weekStartsOn).weeks,
@@ -185,12 +215,28 @@ export function EventPickerDialog({
   };
 
   const choose = (event: PickItem) => {
+    if (onSelect) {
+      setOpen(false);
+      setTimeout(
+        () =>
+          onSelect({
+            calendarId: event.calendarId,
+            eventId: event.id,
+            ...(event.travelId ? { travelId: event.travelId, travel: event.travel } : {}),
+            title: event.title,
+            start: event.start,
+            end: event.end,
+          }),
+        150,
+      );
+      return;
+    }
     setChosen(event);
     setStage("BEFORE_START");
   };
 
   const confirm = () => {
-    if (!chosen) return;
+    if (!chosen || !onPick) return;
     const resolved = resolveStageDate(chosen, stage);
 
     setOpen(false);
@@ -267,9 +313,9 @@ export function EventPickerDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>{targetLabel}にする予定・移動を選ぶ</DialogTitle>
+              <DialogTitle>{title ?? `${targetLabel}にする予定・移動を選ぶ`}</DialogTitle>
               <DialogDescription className="type-body-small text-on-surface-variant">
-                予定・移動を押すと確認に進みます。
+                {description ?? "予定・移動を押すと確認に進みます。"}
               </DialogDescription>
             </DialogHeader>
 
