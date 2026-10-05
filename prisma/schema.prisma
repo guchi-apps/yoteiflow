@@ -37,6 +37,8 @@ model User {
   travelPlans          TravelPlan[]
   workRouteDefaults    WorkRouteDefault[]
   workGenerated        WorkGenerated[]
+  workPlaceDefaults    WorkPlaceDefault[]
+  workRecordSettings   WorkRecordSetting[]
   taskEventLinks       TaskEventLink[]
   taskBringItems       TaskBringItem[]
   eventOutcomes        EventOutcome[]
@@ -434,6 +436,48 @@ model WorkRouteDefault {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, origin, destination])
+}
+
+/// 勤務先・出張先ごとの既定（issue #1099）。往路・復路の所要時間は WorkRouteDefault が持つので、
+/// ここには反映の有無と勤務時刻だけを置く。時刻が null なら UiSetting の共通設定を使う。
+/// 在宅は通勤移動なしとして扱うため、往路・復路の項目は無視される。
+model WorkPlaceDefault {
+  id     String @id @default(cuid())
+  userId String
+
+  /// 勤務先名（通常の勤務は勤務場所、出張は場所DBへ照合した行き先）。
+  key    String
+  isTrip Boolean @default(false)
+
+  workEnabled     Boolean @default(true)
+  startMinutes    Int?
+  endMinutes      Int?
+  outboundEnabled Boolean @default(true)
+  returnEnabled   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key, isTrip])
+}
+
+/// 勤務記録ごとの反映の指定（issue #1099）。入力画面で保存した値で、既定を変えても動かさない。
+/// 再編集・再同期ではこの値を優先する。形は `WorkRecordOverride`（src/lib/work-sync/plan.ts）。
+model WorkRecordSetting {
+  id     String @id @default(cuid())
+  userId String
+
+  workRecordId String
+  settings     Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workRecordId])
 }
 
 enum WorkGeneratedKind {

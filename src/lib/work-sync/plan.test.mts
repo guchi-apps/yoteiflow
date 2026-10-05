@@ -133,3 +133,56 @@ test("出発地が未設定なら通勤の移動は作れない", () => {
 test("期間の列挙", () => {
   assert.deepEqual(enumerateDates("2026-10-30", "2026-11-01"), ["2026-10-30", "2026-10-31", "2026-11-01"]);
 });
+
+test("勤務先の既定とその記録だけの指定で、勤務時刻・反映・往復の所要時間が変わる", () => {
+  const defaults = (key: string, isTrip: boolean) =>
+    key === "栗東" && !isTrip
+      ? { workEnabled: true, startMinutes: 540, endMinutes: 1080, outboundEnabled: true, returnEnabled: false }
+      : null;
+  const base = planWorkItems(record({}), settings, [], lookup, { placeDefaults: defaults });
+  assert.deepEqual(
+    base.items.map((item) => [item.kind, hhmm(item.start), hhmm(item.end)]),
+    [
+      ["WORK", "09:00", "18:00"],
+      ["OUTBOUND", "08:00", "09:00"],
+    ],
+  );
+
+  const overridden = planWorkItems(record({}), settings, [], lookup, {
+    placeDefaults: defaults,
+    override: {
+      workEnabled: false,
+      endMinutes: 1020,
+      outbound: { enabled: true, minutes: 30 },
+      return: { enabled: true, minutes: 20 },
+    },
+  });
+  assert.deepEqual(
+    overridden.items.map((item) => [item.kind, hhmm(item.start), hhmm(item.end)]),
+    [
+      ["OUTBOUND", "08:30", "09:00"],
+      ["RETURN", "17:00", "17:20"],
+    ],
+  );
+});
+
+test("反映ONで所要時間が無い移動だけ未設定として挙げ、OFFの移動は挙げない", () => {
+  const result = planWorkItems(record({ place: "新宿", title: "新宿" }), settings, [], lookup, {
+    override: { outbound: { enabled: false }, return: { enabled: true } },
+  });
+  assert.deepEqual(result.missingRoutes, [{ origin: "新宿", destination: "自宅" }]);
+});
+
+test("半休は記録ごとに指定した勤務時間帯を使い、全休では何も作らない", () => {
+  const half = planWorkItems(record({ annualLeave: "午前半休" }), settings, [], lookup, {
+    override: { startMinutes: 600, endMinutes: 840 },
+  });
+  assert.deepEqual(
+    half.items.filter((item) => item.kind === "WORK").map((item) => [hhmm(item.start), hhmm(item.end)]),
+    [["10:00", "14:00"]],
+  );
+  const full = planWorkItems(record({ annualLeave: "全休" }), settings, [], lookup, {
+    override: { startMinutes: 600, endMinutes: 840 },
+  });
+  assert.equal(full.items.length, 0);
+});

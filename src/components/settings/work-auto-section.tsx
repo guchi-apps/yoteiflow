@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,22 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  WorkPlaceDefaults,
+  type WorkPlaceDefaultRow,
+  type WorkRouteRow,
+} from "@/components/settings/work-place-defaults";
 import { cn } from "@/lib/utils";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
-import {
-  TRAVEL_MODES,
-  TRAVEL_MODE_LABELS,
-  type TravelMode,
-  type WritableCalendar,
-} from "@/types/calendar";
-
-export type WorkRouteRow = {
-  id: string;
-  origin: string;
-  destination: string;
-  mode: TravelMode;
-  minutes: number;
-};
+import type { WritableCalendar } from "@/types/calendar";
 
 const DEFAULT_CALENDAR_VALUE = "__default__";
 
@@ -49,25 +40,24 @@ const fromTime = (value: string) => {
  */
 export function WorkAutoSection({
   settings,
-  routes: initialRoutes,
+  routes,
+  placeDefaults,
+  tripPlaces,
   calendars,
   placeNames,
 }: {
   settings: WorkAutoSettings;
   routes: WorkRouteRow[];
+  placeDefaults: WorkPlaceDefaultRow[];
+  /** 出張扱いの勤務場所。既定値の一覧では出張先として並べる。 */
+  tripPlaces: string[];
   calendars: WritableCalendar[];
   /** 勤務場所の選択肢。在宅扱いの指定と、移動の行き先の候補に使う。 */
   placeNames: string[];
 }) {
   const [value, setValue] = useState(settings);
-  const [routes, setRoutes] = useState(initialRoutes);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [destination, setDestination] = useState("");
-  const [outMinutes, setOutMinutes] = useState("");
-  const [backMinutes, setBackMinutes] = useState("");
-  const [mode, setMode] = useState<TravelMode>("PUBLIC_TRANSIT");
 
   const home = value.homeOrigin;
 
@@ -90,60 +80,6 @@ export function WorkAutoSection({
     } catch {
       setError("設定を保存できませんでした。");
       setValue(previous);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const putRoute = async (origin: string, to: string, minutes: number) => {
-    const response = await fetch("/api/settings/work-routes", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin, destination: to, mode, minutes }),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      route?: WorkRouteRow;
-      message?: string;
-    } | null;
-    if (!response.ok || !body?.route) throw new Error(body?.message ?? "保存できませんでした。");
-    const saved = body.route;
-    setRoutes((current) => [
-      ...current.filter((route) => route.id !== saved.id),
-      saved,
-    ]);
-  };
-
-  const addRoute = async () => {
-    const to = destination.trim();
-    const out = Number(outMinutes);
-    const back = backMinutes === "" ? out : Number(backMinutes);
-    if (!home || !to || !(out > 0) || !(back > 0)) {
-      setError("行き先と、往路・復路の所要時間（分）を入力してください。");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await putRoute(home, to, out);
-      await putRoute(to, home, back);
-      setDestination("");
-      setOutMinutes("");
-      setBackMinutes("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "保存できませんでした。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeRoute = async (id: string) => {
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/settings/work-routes?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (response.ok) setRoutes((current) => current.filter((route) => route.id !== id));
-      else setError("削除できませんでした。");
     } finally {
       setBusy(false);
     }
@@ -264,99 +200,16 @@ export function WorkAutoSection({
           </div>
         )}
 
-        <div className="flex flex-col gap-3">
-          <Label>勤務先・出張先への既定の移動</Label>
-          {home ? (
-            <p className="type-body-small text-on-surface-variant">
-              出発地は、設定の「移動」の既定の出発地（{home}）です。往路と復路は別々の所要時間を持てます。
-              移動時間が未設定の行き先には、移動を作りません。
-            </p>
-          ) : (
-            <p className="type-body-small text-on-surface-variant">
-              先に
-              <Link href="/settings/travel" className="underline">
-                設定の「移動」
-              </Link>
-              で既定の出発地を入れてください。
-            </p>
-          )}
-
-          {routes.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {routes.map((route) => (
-                <li
-                  key={route.id}
-                  className="type-body-medium flex items-center justify-between gap-2 rounded-lg bg-surface-container px-3 py-2"
-                >
-                  <span className="min-w-0 truncate">
-                    {route.origin} → {route.destination}（{TRAVEL_MODE_LABELS[route.mode]}・
-                    {route.minutes}分）
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => removeRoute(route.id)}
-                  >
-                    削除
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {home && (
-            <div className="flex flex-col gap-2">
-              <Input
-                aria-label="勤務先・出張先"
-                placeholder="勤務先・出張先（例: 栗東・門真）"
-                list="work-route-destinations"
-                value={destination}
-                onChange={(event) => setDestination(event.target.value)}
-              />
-              <datalist id="work-route-destinations">
-                {placeNames.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  aria-label="往路の所要時間（分）"
-                  placeholder="往路（分）"
-                  inputMode="numeric"
-                  value={outMinutes}
-                  onChange={(event) => setOutMinutes(event.target.value)}
-                />
-                <Input
-                  aria-label="復路の所要時間（分）"
-                  placeholder="復路（分・空なら往路と同じ）"
-                  inputMode="numeric"
-                  value={backMinutes}
-                  onChange={(event) => setBackMinutes(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {TRAVEL_MODES.map((candidate) => (
-                  <Button
-                    key={candidate}
-                    type="button"
-                    size="sm"
-                    variant={candidate === mode ? "secondary" : "outline"}
-                    className="rounded-full"
-                    aria-pressed={candidate === mode}
-                    onClick={() => setMode(candidate)}
-                  >
-                    {TRAVEL_MODE_LABELS[candidate]}
-                  </Button>
-                ))}
-              </div>
-              <Button type="button" disabled={busy} onClick={addRoute}>
-                追加・置き換え
-              </Button>
-            </div>
-          )}
-        </div>
+        <WorkPlaceDefaults
+          placeNames={placeNames}
+          tripPlaces={tripPlaces}
+          remotePlaces={value.remotePlaces}
+          defaults={placeDefaults}
+          routes={routes}
+          home={home}
+          commonStart={value.startMinutes}
+          commonEnd={value.endMinutes}
+        />
       </CardContent>
     </Card>
   );

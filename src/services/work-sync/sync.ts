@@ -21,6 +21,14 @@ import { createTravel, deleteTravel, updateTravel } from "@/services/travel/plan
 import { isTravelMode } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
 
+import type { WorkRecordOverride } from "@/lib/work-sync/plan";
+
+import {
+  deleteRecordOverride,
+  getRecordOverride,
+  loadPlaceDefaultRows,
+  placeDefaultsLookup,
+} from "./config";
 import { getWorkAutoSettings, resolveWorkCalendarId } from "./settings";
 
 /**
@@ -270,7 +278,16 @@ export async function syncWorkRecord(
   try {
     const connection = record.businessTrip ? await getNotionPlaceConnection(userId) : null;
     const places = connection ? await loadPlaces(connection) : [];
-    const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId));
+    // 記録ごとの指定（入力画面で保存した値）を、勤務先の既定・共通設定より優先する。
+    // 再同期でも同じ値を使うので、OFFにした予定を作り直さず、当日の時刻も既定で上書きしない。
+    const [override, defaultRows] = await Promise.all([
+      getRecordOverride(userId, record.id),
+      loadPlaceDefaultRows(userId),
+    ]);
+    const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
+      override,
+      placeDefaults: placeDefaultsLookup(defaultRows),
+    });
     result.missingRoutes = plan.missingRoutes;
     await reconcile(userId, record.id, plan.items, settings.timeZone, result);
   } catch (error) {
@@ -292,5 +309,39 @@ export async function removeWorkRecordGenerated(
   const result = emptyResult("synced");
   const settings = await getWorkAutoSettings(userId);
   await reconcile(userId, workRecordId, [], settings.timeZone, result);
+  // 生成物を片付けられたときだけ指定も消す（失敗したときは再試行で同じ指定を使えるよう残す）。
+  if (result.errors.length === 0) await deleteRecordOverride(userId, workRecordId);
   return result;
+}
+
+/**
+ * 保存前の確認。この指定で反映ONの項目に必要な時間が足りないとき、その項目を示す文面を返す。
+ * 反映OFFの項目は問わない。足りない時間は推測しない（修正するか、反映OFFにしてもらう）。
+ */
+export async function validateOverrideForRecord(
+  userId: string,
+  record: WorkRecordItem,
+  override: WorkRecordOverride,
+): Promise<string | null> {
+  const settings = await getWorkAutoSettings(userId);
+  const connection = record.businessTrip ? await getNotionPlaceConnection(userId) : null;
+  const places = connection ? await loadPlaces(connection) : [];
+  const defaultRows = await loadPlaceDefaultRows(userId);
+  const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
+    override,
+    placeDefaults: placeDefaultsLookup(defaultRows),
+  });
+  const parts: string[] = [];
+  for (const route of plan.missingRoutes) {
+    if (route.origin === null) {
+      parts.push("移動の出発地が未設定です（設定の「移動」）");
+    } else if (route.destination === settings.homeOrigin?.trim()) {
+      parts.push("復路の所要時間が未設定です");
+    } else {
+      parts.push("往路の所要時間が未設定です");
+    }
+  }
+  return parts.length > 0
+    ? `${parts.join("・")}。所要時間を入力するか、その移動の反映をオフにしてください。`
+    : null;
 }
