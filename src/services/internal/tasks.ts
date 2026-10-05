@@ -186,10 +186,18 @@ function sameDate(stored: string | null, requested: string | null): boolean {
   return stored === requested;
 }
 
+function sameTags(stored: string[], requested: string[]): boolean {
+  return stored.length === requested.length && [...stored].sort().join("\n") === [...requested].sort().join("\n");
+}
+
 function sameTaskInput(task: InternalTask, input: TaskWriteInput): boolean {
   return (
     (input.due === undefined || sameDate(task.due ?? null, input.due)) &&
-    (input.planned === undefined || sameDate(task.planned ?? null, input.planned))
+    (input.planned === undefined || sameDate(task.planned ?? null, input.planned)) &&
+    (input.priority === undefined || (task.priority ?? null) === input.priority) &&
+    (input.memo === undefined || (task.memo ?? null) === input.memo) &&
+    (input.recurrence === undefined || (task.recurrence ?? null) === input.recurrence) &&
+    (input.tags === undefined || sameTags(task.tags ?? [], input.tags))
   );
 }
 

@@ -357,6 +357,8 @@ async function ensureNextRecurrence<T extends OperationTask>(
   const uncertainBefore = guard.recovering && Boolean(progress.writeAttemptedAt);
   let createAttempted = false;
   let createRejected = false;
+  // 完了への更新の応答だけが失われた場合、再送では「別経路で完了済み」と見分けられないため結果未確定にする。
+  let statusAttempted = false;
   try {
     const next = gateway.nextRecurrence(current);
     let nextTaskId = progress.createdTaskId ?? null;
@@ -371,7 +373,11 @@ async function ensureNextRecurrence<T extends OperationTask>(
     // 確保が初めてで、すでに完了していた回は、画面など内部API以外の経路で完了された
     // もの（その経路が次回分を作っている）。ここで作るともう1件増える。
     const completedElsewhere = !guard.recovering && current.status === "completed";
-    if (current.status !== "completed") await tracker.write(() => gateway.setStatus(current.id, current, "completed"));
+    if (current.status !== "completed") {
+      statusAttempted = true;
+      await tracker.write(() => gateway.setStatus(current.id, current, "completed"));
+      statusAttempted = false;
+    }
     if (next && !nextTaskId && !completedElsewhere) {
       await store.update(guard.record.id, { result: { progress: { writeAttemptedAt: now().toISOString() } } });
       createAttempted = true;
@@ -385,7 +391,11 @@ async function ensureNextRecurrence<T extends OperationTask>(
     await store.update(guard.record.id, { state: OPERATION_STATES.succeeded, result: { nextTaskId } });
     return nextTaskId;
   } catch (error) {
-    const unknown = error instanceof ResultPendingError || uncertainBefore || (createAttempted && !createRejected);
+    const unknown =
+      error instanceof ResultPendingError ||
+      uncertainBefore ||
+      (createAttempted && !createRejected) ||
+      (statusAttempted && !isDefiniteRejection(error));
     await store.update(guard.record.id, unknown ? { state: OPERATION_STATES.unknown } : { state: OPERATION_STATES.notExecuted, result: null });
     throw error;
   }
