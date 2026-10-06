@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { defaultReturnLeg } from "@/services/travel/link-input";
 import type { CalendarEventItem, TravelItem } from "@/types/calendar";
 
+import { isoToLocalInput } from "./datetime-fields";
 import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
 import { readErrorMessage } from "./response-error";
 import { formatLinkedDate } from "./task-link-label";
@@ -36,6 +37,11 @@ export type TravelLinkSide =
   | { kind: "event"; event: CalendarEventItem }
   /** 移動の表示画面から、既存の予定を選んで結ぶ。 */
   | { kind: "travel"; travel: TravelItem };
+
+/** 終日（日付だけ）はそのまま、時刻ありは設定タイムゾーンの日付にする。 */
+function dateKeyOf(iso: string, timeZone: string): string {
+  return iso.includes("T") ? isoToLocalInput(iso, timeZone).slice(0, 10) : iso.slice(0, 10);
+}
 
 /**
  * 既存の予定と移動を後から結ぶ（issue #1105）。相手を選ぶ（`EventPickerDialog`）→往路か復路かを
@@ -65,6 +71,7 @@ export function TravelLinkFlow({
       <EventPickerDialog
         timeZone={timeZone}
         weekStartsOn={weekStartsOn}
+        initialDate={dateKeyOf(side.kind === "event" ? side.event.start : side.travel.start, timeZone)}
         kinds={side.kind === "event" ? "travel" : "event"}
         title={side.kind === "event" ? "紐づける移動を選ぶ" : "紐づける予定を選ぶ"}
         description={
