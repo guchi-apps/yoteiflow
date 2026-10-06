@@ -6,6 +6,7 @@ import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
 import { getHolidayCalendarId } from "@/services/calendar/holiday-settings";
 import { loadCalendarSettings } from "@/services/google-calendar/settings";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function GoogleSettingsPage({
   searchParams,
@@ -13,7 +14,7 @@ export default async function GoogleSettingsPage({
   searchParams: Promise<{ google?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [{ google }, result, holidayCalendarId] = await Promise.all([
     searchParams,

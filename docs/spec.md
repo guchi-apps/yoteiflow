@@ -32,6 +32,10 @@ Google Calendar の予定と Notion のタスクを1つのカレンダーUIで�
 
 Supabase AuthでGoogleログインした後、許可されたユーザーのみDaySpanへアクセスできるようにする。
 
+Supabase側の認証IDが変わった既存利用者は、Googleに照会して本人と確かめられたときだけ既存の `User` へ付け替え、
+設定・連携・保存済みデータを引き継ぐ。確かめられないときは自動で統合せず、ログイン画面で案内する
+（issue #1113・詳細は `docs/auth-account-recovery.md`）。
+
 ### 将来
 
 一般ユーザーがそれぞれ、自分のGoogle Calendar、自分のNotionワークスペース、自分のNotionタスクDBを接続して利用できる構造を前提にする。

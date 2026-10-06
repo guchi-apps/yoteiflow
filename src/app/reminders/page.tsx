@@ -14,10 +14,11 @@ import { loadTagCatalog } from "@/services/notion/tag-options";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import type { ReminderItem } from "@/types/calendar";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function RemindersPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
   const [uiSetting, connection] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),

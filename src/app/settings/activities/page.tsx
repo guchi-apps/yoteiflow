@@ -7,10 +7,11 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { listActivityPresets } from "@/services/activity/presets";
 import { getActivityCalendarId, getSleepSettings } from "@/services/activity/settings";
 import { loadWritableCalendars } from "@/services/calendar/load";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function ActivitySettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   // 記録の保存先はGoogle Calendar。接続していないと保存先が選べないため、
   // 先にGoogleの設定へ回ってもらう。

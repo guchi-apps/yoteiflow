@@ -36,6 +36,7 @@ import {
 } from "@/services/notion/work-logs";
 import { getTravelSettings } from "@/services/travel/settings";
 import { normalizeWorkMinutes } from "@/types/work";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function CalendarPage({
   searchParams,
@@ -43,7 +44,7 @@ export default async function CalendarPage({
   searchParams: Promise<{ view?: string; date?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const params = await searchParams;
 

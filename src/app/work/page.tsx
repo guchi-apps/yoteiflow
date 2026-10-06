@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { workCapabilities, workDatabaseReady, workTripPlaces } from "@/services/notion/work-logs";
 import { normalizeWorkMinutes } from "@/types/work";
 import { getRunningActivity } from "@/services/activity/running";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -20,7 +21,7 @@ export default async function WorkPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [connection, uiSetting, runningActivity] = await Promise.all([
     db.notionConnection.findUnique({ where: { userId: user.id } }),

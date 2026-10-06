@@ -17,6 +17,7 @@ import {
   workDatabaseReady,
 } from "@/services/notion/work-logs";
 import { normalizeWorkMinutes, type WorkRecordItem } from "@/types/work";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /**
  * 年度ごとの年休の取得状況（docs/spec.md §34）。
@@ -30,7 +31,7 @@ export default async function AnnualLeavePage({
   searchParams: Promise<{ year?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [connection, uiSetting] = await Promise.all([
     db.notionConnection.findUnique({ where: { userId: user.id } }),

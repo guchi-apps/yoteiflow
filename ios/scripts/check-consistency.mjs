@@ -38,6 +38,14 @@ export function checkConsistency() {
     problems.push(`ヘルスブリッジ名が一致しません: Swift=${swiftHealthBridge} / TS=${tsHealthBridge}`);
   }
 
+  // 認証シートから戻る失敗の種類（#1113）。Swiftが知らない値は auth_failed に丸められ、案内が変わる
+  const parseList = (text) => (text ?? "").match(/"([^"]+)"/g)?.map((v) => v.slice(1, -1)).sort().join(",") ?? "";
+  const swiftErrors = parseList(webViewModel.match(/loginErrors: Set<String> = \[([^\]]*)\]/)?.[1]);
+  const tsErrors = parseList(nativeApp.match(/NATIVE_LOGIN_ERRORS = \[([^\]]*)\]/)?.[1]);
+  if (!swiftErrors || swiftErrors !== tsErrors) {
+    problems.push(`ログイン失敗の種類が一致しません: Swift=${swiftErrors} / TS=${tsErrors}`);
+  }
+
   // 戻り先のホスト（auth-callback / google-connected）
   for (const host of ["auth-callback", "google-connected"]) {
     if (!nativeApp.includes(`://${host}`)) problems.push(`native-app.ts に ${host} がありません`);

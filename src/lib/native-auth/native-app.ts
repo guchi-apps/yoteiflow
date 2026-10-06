@@ -9,8 +9,12 @@ export const NATIVE_SCHEME = "yoteiflow";
 export const NATIVE_LOGIN_CALLBACK = `${NATIVE_SCHEME}://auth-callback`;
 export const NATIVE_GOOGLE_CALLBACK = `${NATIVE_SCHEME}://google-connected`;
 
-/** Googleログインで認証シートから戻すときの失敗の種類（アプリはこの値で分岐する）。 */
-export type NativeLoginError = "auth_failed" | "not_allowed";
+/**
+ * Googleログインで認証シートから戻すときの失敗の種類（アプリはこの値をそのまま `/login?error=` へ渡す）。
+ * 値を足すときは `ios/YoteiFlow/WebViewModel.swift` の `loginErrors` も直す（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_LOGIN_ERRORS = ["auth_failed", "not_allowed", "callback_failed", "account_conflict"] as const;
+export type NativeLoginError = (typeof NATIVE_LOGIN_ERRORS)[number];
 
 export function nativeLoginErrorUrl(error: NativeLoginError): string {
   return `${NATIVE_LOGIN_CALLBACK}?error=${error}`;

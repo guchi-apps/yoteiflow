@@ -31,10 +31,11 @@ import { getNotificationSettings } from "@/services/notifications/settings";
 import { countNotificationDevices } from "@/services/notifications/subscriptions";
 import { weekStartLabel } from "@/lib/week-start";
 import { TRAVEL_MODE_LABELS } from "@/types/calendar";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   // 一覧では外部APIを叩かない。カレンダー一覧やタスクDB一覧の取得はそれぞれの画面へ入って
   // からで足り、ここで待たせるとGoogle / Notionが遅い日は設定を開くこと自体ができなくなる。
