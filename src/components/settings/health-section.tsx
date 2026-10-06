@@ -131,6 +131,20 @@ export function HealthSection({
         </CardContent>
       </Card>
 
+      <Card>
+        <CardContent className="flex flex-col gap-3">
+          <h2 className="type-title-medium font-bold">睡眠モードと連動</h2>
+          <p className="type-body-medium text-on-surface-variant">
+            iPhoneの睡眠モードをオンにすると{title}の記録を始め、オフにすると止めます。アラームを止めたときも
+            睡眠モードが解除されるため、そこで止まります。
+          </p>
+          <p className="type-body-small text-on-surface-variant">
+            iPhoneの「設定 ＞ 集中モード ＞ 睡眠 ＞ フォーカスフィルタ」でYoteiFlowを追加し、
+            「睡眠を記録する」をオンにしてください。止まらなかったときは、記録の画面から止められます。
+          </p>
+        </CardContent>
+      </Card>
+
       {message && (
         <p
           role="status"
