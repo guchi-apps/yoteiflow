@@ -30,3 +30,18 @@ export function useNowIso(): string | null {
   const minuteBucket = useMinuteBucket();
   return minuteBucket === null ? null : new Date(minuteBucket * 60_000).toISOString();
 }
+
+function subscribeSecond(onStoreChange: () => void): () => void {
+  const timer = setInterval(onStoreChange, 1_000);
+  return () => clearInterval(timer);
+}
+
+/** 秒単位の現在時刻（ISO 8601）。購読している間だけ1秒ごとに変わる。サーバー描画時は null。 */
+export function useSecondNowIso(): string | null {
+  const second = useSyncExternalStore(
+    subscribeSecond,
+    () => Math.floor(Date.now() / 1000),
+    () => null,
+  );
+  return second === null ? null : new Date(second * 1000).toISOString();
+}
