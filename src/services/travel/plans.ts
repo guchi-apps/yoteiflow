@@ -10,7 +10,10 @@ import {
   type TravelMode,
 } from "@/types/calendar";
 
-import { dropNotificationSettingForTravel } from "@/services/calendar/event-notification-settings";
+import {
+  dropNotificationSettingForTravel,
+  replanNotifications,
+} from "@/services/calendar/event-notification-settings";
 import { dropLinksForTravel, syncLinksForTravel } from "@/services/task-links/links";
 import type { TravelLinkInput } from "./link-input";
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
@@ -205,6 +208,9 @@ export async function updateTravel(
     where: { id: existing.id },
     data: toWriteData(input),
   });
+
+  // 出発時刻が変わったら通知の下書きを作り直させる（issue #1112。次の作り直しまで古い時刻で送られない）。
+  if (existing.departAt.getTime() !== updated.departAt.getTime()) await replanNotifications(userId);
 
   // 紐づいたタスクの日付を追随させる（issue #914）。失敗しても移動の更新は成功のまま扱う
   // （追随できなかった分は日付のずれとして画面に出る）。

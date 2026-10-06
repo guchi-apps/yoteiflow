@@ -146,7 +146,7 @@ export async function moveEventNotificationSetting(
  * （通知設定変更時・中止不参加の記録と同じ扱い）。設定そのものは保存できているため、
  * ここで落ちても応答は失敗にしない。
  */
-async function replanNotifications(userId: string): Promise<void> {
+export async function replanNotifications(userId: string): Promise<void> {
   try {
     await db.notificationSetting.updateMany({ where: { userId }, data: { plannedAt: null } });
   } catch (error) {
@@ -189,9 +189,11 @@ export async function dropNotificationSettingForTravel(
   userId: string,
   travelId: string,
 ): Promise<void> {
-  await db.eventNotificationSetting.deleteMany({
+  const result = await db.eventNotificationSetting.deleteMany({
     where: { userId, eventId: travelNotificationKey(travelId) },
   });
+  // 取りやめた移動の作成済みの下書きが、次の作り直し（最大30分後）まで残って送られないようにする。
+  if (result.count > 0) await replanNotifications(userId);
 }
 
 /** 移動へ通知設定を付ける。設定の無い移動はそのまま。 */
