@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { getSleepSettings } from "@/services/activity/settings";
 import { getSleepHealthExportedUntil } from "@/services/activity/sleep-health-sent";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /**
  * ヘルスケア連携の設定（docs/spec.md §40）。
@@ -16,7 +17,7 @@ import { getSleepHealthExportedUntil } from "@/services/activity/sleep-health-se
  */
 export default async function HealthSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [sleep, uiSetting, exportedUntil] = await Promise.all([
     getSleepSettings(user.id),

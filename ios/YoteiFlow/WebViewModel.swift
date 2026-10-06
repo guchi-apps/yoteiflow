@@ -206,6 +206,9 @@ extension WebViewModel {
 
 extension WebViewModel {
     /// Web側の `NATIVE_PUSH_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
+    /// 認証シートから戻る失敗の種類。`src/lib/native-auth/native-app.ts` の `NATIVE_LOGIN_ERRORS` と揃える
+    static let loginErrors: Set<String> = ["auth_failed", "not_allowed", "callback_failed", "account_conflict"]
+
     static let pushBridgeName = "yoteiflowPush"
 
     /// 画面（Web）からの `status` / `enable` / `disable`。返事は必ず返す（スイッチが固まらないように）
@@ -430,8 +433,9 @@ extension WebViewModel {
             return
         }
 
-        if items.first(where: { $0.name == "error" })?.value == "not_allowed" {
-            loadAppPath("/login?error=not_allowed")
+        // サーバーが返した失敗の種類はそのままログイン画面へ渡し、理由と再ログインの案内を出す（#1113）
+        if let error = items.first(where: { $0.name == "error" })?.value {
+            loadAppPath("/login?error=\(Self.loginErrors.contains(error) ? error : "auth_failed")")
             return
         }
         guard let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty else {

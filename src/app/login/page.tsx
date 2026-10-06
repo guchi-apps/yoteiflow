@@ -5,6 +5,7 @@ import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
+import { isLoginError, LOGIN_ERROR_MESSAGES } from "@/lib/login-errors";
 
 export default async function LoginPage({
   searchParams,
@@ -30,14 +31,12 @@ export default async function LoginPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {error === "not_allowed" && (
-            <p className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
-              このGoogleアカウントは利用を許可されていません。
-            </p>
-          )}
-          {error === "auth_failed" && (
-            <p className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
-              ログインに失敗しました。時間をおいて再度お試しください。
+          {isLoginError(error) && (
+            <p
+              role="alert"
+              className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container"
+            >
+              {LOGIN_ERROR_MESSAGES[error]}
             </p>
           )}
 

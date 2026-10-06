@@ -10,6 +10,7 @@ import { loadPlaceDefaultRows } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { loadTagOptions } from "@/services/notion/tag-options";
 import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
 function notionUrl(databaseId: string | null): string | null {
@@ -18,7 +19,7 @@ function notionUrl(databaseId: string | null): string | null {
 
 export default async function WorkSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");
