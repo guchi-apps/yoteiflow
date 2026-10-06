@@ -98,6 +98,9 @@ export function TravelLinkFlow({
       : { id: picked.eventId, calendarId: picked.calendarId, title: picked.title, start: picked.start, end: picked.end };
 
   // 移動がすでに別の予定へ結ばれているときは付け替えになる。
+  // 出発地と目的地が決まっている移動は、時刻から往路・復路が定まるため選ばせない（issue #1129）。
+  const directionKnown = Boolean(travel?.origin.trim() && travel.destination.trim());
+
   const replacing = Boolean(travel?.linkedEventId && travel.linkedEventId !== event.id);
 
   const close = () => {
@@ -137,7 +140,7 @@ export function TravelLinkFlow({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>この予定と移動を紐づけますか</DialogTitle>
-          <DialogDescription className="sr-only">予定と移動を結び、往路か復路かを選びます。</DialogDescription>
+          <DialogDescription className="sr-only">予定と移動を結び、必要なら往路か復路かを選びます。</DialogDescription>
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3">
@@ -154,6 +157,7 @@ export function TravelLinkFlow({
             </span>
           </div>
 
+          {!directionKnown && (
           <div className="flex gap-1" role="radiogroup" aria-label="往路か復路か">
             {([false, true] as const).map((value) => (
               <Button
@@ -170,6 +174,7 @@ export function TravelLinkFlow({
               </Button>
             ))}
           </div>
+          )}
 
           {replacing && (
             <p className="text-sm text-on-surface-variant">
