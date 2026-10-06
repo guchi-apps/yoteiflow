@@ -12,9 +12,11 @@ import {
   Copy,
   ExternalLink,
   MapPin,
+  Link2,
   Pencil,
   RotateCw,
   Trash2,
+  Unlink,
   Users,
 } from "lucide-react";
 
@@ -50,6 +52,7 @@ import { placeCoordinates } from "./location-input";
 import { readErrorMessage } from "./response-error";
 import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
+import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
 import { TravelMark } from "./travel-mark";
 import type { OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -81,6 +84,8 @@ export function EventDetailDialog({
   onDeleted,
   onOutcomeChanged,
   onConfirmed,
+  weekStartsOn = 0,
+  onTravelLinkChanged,
 }: {
   event: CalendarEventItem;
   timeZone: string;
@@ -129,7 +134,14 @@ export function EventDetailDialog({
   onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
   /** 「仮の予定を確定する」が成功したときの処理（issue #688）。ダイアログは閉じない。 */
   onConfirmed: () => void;
+  weekStartsOn?: number;
+  /** 既存の移動を後から結んだ・外したあと（issue #1105）。変わった期間を渡して取り直す。 */
+  onTravelLinkChanged?: (touched: TouchedRange[] | null) => void;
 }) {
+  // 既存の移動を後から結ぶ（issue #1105）。選ぶ画面を出す間は表示画面を閉じる。
+  const [linkingTravel, setLinkingTravel] = useState(false);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
@@ -173,6 +185,25 @@ export function EventDetailDialog({
   const openTask = (task: TaskItem) => {
     setOpen(false);
     setTimeout(() => onOpenTask(task), 150);
+  };
+
+  const startLinkTravel = () => {
+    setOpen(false);
+    setTimeout(() => setLinkingTravel(true), 150);
+  };
+
+  const unlink = async (travel: TravelItem) => {
+    setUnlinkError(null);
+    const message = await unlinkTravel(travel.id);
+    if (message) {
+      setUnlinkError(message);
+      return;
+    }
+    setOpen(false);
+    setTimeout(
+      () => onTravelLinkChanged?.([{ start: travel.start, end: travel.end }, { start: event.start, end: event.end }]),
+      150,
+    );
   };
 
   const linkTask = () => {
@@ -220,6 +251,18 @@ export function EventDetailDialog({
     setOpen(false);
     setTimeout(() => onDeleted(touched, change), 150);
   };
+
+  if (linkingTravel) {
+    return (
+      <TravelLinkFlow
+        side={{ kind: "event", event }}
+        timeZone={timeZone}
+        weekStartsOn={weekStartsOn}
+        onCancel={onClose}
+        onLinked={(touched) => onTravelLinkChanged?.(touched)}
+      />
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -400,11 +443,11 @@ export function EventDetailDialog({
                 // カレンダー上の移動と同じものを指しているため、ここだけベタ塗りを残さない。
                 const colors = tintedEventColors(travel.color);
                 return (
+                  <div key={travel.id} className="flex items-stretch gap-1">
                   <button
-                    key={travel.id}
                     type="button"
                     onClick={() => openTravel(travel)}
-                    className="flex items-center gap-2 rounded-md border py-1.5 pr-2.5 text-left text-xs text-on-surface"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md border py-1.5 pr-2.5 text-left text-xs text-on-surface"
                     style={{
                       backgroundColor: colors.background,
                       borderColor: colors.border,
@@ -420,8 +463,19 @@ export function EventDetailDialog({
                     </span>
                     <ChevronRight className="size-4 shrink-0 opacity-70" />
                   </button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`${travel.title}の紐づけを外す`}
+                    disabled={readOnly}
+                    onClick={() => unlink(travel)}
+                  >
+                    <Unlink className="size-4" />
+                  </Button>
+                  </div>
                 );
               })}
+              {unlinkError && <p className="text-xs text-destructive">{unlinkError}</p>}
             </div>
           )}
 
@@ -507,6 +561,14 @@ export function EventDetailDialog({
               >
                 <ArrowRight className="size-4" />
                 移動を足す
+              </Button>
+            )}
+
+            {/* 作った後でも、既存の移動を結べる（issue #1105）。 */}
+            {canAddTravel && (
+              <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkTravel}>
+                <Link2 className="size-4" />
+                既存の移動を紐づける
               </Button>
             )}
 

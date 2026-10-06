@@ -16,7 +16,7 @@ import {
   updateEvent,
   type EventWriteInput,
 } from "@/services/google-calendar/events";
-import { loadPlaces } from "@/services/notion/places";
+import { listPlaces, type PlaceItem } from "@/services/notion/places";
 import { createTravel, deleteTravel, updateTravel } from "@/services/travel/plans";
 import { isTravelMode } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
@@ -136,14 +136,36 @@ function travelInput(item: ExpectedItem) {
   };
 }
 
+/** 移動の出発地・目的地へ場所データを入れるための場所DB。取得できなかったときは available が false。 */
+export type SyncPlaces = { places: PlaceItem[]; available: boolean };
+
+/**
+ * 場所DBを読む。失敗は空配列に潰さず `available: false` で伝える
+ * （空だと期待値が名前だけになり、住所付きに更新済みの移動が巻き戻るため）。
+ */
+export async function loadPlacesForSync(userId: string): Promise<SyncPlaces> {
+  try {
+    const connection = await getNotionPlaceConnection(userId);
+    return { places: await listPlaces(connection), available: true };
+  } catch (error) {
+    console.error("[dayspan] work sync places failed:", error instanceof Error ? error.message : error);
+    return { places: [], available: false };
+  }
+}
+
 async function reconcile(
   userId: string,
   workRecordId: string,
   expectedItems: ExpectedItem[],
   timeZone: string,
   result: WorkSyncResult,
+  skipTravel = false,
 ): Promise<void> {
-  const rows = await db.workGenerated.findMany({ where: { userId, workRecordId } });
+  const isSkipped = (kind: string) => skipTravel && kind !== "WORK";
+  const rows = (await db.workGenerated.findMany({ where: { userId, workRecordId } })).filter(
+    (row) => !isSkipped(row.kind),
+  );
+  expectedItems = expectedItems.filter((item) => !isSkipped(item.kind));
   const rowByKey = new Map(rows.map((row) => [`${row.date}|${row.kind}`, row]));
   const expectedByKey = new Map(expectedItems.map((item) => [`${item.date}|${item.kind}`, item]));
   const keys = new Set([...rowByKey.keys(), ...expectedByKey.keys()]);
@@ -270,14 +292,14 @@ async function buildRouteLookup(userId: string): Promise<RouteLookup> {
 export async function syncWorkRecord(
   userId: string,
   record: WorkRecordItem,
+  preloaded?: SyncPlaces,
 ): Promise<WorkSyncResult> {
   const settings = await getWorkAutoSettings(userId);
   if (!settings.enabled) return emptyResult("disabled");
 
   const result = emptyResult("synced");
   try {
-    const connection = record.businessTrip ? await getNotionPlaceConnection(userId) : null;
-    const places = connection ? await loadPlaces(connection) : [];
+    const { places, available } = preloaded ?? (await loadPlacesForSync(userId));
     // 記録ごとの指定（入力画面で保存した値）を、勤務先の既定・共通設定より優先する。
     // 再同期でも同じ値を使うので、OFFにした予定を作り直さず、当日の時刻も既定で上書きしない。
     const [override, defaultRows] = await Promise.all([
@@ -289,7 +311,7 @@ export async function syncWorkRecord(
       placeDefaults: placeDefaultsLookup(defaultRows),
     });
     result.missingRoutes = plan.missingRoutes;
-    await reconcile(userId, record.id, plan.items, settings.timeZone, result);
+    await reconcile(userId, record.id, plan.items, settings.timeZone, result, !available);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] work sync failed:", message);
@@ -324,8 +346,7 @@ export async function validateOverrideForRecord(
   override: WorkRecordOverride,
 ): Promise<string | null> {
   const settings = await getWorkAutoSettings(userId);
-  const connection = record.businessTrip ? await getNotionPlaceConnection(userId) : null;
-  const places = connection ? await loadPlaces(connection) : [];
+  const { places } = await loadPlacesForSync(userId);
   const defaultRows = await loadPlaceDefaultRows(userId);
   const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
     override,

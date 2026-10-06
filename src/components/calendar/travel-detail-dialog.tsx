@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, ChevronRight, CloudOff, MapPin, Pencil, Route, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronRight, CloudOff, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { placeDisplayName } from "@/lib/place-text";
@@ -26,6 +26,7 @@ import {
 } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
@@ -48,6 +49,8 @@ export function TravelDetailDialog({
   onOpenTask,
   onLinked,
   onCreateTask,
+  linkedEventTitle,
+  weekStartsOn = 0,
 }: {
   travel: TravelItem;
   timeZone: string;
@@ -64,7 +67,14 @@ export function TravelDetailDialog({
   onLinked?: (touched: TouchedRange[] | null) => void;
   /** 紐づけた状態で新しいタスクを作る（issue #1079）。入力画面へ渡す。 */
   onCreateTask?: (stage: TaskEventStage, target: TaskLinkTarget) => void;
+  /** 紐づいている予定の名前。取得済みの予定から引いた値で、範囲外などで引けなければ null。 */
+  linkedEventTitle?: string | null;
+  weekStartsOn?: number;
 }) {
+  // 既存の予定を後から結ぶ・外す（issue #1105）。
+  const [linkingEvent, setLinkingEvent] = useState(false);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
@@ -86,6 +96,22 @@ export function TravelDetailDialog({
     setTimeout(() => setLinking(true), 150);
   };
 
+  const startLinkEvent = () => {
+    setOpen(false);
+    setTimeout(() => setLinkingEvent(true), 150);
+  };
+
+  const unlink = async () => {
+    setUnlinkError(null);
+    const message = await unlinkTravel(travel.id);
+    if (message) {
+      setUnlinkError(message);
+      return;
+    }
+    setOpen(false);
+    setTimeout(() => onLinked?.([{ start: travel.start, end: travel.end }]), 150);
+  };
+
   const openTask = (task: TaskItem) => {
     setOpen(false);
     setTimeout(() => onOpenTask?.(task), 150);
@@ -100,6 +126,18 @@ export function TravelDetailDialog({
     1,
     Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000),
   );
+
+  if (linkingEvent) {
+    return (
+      <TravelLinkFlow
+        side={{ kind: "travel", travel }}
+        timeZone={timeZone}
+        weekStartsOn={weekStartsOn}
+        onCancel={onClose}
+        onLinked={(touched) => onLinked?.(touched)}
+      />
+    );
+  }
 
   if (linking) {
     return (
@@ -181,6 +219,27 @@ export function TravelDetailDialog({
               </span>
             </DetailRow>
           )}
+
+          {/* 紐づく予定（issue #1105）。後からでも結べ、付け替え・外すこともできる。 */}
+          <DetailRow icon={<Link2 className="size-4" />}>
+            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">
+                {travel.linkedEventId
+                  ? `${travel.returnLeg ? "復路" : "往路"}: ${linkedEventTitle ?? "予定（表示範囲外）"}`
+                  : "予定とは紐づいていません"}
+              </span>
+              <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkEvent}>
+                {travel.linkedEventId ? "付け替える" : "予定と紐づける"}
+              </Button>
+              {travel.linkedEventId && (
+                <Button variant="ghost" size="sm" disabled={readOnly} onClick={unlink}>
+                  <Unlink className="size-4" />
+                  外す
+                </Button>
+              )}
+            </span>
+          </DetailRow>
+          {unlinkError && <p className="text-xs text-destructive">{unlinkError}</p>}
 
           {/* この移動に紐づいているタスク（issue #914）。出発前に確かめるものなど。 */}
           {linkedTasks.length > 0 && (

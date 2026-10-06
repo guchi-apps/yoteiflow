@@ -1741,6 +1741,8 @@ function CalendarBody({
             (travel) => travel.linkedEventId === viewingEvent.id,
           )}
           onOpenTravel={onOpenTravelForEvent}
+          weekStartsOn={weekStartsOn}
+          onTravelLinkChanged={handleSaved}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
           onBringChanged={() => handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }])}
           // この予定に紐づいているタスク。通常表示では一覧を出し、削除の確認では
@@ -1807,6 +1809,10 @@ function CalendarBody({
           )}
           onOpenTask={onOpenTaskForEvent}
           onLinked={handleSaved}
+          weekStartsOn={weekStartsOn}
+          linkedEventTitle={
+            data.events.find((event) => event.id === viewingTravel.linkedEventId)?.title ?? null
+          }
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}
