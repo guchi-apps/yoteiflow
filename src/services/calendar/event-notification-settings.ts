@@ -14,6 +14,16 @@ import type { CalendarEventItem, EventNotificationOverride } from "@/types/calen
  * TaskEventLink・TravelPlanと同じく、相手のDBに欄が無いものは線だけをDaySpanが持つ。
  */
 
+/**
+ * 移動の通知設定のキー（issue #1112）。移動はDaySpanのDBにありGoogleの予定IDを持たないため、
+ * 予定と同じ表（EventNotificationSetting）へ `travel:<移動ID>` で置く。Googleの予定IDは
+ * 英数字のみで `:` を含まないため衝突しない。calendarId は空文字（TaskEventLink が移動を
+ * 指すときと同じ流儀）。
+ */
+export function travelNotificationKey(travelId: string): string {
+  return `travel:${travelId}`;
+}
+
 export class EventNotificationSettingsError extends Error {}
 
 export type EventNotificationSettingInput = {
@@ -136,7 +146,7 @@ export async function moveEventNotificationSetting(
  * （通知設定変更時・中止不参加の記録と同じ扱い）。設定そのものは保存できているため、
  * ここで落ちても応答は失敗にしない。
  */
-async function replanNotifications(userId: string): Promise<void> {
+export async function replanNotifications(userId: string): Promise<void> {
   try {
     await db.notificationSetting.updateMany({ where: { userId }, data: { plannedAt: null } });
   } catch (error) {
@@ -172,4 +182,31 @@ export async function dropNotificationSettingsForEvent(
   });
 
   return result.count;
+}
+
+/** 移動を消したときに、その移動の通知設定も消す（issue #1112）。 */
+export async function dropNotificationSettingForTravel(
+  userId: string,
+  travelId: string,
+): Promise<void> {
+  const result = await db.eventNotificationSetting.deleteMany({
+    where: { userId, eventId: travelNotificationKey(travelId) },
+  });
+  // 取りやめた移動の作成済みの下書きが、次の作り直し（最大30分後）まで残って送られないようにする。
+  if (result.count > 0) await replanNotifications(userId);
+}
+
+/** 移動へ通知設定を付ける。設定の無い移動はそのまま。 */
+export function attachTravelNotificationSettings<T extends { id: string }>(
+  travels: T[],
+  settings: EventNotificationSetting[],
+): (T & { notification?: EventNotificationOverride | null })[] {
+  if (settings.length === 0) return travels;
+
+  const byKey = new Map(settings.map((setting) => [setting.eventId, setting]));
+
+  return travels.map((travel) => {
+    const setting = byKey.get(travelNotificationKey(travel.id));
+    return setting ? { ...travel, notification: toEventNotificationOverride(setting) } : travel;
+  });
 }

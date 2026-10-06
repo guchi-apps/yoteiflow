@@ -5,6 +5,7 @@ import { listActivityCalendarIds } from "@/services/activity/settings";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import {
   attachEventNotificationSettings,
+  attachTravelNotificationSettings,
   listEventNotificationSettings,
 } from "@/services/calendar/event-notification-settings";
 import { listCalendars } from "@/services/google-calendar/calendars";
@@ -91,12 +92,13 @@ export async function loadCalendarData(
   options?: { todayKey?: string },
 ): Promise<CalendarLoadResult> {
   // 移動と紐づけはDaySpanのDBにあるため、外部APIの往復は増えない。Google・Notionと並行に読む。
-  const [events, notion, travelPlans, taskLinks, bringItems] = await Promise.all([
+  const [events, notion, travelPlans, taskLinks, bringItems, travelNotificationSettings] = await Promise.all([
     loadGoogleEvents(userId, range),
     loadNotionItems(userId, range, options?.todayKey),
     listTravelsInRange(userId, range),
     listTaskLinks(userId),
     listBringItems(userId),
+    listEventNotificationSettings(userId),
   ]);
 
   // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
@@ -110,8 +112,11 @@ export async function loadCalendarData(
   // 外れたカレンダーを指している場合は色が引けず null のままになり、
   // eventColors(null) の既定色へ落ちる。
   const calendarColorById = new Map(events.calendars.map((c) => [c.calendarId, c.color]));
-  const travels: TravelItem[] = travelPlans.map((plan) =>
-    toTravelItem(plan, plan.googleCalendarId ? (calendarColorById.get(plan.googleCalendarId) ?? null) : null),
+  const travels: TravelItem[] = attachTravelNotificationSettings(
+    travelPlans.map((plan) =>
+      toTravelItem(plan, plan.googleCalendarId ? (calendarColorById.get(plan.googleCalendarId) ?? null) : null),
+    ),
+    travelNotificationSettings,
   );
 
   // 紐づけの解決とずれの判定はここで済ませる（docs/spec.md §31）。月表示は1度の描画で

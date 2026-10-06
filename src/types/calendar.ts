@@ -351,6 +351,11 @@ export type TravelItem = {
    * eventColors(null) の既定色（FALLBACK）に落ちる。
    */
   color: string | null;
+  /**
+   * この移動の通知設定（issue #1112）。出発時刻を基準にする。予定と同じ
+   * EventNotificationSetting に `travel:<id>` のキーで持つ。無ければ通知しない。
+   */
+  notification?: EventNotificationOverride | null;
 };
 
 export type CalendarItem = CalendarEventItem | TaskItem | ReminderItem | TravelItem;

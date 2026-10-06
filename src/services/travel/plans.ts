@@ -10,6 +10,10 @@ import {
   type TravelMode,
 } from "@/types/calendar";
 
+import {
+  dropNotificationSettingForTravel,
+  replanNotifications,
+} from "@/services/calendar/event-notification-settings";
 import { dropLinksForTravel, syncLinksForTravel } from "@/services/task-links/links";
 import type { TravelLinkInput } from "./link-input";
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
@@ -205,6 +209,9 @@ export async function updateTravel(
     data: toWriteData(input),
   });
 
+  // 出発時刻が変わったら通知の下書きを作り直させる（issue #1112。次の作り直しまで古い時刻で送られない）。
+  if (existing.departAt.getTime() !== updated.departAt.getTime()) await replanNotifications(userId);
+
   // 紐づいたタスクの日付を追随させる（issue #914）。失敗しても移動の更新は成功のまま扱う
   // （追随できなかった分は日付のずれとして画面に出る）。
   await syncLinksForTravel(userId, updated.id, updated).catch((error: unknown) => {
@@ -269,6 +276,7 @@ export async function deleteTravel(userId: string, travelId: string): Promise<bo
   await db.travelPlan.delete({ where: { id: existing.id } });
   // 紐づいたタスクの紐づけは外し、入っている日付は残す（予定を消したときと同じ扱い）。
   await dropLinksForTravel(userId, existing.id);
+  await dropNotificationSettingForTravel(userId, existing.id);
 
   return true;
 }

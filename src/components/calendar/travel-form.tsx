@@ -1,19 +1,21 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
 import type { GoogleMapsRoute } from "@/lib/google-maps-route";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
   TRAVEL_MODE_LABELS,
+  type EventNotificationOverride,
   type TravelEstimateSource,
   type TravelItem,
   type TravelMode,
@@ -21,6 +23,7 @@ import {
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { EventNotificationDialog } from "./event-notification-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
@@ -83,6 +86,11 @@ export function TravelForm({
   );
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
+  // 通知設定（issue #1112）。出発時刻を基準に、予定と同じ選び方をする。
+  const [notification, setNotification] = useState<EventNotificationOverride | null>(
+    editing?.notification ?? null,
+  );
+  const [editingNotification, setEditingNotification] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 保存はできたが、Googleカレンダーへ書き出せなかったとき。黙って閉じると気付けない。
@@ -236,7 +244,33 @@ export function TravelForm({
         return;
       }
 
-      const body = (await response.json()) as { exports?: { status: string; reason?: string }[] };
+      const body = (await response.json()) as {
+        exports?: { status: string; reason?: string }[];
+        travels?: { id: string }[];
+      };
+
+      // 通知設定は移動の保存後に送る（予定と同じベストエフォート。移動は保存できているため、
+      // 失敗してもここでは止めない）。新規作成は往路（先頭）だけが対象で、復路は詳細から設定する。
+      const notificationTravelId = editing ? editing.id : (body.travels?.[0]?.id ?? null);
+      const notificationChanged = editing
+        ? !sameNotificationOverride(editing.notification ?? null, notification)
+        : notification !== null;
+
+      if (notificationTravelId && notificationChanged) {
+        try {
+          const notifyUrl = `/api/travels/${encodeURIComponent(notificationTravelId)}/notification`;
+          const notifyResponse = notification?.enabled
+            ? await fetch(notifyUrl, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: true, leadMinutes: notification.leadMinutes }),
+              })
+            : await fetch(notifyUrl, { method: "DELETE" });
+          if (!notifyResponse.ok) console.error("[dayspan] travel notification setting: save failed");
+        } catch (cause) {
+          console.error("[dayspan] travel notification setting: save failed:", cause);
+        }
+      }
 
       const touched: TouchedRange[] = [{ start: departIso, end: arriveIso }];
       if (returnTrip) touched.push({ start: returnTrip.departAt, end: returnTrip.arriveAt });
@@ -396,6 +430,33 @@ export function TravelForm({
           onChange={(e) => setNote(e.target.value)}
           onClear={() => setNote("")}
         />
+
+        {/* 通知設定（issue #1112）。出発時刻の何分前に知らせるかを、予定と同じダイアログで選ぶ。 */}
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined}
+            onClick={() => setEditingNotification(true)}
+          >
+            {notification?.enabled ? <Bell className="size-4" /> : <BellOff className="size-4" />}
+            {eventNotificationSummary(notification)}
+          </Button>
+          <span className="type-label-small text-on-surface-variant">出発時刻を基準に知らせます</span>
+        </div>
+
+        {editingNotification && (
+          <EventNotificationDialog
+            title={origin && destination ? `${origin} → ${destination}` : "この移動"}
+            initial={notification}
+            onCancel={() => setEditingNotification(false)}
+            onSaved={(next) => {
+              setEditingNotification(false);
+              setNotification(next);
+            }}
+          />
+        )}
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
