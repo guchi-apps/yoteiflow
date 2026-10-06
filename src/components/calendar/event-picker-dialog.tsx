@@ -93,6 +93,7 @@ export function EventPickerDialog({
   kinds = "both",
   title,
   description,
+  initialDate,
   onCancel,
   onPick,
   onSelect,
@@ -105,6 +106,8 @@ export function EventPickerDialog({
   kinds?: "event" | "travel" | "both";
   title?: string;
   description?: string;
+  /** 1日表示で最初に開く日（YYYY-MM-DD）。紐づけ元の日。無ければ今日（issue #1126）。 */
+  initialDate?: string;
   onCancel: () => void;
   onPick?: (link: PendingEventLink) => void;
   /**
@@ -122,14 +125,18 @@ export function EventPickerDialog({
     () => isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10),
     [timeZone],
   );
-  const [monthKey, setMonthKey] = useState(() => todayKey.slice(0, 7));
+  const [dayKey, setDayKey] = useState(() => initialDate ?? todayKey);
+  const [monthKey, setMonthKey] = useState(() => (initialDate ?? todayKey).slice(0, 7));
   const [events, setEvents] = useState<CalendarEventItem[] | null>(null);
   // 移動も予定と同じ形に直して、予定とまとめて1つの一覧・月グリッドに並べる（issue #1097）。
   const [travels, setTravels] = useState<TravelItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [travelError, setTravelError] = useState<string | null>(null);
-  // 月グリッドか日付ごとの一覧か（issue #809）。端末には覚えさせない。
-  const [mode, setMode] = useState<"month" | "list">("month");
+  // 1日表示（既定・issue #1126）・月グリッド・日付ごとの一覧（issue #809）。端末には覚えさせない。
+  const [mode, setMode] = useState<"day" | "month" | "list">("day");
+  // 1日表示で日付を押して開く、日を選ぶための月グリッド。
+  const [calOpen, setCalOpen] = useState(false);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [chosen, setChosen] = useState<PickItem | null>(null);
   const [stage, setStage] = useState<TaskEventStage>("BEFORE_START");
@@ -209,6 +216,25 @@ export function EventPickerDialog({
       // 終日を先に、続いて開始の早い順。
       .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
 
+  // 1日表示の日を動かす。月をまたいだら取得する月も追随させる（取得中は旧データを出し続ける）。
+  const goDay = (key: string) => {
+    setDayKey(key);
+    setMonthKey(key.slice(0, 7));
+  };
+  const shiftDay = (delta: number) => {
+    const [y, m, d] = dayKey.split("-").map(Number);
+    goDay(new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10));
+  };
+  const onSwipeEnd = (x: number, y: number) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start) return;
+    const dx = x - start.x;
+    const dy = y - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    shiftDay(dx < 0 ? 1 : -1);
+  };
+
   const close = () => {
     setOpen(false);
     setTimeout(onCancel, 150);
@@ -268,6 +294,21 @@ export function EventPickerDialog({
     [weeks, monthKey, items, utils],
   );
   const focusEvents = focusDay ? eventsOn(focusDay) : [];
+  const selectedDayEvents = eventsOn(dayKey);
+  const dayLabel = formatLinkedDate(dayKey, timeZone);
+  const eventRow = (event: PickItem) => (
+    <button
+      key={pickKey(event)}
+      type="button"
+      onClick={() => choose(event)}
+      className="flex w-full items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
+    >
+      <span className="clip-nowrap">{event.title}</span>
+      <span className="shrink-0 text-xs text-on-surface-variant">
+        {event.allDay ? "終日" : formatLinkedDate(event.start, timeZone).split(" ")[1]}
+      </span>
+    </button>
+  );
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
@@ -320,6 +361,54 @@ export function EventPickerDialog({
             </DialogHeader>
 
             <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex gap-1">
+                {(["day", "month", "list"] as const).map((value) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={mode === value ? "secondary" : "outline"}
+                    className={cn(mode === value && "text-on-secondary-container")}
+                    onClick={() => {
+                      setMode(value);
+                      setCalOpen(false);
+                      if (value === "day" && focusDay) goDay(focusDay);
+                    }}
+                  >
+                    {value === "day" ? "日" : value === "month" ? "月" : "一覧"}
+                  </Button>
+                ))}
+              </div>
+
+              {mode === "day" && (
+                <div className="flex items-center justify-between gap-2">
+                  <Button variant="ghost" size="icon" aria-label="前の日" onClick={() => shiftDay(-1)}>
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-expanded={calOpen}
+                      onClick={() => setCalOpen((value) => !value)}
+                    >
+                      <b className="text-sm">
+                        {dayLabel}（{WEEKDAYS[new Date(`${dayKey}T00:00:00Z`).getUTCDay()]}）
+                      </b>
+                    </Button>
+                    {dayKey !== todayKey && (
+                      <Button variant="ghost" size="sm" onClick={() => goDay(todayKey)}>
+                        今日
+                      </Button>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="icon" aria-label="次の日" onClick={() => shiftDay(1)}>
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              )}
+
+              {(mode !== "day" || calOpen) && (
               <div className="flex items-center justify-between gap-2">
                 <Button
                   variant="ghost"
@@ -346,21 +435,7 @@ export function EventPickerDialog({
                   <ChevronRight className="size-4" />
                 </Button>
               </div>
-
-              <div className="flex gap-1">
-                {(["month", "list"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    size="sm"
-                    variant={mode === value ? "secondary" : "outline"}
-                    className={cn(mode === value && "text-on-secondary-container")}
-                    onClick={() => setMode(value)}
-                  >
-                    {value === "month" ? "月" : "一覧"}
-                  </Button>
-                ))}
-              </div>
+              )}
 
               {mode === "list" ? (
                 <div
@@ -395,7 +470,7 @@ export function EventPickerDialog({
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : mode === "day" && !calOpen ? null : (
               <div
                 className={cn(
                   "grid grid-cols-7 border-t border-l border-outline-variant transition-opacity",
@@ -412,19 +487,24 @@ export function EventPickerDialog({
                 ))}
                 {weeks.flat().map((dateKey) => {
                   const inMonth = dateKey.slice(0, 7) === monthKey;
-                  const dayEvents = inMonth ? eventsOn(dateKey) : [];
+                  const cellEvents = mode === "day" ? [] : inMonth ? eventsOn(dateKey) : [];
 
                   return (
                     <div
                       key={dateKey}
                       className={cn(
                         "flex min-h-14 min-w-0 flex-col gap-0.5 border-r border-b border-outline-variant p-0.5",
-                        dateKey === focusDay && "bg-secondary-container/40",
+                        dateKey === (mode === "day" ? dayKey : focusDay) && "bg-secondary-container/40",
                       )}
                     >
                       <button
                         type="button"
-                        onClick={() => setFocusDay(dateKey)}
+                        onClick={() => {
+                          if (mode === "day") {
+                            goDay(dateKey);
+                            setCalOpen(false);
+                          } else setFocusDay(dateKey);
+                        }}
                         className={cn(
                           "rounded px-0.5 text-right text-[10px]",
                           dayTone(dateKey) ?? "text-on-surface-variant",
@@ -434,7 +514,7 @@ export function EventPickerDialog({
                       >
                         {Number(dateKey.slice(8, 10))}
                       </button>
-                      {dayEvents.slice(0, CELL_LIMIT).map((event) => (
+                      {cellEvents.slice(0, CELL_LIMIT).map((event) => (
                         <button
                           key={pickKey(event)}
                           type="button"
@@ -445,19 +525,40 @@ export function EventPickerDialog({
                           {event.title}
                         </button>
                       ))}
-                      {dayEvents.length > CELL_LIMIT && (
+                      {cellEvents.length > CELL_LIMIT && (
                         <button
                           type="button"
                           onClick={() => setFocusDay(dateKey)}
                           className="text-left text-[10px] text-on-surface-variant"
                         >
-                          他{dayEvents.length - CELL_LIMIT}件
+                          他{cellEvents.length - CELL_LIMIT}件
                         </button>
                       )}
                     </div>
                   );
                 })}
               </div>
+              )}
+
+              {mode === "day" && (
+                <div
+                  className={cn(
+                    "flex max-h-[50dvh] min-h-24 touch-pan-y flex-col overflow-y-auto rounded-md border border-outline-variant transition-opacity",
+                    items === null && "opacity-50",
+                  )}
+                  onTouchStart={(e) => {
+                    swipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                  }}
+                  onTouchEnd={(e) => onSwipeEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY)}
+                  onTouchCancel={() => {
+                    swipeStart.current = null;
+                  }}
+                >
+                  {items !== null && selectedDayEvents.length === 0 && (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">予定・移動がありません。</p>
+                  )}
+                  {selectedDayEvents.map(eventRow)}
+                </div>
               )}
 
               {mode === "month" && focusDay && (
