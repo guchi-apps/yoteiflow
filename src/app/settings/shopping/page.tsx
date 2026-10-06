@@ -5,6 +5,7 @@ import { TagSection, type TagSectionState } from "@/components/settings/tag-sect
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { loadTagOptions } from "@/services/notion/tag-options";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
 function notionUrl(databaseId: string | null): string | null {
@@ -13,7 +14,7 @@ function notionUrl(databaseId: string | null): string | null {
 
 export default async function ShoppingSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");

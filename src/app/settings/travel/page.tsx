@@ -7,10 +7,11 @@ import { db } from "@/lib/db";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { getTravelSettings } from "@/services/travel/settings";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function TravelSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   // 移動そのものはDaySpanのDBにあるため、Google未接続でも設定は開ける
   // （書き出し先が選べないだけで、出発地・交通手段・往復は使える）。

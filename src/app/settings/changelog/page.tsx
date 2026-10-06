@@ -7,10 +7,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { APP_VERSION } from "@/lib/app-version";
 import { getCurrentUser } from "@/lib/auth-user";
 import { APP_CHANGELOG } from "@/lib/changelog";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function ChangelogPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   return (
     <SettingsShell

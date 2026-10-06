@@ -9,10 +9,11 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { shoppingDatabaseReady } from "@/services/notion/shopping-items";
 import { getRunningActivity } from "@/services/activity/running";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function ShoppingPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [uiSetting, connection, runningActivity] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),

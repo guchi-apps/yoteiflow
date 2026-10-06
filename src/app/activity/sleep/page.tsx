@@ -12,6 +12,7 @@ import { SLEEP_RANGE_DAYS, buildSleepNights } from "@/lib/sleep";
 import { getRunningActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
 import { loadSleepEvents, sleepNightKeys } from "@/services/activity/sleep";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** 既定で並べる夜の数。 */
 const DEFAULT_DAYS = SLEEP_RANGE_DAYS[0];
@@ -28,7 +29,7 @@ export default async function SleepPage({
   searchParams: Promise<{ days?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [uiSetting, sleep, running] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),

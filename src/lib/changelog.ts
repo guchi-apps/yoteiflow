@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.8.1",
+    date: "2026-10-06",
+    changes: [
+      "ログインできなくなる不具合を修正しました。以前と違う認証情報で同じGoogleアカウントからログインしようとすると、エラーになって先へ進めないことがありました。いまは同じアカウントとして確認できれば、これまでの設定や連携を引き継いでログインできます。引き継げなかった場合は、ログイン画面に理由が表示されます。",
+    ],
+  },
+  {
     version: "4.8.0",
     date: "2026-10-06",
     changes: [

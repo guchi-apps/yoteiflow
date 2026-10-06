@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import type { PlacePropertyMap } from "@/services/notion/place-database";
 import { listPlaces, type PlaceItem } from "@/services/notion/places";
 import { loadTagOptions, type TagOption } from "@/services/notion/tag-options";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /**
  * 登録した場所の一覧・編集（docs/spec.md §9）。
@@ -20,7 +21,7 @@ import { loadTagOptions, type TagOption } from "@/services/notion/tag-options";
  */
 export default async function PlacesPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   const map = (connection?.placePropertyMap as PlacePropertyMap | null) ?? {};

@@ -8,6 +8,7 @@ import { isApnsConfigured } from "@/lib/apns/config";
 import { getVapidKeys, isPushConfigured } from "@/lib/web-push/keys";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { countNotificationDevices } from "@/services/notifications/subscriptions";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /**
  * 通知の設定（docs/spec.md §32）。
@@ -17,7 +18,7 @@ import { countNotificationDevices } from "@/services/notifications/subscriptions
  */
 export default async function NotificationSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [settings, deviceCount, uiSetting] = await Promise.all([
     getNotificationSettings(user.id),

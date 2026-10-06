@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isUserAllowed } from "@/lib/access/client";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
+import { isLoginError } from "@/lib/login-errors";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { isPublicPath } from "@/lib/supabase/public-paths";
 
@@ -104,7 +105,9 @@ export async function updateSession(request: NextRequest) {
 
   // ログイン済みユーザーが /login を開いた場合（ブラウザの「戻る」操作等）は
   // ログイン画面を再表示せず、起動時と同じ画面（この端末の起動画面）へ送る。
-  if (pathname === "/login" && user) {
+  // 失敗の案内（?error=）付きのときは戻さない。DaySpanのUserに結び付いていないセッションで
+  // 戻すと、保護ページが /login へ差し戻して往復になり、案内が表示されないため（issue #1113）。
+  if (pathname === "/login" && user && !isLoginError(request.nextUrl.searchParams.get("error"))) {
     const target = resolveInternalPath(
       request.nextUrl.searchParams.get("callbackUrl"),
       request.cookies.get(START_PATH_COOKIE)?.value,

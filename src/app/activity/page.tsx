@@ -13,10 +13,11 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { listActivityPresets } from "@/services/activity/presets";
 import { getRunningActivity } from "@/services/activity/running";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function ActivityPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   // 記録はDaySpanのDBだけで完結する。外部APIには触れないため、開くのに待ち時間は入らない。
   // 保存先の有無はカレンダー設定の行数で見る（Googleへ問い合わせると、押すまでに間が空く）。

@@ -7,10 +7,11 @@ import { StartPathSection } from "@/components/settings/start-path-section";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { DEFAULT_HOME_PATH, isStartPath, START_PATH_COOKIE } from "@/lib/home-path";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function DisplaySettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const [uiSetting, cookieStore] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),

@@ -18,10 +18,11 @@ import type { PlacePropertyMap } from "@/services/notion/place-database";
 import type { ReminderPropertyMap } from "@/services/notion/reminder-database";
 import type { ShoppingPropertyMap } from "@/services/notion/shopping-database";
 import type { WorkPropertyMap } from "@/services/notion/work-database";
+import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function NotionSettingsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
   const state = await loadNotionState(user.id);
 
