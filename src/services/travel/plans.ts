@@ -10,6 +10,7 @@ import {
   type TravelMode,
 } from "@/types/calendar";
 
+import { dropNotificationSettingForTravel } from "@/services/calendar/event-notification-settings";
 import { dropLinksForTravel, syncLinksForTravel } from "@/services/task-links/links";
 import type { TravelLinkInput } from "./link-input";
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
@@ -269,6 +270,7 @@ export async function deleteTravel(userId: string, travelId: string): Promise<bo
   await db.travelPlan.delete({ where: { id: existing.id } });
   // 紐づいたタスクの紐づけは外し、入っている日付は残す（予定を消したときと同じ扱い）。
   await dropLinksForTravel(userId, existing.id);
+  await dropNotificationSettingForTravel(userId, existing.id);
 
   return true;
 }
