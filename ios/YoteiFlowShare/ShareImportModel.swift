@@ -53,6 +53,13 @@ final class ShareImportViewModel: ObservableObject {
 
     var onCancel: () -> Void = {}
     var onPrimary: () -> Void = {}
+    var onLink: () -> Void = {}
+
+    /// 直接登録できる経路（日時が揃った経路）だけ、既存の予定へ紐づけて追加する入口を出す（issue #1128）
+    var canLinkToEvent: Bool {
+        guard let item else { return false }
+        return item.registrable && item.isRoute
+    }
 
     /// 主ボタンの文言。直接登録できるものは「登録」、それ以外は本体アプリで続ける
     var primaryTitle: String {

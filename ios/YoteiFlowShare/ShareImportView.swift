@@ -88,6 +88,15 @@ struct ShareImportView: View {
     private var actionBar: some View {
         VStack(spacing: 0) {
             Divider()
+            if model.canLinkToEvent {
+                Button { model.onLink() } label: {
+                    Text("予定に紐づけて追加").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            }
             HStack(spacing: 12) {
                 Button(role: .cancel) { model.onCancel() } label: {
                     Text("キャンセル").frame(maxWidth: .infinity)

@@ -46,6 +46,8 @@ export type TravelDraft = {
   linkedEvent?: { id: string; calendarId: string; endAt: string } | null;
   /** 往復を作るかの初期値。設定の既定値が入る。 */
   roundTrip?: boolean;
+  /** 入力欄の上に添える案内（共有拡張から紐づけて作るときの日付・メモの断り。issue #1128）。 */
+  notice?: string;
 };
 
 type GoogleRouteStatus =
@@ -413,6 +415,8 @@ export function TravelForm({
             </div>
           )}
         </div>
+
+        {draft.notice && <p className="px-4 text-sm text-on-surface-variant">{draft.notice}</p>}
 
         {/* 往復は元になった予定があるときだけ。単独の移動では帰りの起点が決まらない。 */}
         {!editing && draft.linkedEvent && (
