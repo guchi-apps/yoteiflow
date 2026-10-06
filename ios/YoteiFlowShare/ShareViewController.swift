@@ -34,6 +34,9 @@ final class ShareViewController: UIViewController {
 
         model.onCancel = { [weak self] in self?.complete() }
         model.onPrimary = { [weak self] in self?.primaryAction() }
+        model.onLink = { [weak self] in
+            if let item = self?.model.item { self?.handOffToApp(item, link: true) }
+        }
 
         Task { await loadPreview() }
     }
@@ -108,7 +111,7 @@ final class ShareViewController: UIViewController {
     }
 
     /// 本体アプリを開いて入力を引き継ぐ。開けないときはURLをコピーして案内する
-    private func handOffToApp(_ item: SharedImportItem) {
+    private func handOffToApp(_ item: SharedImportItem, link: Bool = false) {
         var query: [String: String] = [:]
         if item.isRoute {
             query["newTravel"] = "1"
@@ -116,6 +119,12 @@ final class ShareViewController: UIViewController {
             query["destination"] = item.destination
             query["mode"] = item.mode
             query["minutes"] = item.durationMinutes.map(String.init)
+            // 既存の予定に紐づけて追加（issue #1128）。本体で予定を選び、日付は予定の日へ合わせる
+            if link, let startAt = item.startAt, let endAt = item.endAt {
+                query["link"] = "1"
+                query["departAt"] = startAt
+                query["arriveAt"] = endAt
+            }
         } else {
             query["newEvent"] = "place"
             query["title"] = item.title

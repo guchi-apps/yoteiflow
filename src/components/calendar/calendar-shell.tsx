@@ -47,7 +47,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
-import { HANDOFF_QUERY_KEYS, handoffLocationText, parseShareHandoff } from "@/lib/share-import/handoff";
+import { HANDOFF_QUERY_KEYS, handoffLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -60,6 +60,7 @@ import {
   type TaskItem,
   type TaskLinkTarget,
   type TravelItem,
+  type TravelMode,
 } from "@/types/calendar";
 import type { TravelSettings } from "@/services/travel/settings";
 import { coversDate, type WorkCapabilities } from "@/types/work";
@@ -68,6 +69,7 @@ import { dayTone, weekdayLabel } from "@/lib/day-tone";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
+import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
@@ -284,6 +286,15 @@ export function CalendarShell({
     [scrollTarget.month, weekStartsOn],
   );
 
+  // iOS共有拡張から「予定に紐づけて追加」で渡された移動。紐づけ先の予定を選ぶ間だけ持つ（issue #1128）。
+  const [sharedLink, setSharedLink] = useState<{
+    origin: string;
+    destination: string;
+    mode: TravelMode;
+    departAt: string;
+    arriveAt: string;
+  } | null>(null);
+
   // 画面に出しうる月と、サーバーが描いてよこした月。前者に足りないぶんをAPIから足す。
   const windowMonths = useMemo(() => monthsOfWeeks(monthWeeks), [monthWeeks]);
   const serverMonths = useMemo(() => monthsOfWeeks(weeks), [weeks]);
@@ -348,6 +359,10 @@ export function CalendarShell({
       });
       return;
     }
+    if (handoff.link) {
+      setSharedLink({ origin: handoff.origin, destination: handoff.destination, mode: handoff.mode, ...handoff.link });
+      return;
+    }
     const start = toQuickEventDraft(date, DEFAULT_START_MINUTES);
     const departAt = `${start.date}T${start.startTime}`;
     const minutes = handoff.minutes ?? 30;
@@ -369,6 +384,38 @@ export function CalendarShell({
     return () => clearTimeout(timer);
   }, [utils]);
 
+  /** 紐づけ先の予定を選んだら、予定の日へ寄せた発着時刻で移動の入力を開く（issue #1128）。 */
+  const openSharedTravel = (item: PickedItem) => {
+    const link = sharedLink;
+    if (!link) return;
+    setSharedLink(null);
+    const sharedDepart = isoToLocalInput(link.departAt, timeZone);
+    const sharedArrive = isoToLocalInput(link.arriveAt, timeZone);
+    const times = linkedTravelTimes(isoToLocalInput(item.start, timeZone), sharedDepart, sharedArrive);
+    const dateDiffers = sharedArrive.slice(0, 10) !== times.arriveAt.slice(0, 10);
+    const notice = [
+      dateDiffers ? "共有の検索日と予定の日が違うため、日付は予定の日に合わせ、時刻だけ取り込みました。" : null,
+      "経路の詳細は、下のメモへ貼り付けて追加できます。",
+    ]
+      .filter(Boolean)
+      .join("");
+    setItemDialog({
+      initialKind: "travel",
+      drafts: {
+        travel: {
+          origin: link.origin,
+          destination: link.destination,
+          mode: link.mode,
+          departAt: times.departAt,
+          arriveAt: times.arriveAt,
+          roundTrip: false,
+          linkedEvent: { id: item.eventId, calendarId: item.calendarId, endAt: item.end },
+          notice,
+        },
+      },
+    });
+  };
+
   const closeDialogs = () => {
     setItemDialog(null);
     setQuickDraft(null);
@@ -377,6 +424,7 @@ export function CalendarShell({
     setViewingReminder(null);
     setViewingTravel(null);
     setLinkingEvent(null);
+    setSharedLink(null);
   };
 
   /**
@@ -1096,6 +1144,18 @@ export function CalendarShell({
         なお前へ・次へは startTransition の中で遷移するため、表示中の内容を保った
         まま差し替わる（操作のたびに画面が消えることはない）。
       */}
+      {sharedLink && (
+        <EventPickerDialog
+          timeZone={timeZone}
+          weekStartsOn={weekStartsOn}
+          kinds="event"
+          initialDate={isoToLocalInput(sharedLink.departAt, timeZone).slice(0, 10)}
+          title="紐づける予定を選ぶ"
+          description="この移動に結ぶ予定を押してください。"
+          onCancel={() => setSharedLink(null)}
+          onSelect={openSharedTravel}
+        />
+      )}
       <CalendarBody
         dataPromise={dataPromise}
         tagCatalogPromise={tagCatalogPromise}
