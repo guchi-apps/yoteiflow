@@ -10,6 +10,10 @@ import {
   type TravelReturnInput,
   type TravelWriteInput,
 } from "@/services/travel/plans";
+import {
+  attachTravelNotificationSettings,
+  listEventNotificationSettings,
+} from "@/services/calendar/event-notification-settings";
 import { attachBringItemsForEvent } from "@/services/task-links/bring-items";
 
 type CreateBody = Partial<TravelWriteInput> & { returnTrip?: TravelReturnInput | null };
@@ -29,7 +33,14 @@ export async function GET(request: Request) {
 
   const plans = await listTravelsInRange(userId, getMonthsFetchRange([month]));
 
-  return NextResponse.json({ travels: plans.map((plan) => toTravelItem(plan)) });
+  const settings = await listEventNotificationSettings(userId);
+
+  return NextResponse.json({
+    travels: attachTravelNotificationSettings(
+      plans.map((plan) => toTravelItem(plan)),
+      settings,
+    ),
+  });
 }
 
 /** 移動を作る（docs/spec.md §29）。往復のときは復路も同じ呼び出しで作る。 */

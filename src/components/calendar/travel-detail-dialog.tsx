@@ -3,9 +3,10 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, ChevronRight, CloudOff, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, CloudOff, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { eventLeadLabel } from "@/lib/event-notification";
 import { placeDisplayName } from "@/lib/place-text";
 import { Button } from "@/components/ui/button";
 import {
@@ -192,6 +193,12 @@ export function TravelDetailDialog({
           <DetailRow icon={<CalendarClock className="size-4" />}>
             {formatTravelTime(travel, timeZone)}
           </DetailRow>
+
+          {travel.notification?.enabled && (
+            <DetailRow icon={<Bell className="size-4" />}>
+              通知：出発の{travel.notification.leadMinutes.map(eventLeadLabel).join("・")}
+            </DetailRow>
+          )}
 
           <DetailRow icon={<Route className="size-4" />}>
             {TRAVEL_MODE_LABELS[travel.mode]} {minutes}分

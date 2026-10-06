@@ -4,13 +4,15 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { eventLeadAnnouncement, resolveEventLeadMinutes } from "@/lib/event-notification";
 import { db } from "@/lib/db";
+import { listEventNotificationSettings, toEventNotificationOverride } from "@/services/calendar/event-notification-settings";
+import { planTravelDrafts } from "@/services/notifications/plan-travels";
 import { loadGoogleEvents } from "@/services/calendar/load";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { countDueTasks, countShopping } from "@/services/notifications/badge";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { createNotionClient } from "@/services/notion/client";
 import { listAllTasks } from "@/services/notion/tasks";
-import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, EventNotificationOverride, TaskItem } from "@/types/calendar";
 import { PLAN_WINDOW_HOURS, type NotificationSettings } from "@/types/notification";
 
 /**
@@ -131,6 +133,11 @@ export async function planUserNotifications(userId: string, now: Date): Promise<
       drafts.push(...planEvents(eventResult.items, settings, now, windowEnd, utils));
     }
 
+    // 移動は予定と同じ親スイッチ（eventEnabled）に従う。DaySpanのDBだけを読む（issue #1112）。
+    if (settings.eventEnabled) {
+      drafts.push(...(await planTravels(userId, settings, now, windowEnd, utils)));
+    }
+
     if (settings.taskEnabled && taskResult) {
       drafts.push(...planTasks(taskResult, now, windowEnd, utils));
       drafts.push(...planTaskDigests(taskResult, settings.taskDigestTime, now, windowEnd, utils, timeZone));
@@ -244,6 +251,30 @@ function planEvents(
   }
 
   return drafts;
+}
+
+/** 通知を入れた移動の下書き（issue #1112）。出発が窓に入る移動だけをDBから引く。 */
+async function planTravels(
+  userId: string,
+  settings: NotificationSettings,
+  now: Date,
+  windowEnd: Date,
+  utils: ReturnType<typeof createCalendarDateUtils>,
+): Promise<JobDraft[]> {
+  const rows = await listEventNotificationSettings(userId);
+  const overrides = new Map<string, EventNotificationOverride>();
+  for (const row of rows) {
+    if (row.eventId.startsWith("travel:")) {
+      overrides.set(row.eventId.slice("travel:".length), toEventNotificationOverride(row));
+    }
+  }
+
+  const travels = await db.travelPlan.findMany({
+    where: { userId, departAt: { gt: now, lte: windowEnd } },
+    select: { id: true, origin: true, destination: true, departAt: true, arriveAt: true },
+  });
+
+  return planTravelDrafts(travels, overrides, settings.eventEnabled, now, windowEnd, utils);
 }
 
 /** 時刻のある期限は、その時刻に1件ずつ知らせる。 */
