@@ -16,9 +16,9 @@ import {
   getVisibleDays,
   monthsOfWeeks,
   parseDateKey,
-  parseView,
   toDateKey,
 } from "@/lib/calendar-range";
+import { resolveCalendarView } from "@/lib/calendar-initial-view";
 import { CALENDAR_VIEW_COOKIE, parseCalendarMemory } from "@/lib/calendar-view-memory";
 import { db } from "@/lib/db";
 import { getRunningActivity } from "@/services/activity/running";
@@ -48,17 +48,20 @@ export default async function CalendarPage({
 
   const params = await searchParams;
 
-  // 前回この端末で見ていた表示形式・日付（issue #279）。URLに書かれている項目のほうが常に優先で、
-  // 書かれていない項目だけをここで埋める。再読み込み・ブックマーク・共有されたURLの意味を変えないため。
-  // 記憶が無い・古い（Cookieの期限切れ）ときは、今日の月表示になる。
+  // 前回この端末で見ていた日付（issue #279）。URLに書かれている項目のほうが常に優先で、
+  // 書かれていない日付だけをここで埋める。再読み込み・ブックマーク・共有されたURLの意味を変えないため。
+  // 表示形式は前回のものを使わず、URLに無ければ設定の初期表示で決める（issue #1144。下のview）。
   const memory = parseCalendarMemory((await cookies()).get(CALENDAR_VIEW_COOKIE)?.value);
-  const view = parseView(params.view ?? memory?.view);
 
   const [uiSetting, googleAccountCount, notionConnection] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.googleAccount.count({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
   ]);
+
+  // 表示形式: URLの view > 設定の初期表示 > 月表示（issue #1144）。
+  // カレンダー内の切り替えはURLに view を載せるため、手動の切り替え・再読み込みは尊重される。
+  const view = resolveCalendarView(params.view, uiSetting?.defaultMobileView);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
 

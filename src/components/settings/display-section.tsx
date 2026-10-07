@@ -12,19 +12,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  INITIAL_CALENDAR_VIEW_OPTIONS,
+  isInitialCalendarView,
+  type InitialCalendarView,
+} from "@/lib/calendar-initial-view";
 import { WEEK_START_OPTIONS } from "@/lib/week-start";
 
-export function DisplaySection({ weekStartsOn }: { weekStartsOn: number }) {
+export function DisplaySection({
+  weekStartsOn,
+  defaultView,
+}: {
+  weekStartsOn: number;
+  defaultView: InitialCalendarView;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(weekStartsOn);
+  const [view, setView] = useState(defaultView);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const change = async (next: number) => {
-    // 応答を待ってから動かすと、選んだのに変わらない時間ができる。先に反映し、失敗したら戻す。
     const previous = value;
-    setValue(next);
+    await save({ weekStartsOn: next }, () => setValue(next), () => setValue(previous));
+  };
+
+  const changeView = async (next: string) => {
+    if (!isInitialCalendarView(next)) return;
+    const previous = view;
+    await save({ defaultView: next }, () => setView(next), () => setView(previous));
+  };
+
+  const save = async (
+    body: { weekStartsOn: number } | { defaultView: InitialCalendarView },
+    apply: () => void,
+    revert: () => void,
+  ) => {
+    // 応答を待ってから動かすと、選んだのに変わらない時間ができる。先に反映し、失敗したら戻す。
+    apply();
     setBusy(true);
     setError(null);
 
@@ -32,18 +58,18 @@ export function DisplaySection({ weekStartsOn }: { weekStartsOn: number }) {
       const response = await fetch("/api/settings/ui", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStartsOn: next }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-        setValue(previous);
+        revert();
         setError("設定を保存できませんでした。");
         return;
       }
 
       startTransition(() => router.refresh());
     } catch {
-      setValue(previous);
+      revert();
       setError("設定を保存できませんでした。");
     } finally {
       setBusy(false);
@@ -58,6 +84,28 @@ export function DisplaySection({ weekStartsOn }: { weekStartsOn: number }) {
             {error}
           </p>
         )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="initial-view">カレンダーの初期表示</Label>
+            <p className="type-body-small text-on-surface-variant">
+              カレンダーを開いたときの表示形式です。画面内で切り替えても、この設定は変わりません。
+            </p>
+          </div>
+
+          <Select value={view} onValueChange={changeView} disabled={busy || pending}>
+            <SelectTrigger id="initial-view" className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {INITIAL_CALENDAR_VIEW_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
