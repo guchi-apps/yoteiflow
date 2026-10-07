@@ -217,3 +217,14 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 ## 初回スコープ外（後続Issue）
 
 TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ （WidgetKitのウィジェットは #926、Live Activity は #971 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。
+
+## 自動テスト（XCTest）
+
+`YoteiFlowTests`（単体テストTarget）と共有scheme `YoteiFlow`（`xcshareddata`）がある。テストは `Shared/` を同じバンドルへ取り込んで実行する純ロジックのみ（`LiveActivityReconcile`・`SharedConfig` のディープリンク検証）で、アプリ本体をホストにしない。実機・WebView・Keychainに依存するものは対象外。
+
+```bash
+xcodebuild test -project ios/YoteiFlow.xcodeproj -scheme YoteiFlow \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+subpc には Xcode が無く、Target は pbxproj を手で編集して足した。**Mac mini での `xcodebuild test` は未確認**（失敗したらpbxprojのTarget定義を疑う）。テストを足すときは `ios/YoteiFlowTests/` にファイルを置くだけでよい（同期グループ）。
