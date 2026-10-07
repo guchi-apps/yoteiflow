@@ -35,6 +35,8 @@ export type SharedImport = {
   estimated: boolean;
   /** 直接登録できるか。日時の無い経路は false で、アプリの移動入力へ引き継ぐ */
   registrable: boolean;
+  /** 不足している項目・推定値である旨など、確認画面に添える案内（issue #1142）。無ければ null */
+  notice: string | null;
 };
 
 export type ShareImportFailure = {

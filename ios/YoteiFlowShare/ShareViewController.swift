@@ -119,6 +119,9 @@ final class ShareViewController: UIViewController {
             query["destination"] = item.destination
             query["mode"] = item.mode
             query["minutes"] = item.durationMinutes.map(String.init)
+            // AIの目安かどうかと元の共有URLも渡し、入力画面で推定と分かる形・メモに残す（issue #1142）
+            query["estimated"] = item.estimated && item.durationMinutes != nil ? "1" : nil
+            query["url"] = item.sourceUrl
             // 既存の予定に紐づけて追加（issue #1128）。本体で予定を選び、日付は予定の日へ合わせる
             if link, let startAt = item.startAt, let endAt = item.endAt {
                 query["link"] = "1"

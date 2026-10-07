@@ -48,6 +48,8 @@ export type TravelDraft = {
   roundTrip?: boolean;
   /** 入力欄の上に添える案内（共有拡張から紐づけて作るときの日付・メモの断り。issue #1128）。 */
   notice?: string;
+  /** 所要時間の出どころの初期値（共有で受けたAIの目安など。issue #1142）。無ければ手入力。 */
+  estimateSource?: TravelEstimateSource;
 };
 
 type GoogleRouteStatus =
@@ -84,7 +86,7 @@ export function TravelForm({
   const [note, setNote] = useState(draft.note ?? "");
   // 所要時間の出どころ。手で入れた値・AIの目安・経路検索の結果を保存先にも残す。
   const [estimateSource, setEstimateSource] = useState<TravelEstimateSource>(
-    editing?.estimateSource ?? "MANUAL",
+    editing?.estimateSource ?? draft.estimateSource ?? "MANUAL",
   );
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
@@ -136,21 +138,29 @@ export function TravelForm({
     setEstimateSource("MANUAL");
   };
 
-  /** Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。 */
-  const applyGoogleMapsRoute = (route: GoogleMapsRoute) => {
+  /**
+   * Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。
+   * 所要時間はURLに無くAIで補う。補えなかったとき（null）は時刻の長さを変えず、手で入れてもらう（issue #1142）。
+   */
+  const applyGoogleMapsRoute = (route: GoogleMapsRoute, sourceUrl: string | null) => {
     setOrigin(route.origin);
     setDestination(route.destination);
     setMode(route.mode);
-    setEstimateSource("GOOGLE_MAPS");
 
     const imported = route.departAt ? isoToLocalInput(route.departAt, timeZone) : departAt;
     // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
     const depart = route.departAt && draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
     const base = new Date(`${depart}:00Z`);
-    if (depart && !Number.isNaN(base.getTime())) {
+    const currentMs = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
+    const durationMs = route.minutes !== null ? route.minutes * 60_000 : Number.isFinite(currentMs) && currentMs > 0 ? currentMs : null;
+    if (depart && !Number.isNaN(base.getTime()) && durationMs !== null) {
       setDepartAt(depart);
-      setArriveAt(new Date(base.getTime() + route.minutes * 60_000).toISOString().slice(0, 16));
+      setArriveAt(new Date(base.getTime() + durationMs).toISOString().slice(0, 16));
     }
+    // AIの見積もりは目安として保存する。補えなかったときは利用者が入れる値なので手入力扱い
+    setEstimateSource(route.minutes !== null ? "AI" : "MANUAL");
+    // 元の共有URLをメモへ残し、登録後にも参照できるようにする（共有拡張からの取り込みと揃える）
+    if (sourceUrl) setNote((current) => (current.includes(sourceUrl) ? current : [current.trim(), sourceUrl].filter(Boolean).join("\n")));
 
     setError(null);
   };
@@ -172,12 +182,16 @@ export function TravelForm({
         if (isCurrentRequest()) setGoogleRouteStatus({ kind: "error", message });
         return;
       }
-      const body = (await response.json()) as { route: GoogleMapsRoute };
+      const body = (await response.json()) as { route: GoogleMapsRoute; sourceUrl?: string | null };
       if (!isCurrentRequest()) return;
-      applyGoogleMapsRoute(body.route);
+      applyGoogleMapsRoute(body.route, body.sourceUrl ?? value);
+      const minutes = body.route.minutes;
       setGoogleRouteStatus({
         kind: "success",
-        message: `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}・所要時間${body.route.minutes}分）。`,
+        message:
+          minutes !== null
+            ? `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}・所要時間${minutes}分はAIによる目安）。`
+            : `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}）。所要時間は取得できなかったため、出発・到着時刻を入力してください。`,
       });
     } catch {
       if (isCurrentRequest()) {
@@ -383,7 +397,7 @@ export function TravelForm({
             onClear={() => changeGoogleRouteUrl("")}
           />
           {googleRouteStatus.kind === "idle" && (
-            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、AIが解析して入力欄へ反映します。</p>
+            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、出発地・目的地・交通手段を入力欄へ反映し、所要時間はAIが目安を補います。</p>
           )}
           {googleRouteStatus.kind === "analyzing" && (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">

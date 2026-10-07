@@ -22,6 +22,10 @@ export type ShareHandoff =
       destination: string;
       mode: TravelMode;
       minutes: number | null;
+      /** 所要時間がAIの推定か（Googleマップ経路・issue #1142）。入力画面で出どころを「AIによる目安」にする */
+      estimated: boolean;
+      /** 元の共有URL。移動のメモへ残し、登録後にも参照できるようにする（issue #1142） */
+      url: string | null;
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
       link: { departAt: string; arriveAt: string; note: string } | null;
     };
@@ -101,14 +105,18 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
     const destination = text(params.get("destination"));
     const mode = params.get("mode");
     if (!origin || !destination || !isTravelMode(mode)) return null;
-    const minutes = Number(params.get("minutes"));
+    const rawMinutes = params.get("minutes");
+    const minutes = rawMinutes === null || rawMinutes.trim() === "" ? Number.NaN : Number(rawMinutes);
+    const validMinutes = Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES ? minutes : null;
     const link = params.get("link") === "1" ? linkTimes(params.get("departAt"), params.get("arriveAt"), params.get("note")) : null;
     return {
       kind: "travel",
       origin,
       destination,
       mode,
-      minutes: Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES ? minutes : null,
+      minutes: validMinutes,
+      estimated: validMinutes !== null && params.get("estimated") === "1",
+      url: googleMapsUrl(params.get("url")),
       link,
     };
   }
@@ -123,4 +131,4 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated"] as const;

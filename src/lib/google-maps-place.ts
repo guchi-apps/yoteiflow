@@ -6,7 +6,7 @@
  */
 
 import type { LatLng } from "@/lib/coordinates";
-import { isGoogleMapsHost } from "@/lib/google-maps-route";
+import { isGoogleMapsHost, isGoogleMapsRouteUrl } from "@/lib/google-maps-route";
 
 export type GoogleMapsPlace = {
   /** 場所名（`/maps/place/<名前>/` や `?q=` の文字列）。座標だけのときは null */
@@ -62,8 +62,9 @@ export function parseGoogleMapsPlaceUrl(input: string): GoogleMapsPlace | null {
   }
   if (url.protocol !== "https:" || !isGoogleMapsHost(url.hostname)) return null;
 
+  // 経路（発着地が欠けたものを含む）は場所として読まない（issue #1142）
+  if (isGoogleMapsRouteUrl(url.toString())) return null;
   const segments = url.pathname.split("/").filter(Boolean);
-  if (segments.includes("dir") || url.searchParams.has("destination")) return null;
 
   const placeIndex = segments.indexOf("place");
   const search = segments.indexOf("search");

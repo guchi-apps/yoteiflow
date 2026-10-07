@@ -26,6 +26,8 @@ struct SharedImportItem: Decodable, Equatable {
     let estimated: Bool
     /// 日時が揃っていて、共有拡張から直接登録できるか。false の経路・場所は本体アプリへ引き継ぐ
     let registrable: Bool
+    /// 不足している項目・推定値である旨などの案内（issue #1142）。旧サーバーの応答には無いため optional
+    let notice: String?
 
     var isRoute: Bool { type == "route" }
 }
