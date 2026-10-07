@@ -26,6 +26,9 @@ function record(overrides: Partial<WorkRecordItem>): WorkRecordItem {
     preApplied: false,
     postRegistered: false,
     memo: null,
+    segments: [],
+    segmentsText: null,
+    segmentsInvalid: false,
     url: null,
     ...overrides,
   };

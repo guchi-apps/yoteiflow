@@ -17,7 +17,8 @@ export type WorkField =
   | "companyHoliday"
   | "preApplied"
   | "postRegistered"
-  | "memo";
+  | "memo"
+  | "segments";
 
 export type WorkPropertyMap = Partial<Record<WorkField, string>>;
 
@@ -111,6 +112,15 @@ export const WORK_FIELD_REQUIREMENTS: Requirement[] = [
     required: false,
     hints: ["メモ", "備考", "memo", "note"],
   },
+  {
+    field: "segments",
+    label: "時間帯",
+    types: ["rich_text"],
+    required: false,
+    hints: ["時間帯", "内訳"],
+    // メモと同じ rich_text のため、型だけで割り当てるとメモ欄へ内訳を書き込む（issue #1155）。
+    hintOnly: true,
+  },
 ];
 
 export type WorkValidation = {
@@ -190,6 +200,7 @@ export const WORK_DATABASE_TEMPLATE = {
   preApplied: "事前申請",
   postRegistered: "事後登録",
   memo: "メモ",
+  segments: "時間帯",
 } as const satisfies Required<Record<WorkField, string>>;
 
 /**
@@ -285,6 +296,7 @@ export async function createWorkDatabase(
         [WORK_DATABASE_TEMPLATE.preApplied]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.postRegistered]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.memo]: { rich_text: {} },
+        [WORK_DATABASE_TEMPLATE.segments]: { rich_text: {} },
       },
     },
   });
@@ -303,7 +315,7 @@ export async function createWorkDatabase(
 
 /**
  * すでに使っている勤務記録DBへ、足りない任意プロパティ（年休・出張・会社休業日・事前申請・
- * 事後登録・メモ）を足す。
+ * 事後登録・メモ・時間帯）を足す。
  *
  * 年休・出張・会社休業日・事前申請・事後登録は名前が当たったときだけ対応付けるため、既存のDBを選ぶと
  * 揃わないことがある。どの型で何という名前にすればよいのかは画面のどこにも出ていないので、
@@ -332,6 +344,9 @@ export async function addWorkOptionalProperties(
   }
   if (!names.has(WORK_DATABASE_TEMPLATE.memo)) {
     additions[WORK_DATABASE_TEMPLATE.memo] = { rich_text: {} };
+  }
+  if (!names.has(WORK_DATABASE_TEMPLATE.segments)) {
+    additions[WORK_DATABASE_TEMPLATE.segments] = { rich_text: {} };
   }
 
   if (Object.keys(additions).length > 0) {

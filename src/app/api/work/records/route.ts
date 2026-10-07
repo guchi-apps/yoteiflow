@@ -6,14 +6,24 @@ import { getNotionWorkConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
 import {
   createWorkRecord,
+  workCapabilities,
   WorkDateTakenError,
+  WorkSegmentsInvalidError,
   type WorkWriteInput,
 } from "@/services/notion/work-logs";
 import { saveRecordOverride } from "@/services/work-sync/config";
 import { syncWorkRecord } from "@/services/work-sync/sync";
 import { HOLIDAY_TITLE } from "@/types/work";
 
-import { checkWorkSync, dateTaken, splitWorkSync, validateWorkBody, type WorkRequestBody } from "../shared";
+import {
+  checkWorkSync,
+  dateTaken,
+  invalidSegments,
+  segmentsUnsupported,
+  splitWorkSync,
+  validateWorkBody,
+  type WorkRequestBody,
+} from "../shared";
 
 /** タイトルが省かれたときの名前。年休は区分まで、通常の勤務は勤務場所をそのまま使う。 */
 function defaultWorkTitle(body: WorkWriteInput): string {
@@ -39,6 +49,8 @@ export async function POST(request: Request) {
   if (badSync) return badSync;
   const invalid = validateWorkBody(body, { requireStartDate: true });
   if (invalid) return invalid;
+  const unsupported = segmentsUnsupported(body, workCapabilities(connection).segments);
+  if (unsupported) return unsupported;
   if (override) {
     const incomplete = await checkWorkSync(userId, null, body, override);
     if (incomplete) return incomplete;
@@ -58,6 +70,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ record: created, sync });
   } catch (error) {
     if (error instanceof WorkDateTakenError) return dateTaken();
+    if (error instanceof WorkSegmentsInvalidError) return invalidSegments(error.message);
     return externalApiError("notion", "勤務記録の作成", error);
   }
 }

@@ -38,7 +38,36 @@ export type WorkRecordItem = {
   preApplied: boolean;
   postRegistered: boolean;
   memo: string | null;
+  /**
+   * 時間帯ごとの内訳（issue #1155・docs/spec.md §34）。分けていない記録は空。
+   *
+   * 「朝は在宅、13:00から出張」のように1日の中で勤務場所・出張を切り替えた日に使う。記録は
+   * 1日1件のまま（月の集計は記録の主な種類で1日）で、内訳は記録とカレンダーの勤務予定・移動の
+   * ためだけに持つ。Notionの「時間帯」列（rich_text）に1行1区切りの文字列で保存する。
+   */
+  segments: WorkSegment[];
+  /** Notionの「時間帯」列の生の値。書式が読めなかった（`segmentsInvalid`）ときに画面へ出す。 */
+  segmentsText: string | null;
+  /** 「時間帯」列に読めない行があったか。利用者が内訳を触らない限り書き戻さない（手書きを壊さない）。 */
+  segmentsInvalid: boolean;
   url: string | null;
+};
+
+/**
+ * 勤務記録の時間帯ごとの区切り（issue #1155）。時刻は0時からの分。
+ *
+ * `trip: false` は勤務場所（勤務場所のselectの選択肢）で働いた時間帯。`trip: true` は出張先に
+ * いた時間帯で、出張の記録だけが持てる。区切りごとに行き先を持てるのは、1日に複数の出張先を
+ * 回る日があるため（大阪のあと京都）。行き先が空なら記録のタイトル（従来の行き先）。
+ */
+export type WorkSegment = {
+  /** 期間の記録で、どの日の区切りか（YYYY-MM-DD）。単日の記録は null（＝その日）。 */
+  date: string | null;
+  start: number;
+  end: number;
+  place: string | null;
+  trip: boolean;
+  destination: string | null;
 };
 
 /**
@@ -56,6 +85,8 @@ export type WorkCapabilities = {
   companyHoliday: boolean;
   approval: boolean;
   memo: boolean;
+  /** 時間帯ごとの内訳（Notionの「時間帯」列）を持てるか（issue #1155）。 */
+  segments: boolean;
 };
 
 /**

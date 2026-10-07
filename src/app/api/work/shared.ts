@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { parseSegmentsInput } from "@/lib/work-segments";
 import { parseWorkOverride } from "@/lib/work-sync/override";
 import type { WorkRecordOverride } from "@/lib/work-sync/plan";
-import type { WorkWriteInput } from "@/services/notion/work-logs";
+import { resolveSegmentsUpdate, type WorkWriteInput } from "@/services/notion/work-logs";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { validateOverrideForRecord } from "@/services/work-sync/sync";
 import type { WorkRecordItem } from "@/types/work";
@@ -54,6 +55,10 @@ export async function checkWorkSync(
     preApplied: false,
     postRegistered: false,
     memo: null,
+    // 時間帯の内訳があると勤務予定・移動の作り方が変わるため、反映の検証にも渡す（issue #1155）。
+    segments: resolveSegmentsUpdate(base, input).segments ?? base?.segments ?? [],
+    segmentsText: null,
+    segmentsInvalid: false,
     url: null,
   };
   const message = await validateOverrideForRecord(userId, record, override);
@@ -98,6 +103,14 @@ export function validateWorkBody(
       { status: 400 },
     );
   }
+  if (body.segments !== undefined) {
+    const segments = parseSegmentsInput(body.segments);
+    if (typeof segments === "string") {
+      return NextResponse.json({ error: "invalid_segments", message: segments }, { status: 400 });
+    }
+    // 形を整えた値で置き換える（以降の処理は検証済みの区切りだけを見る）。
+    body.segments = segments;
+  }
   // 出張・年休・会社休業日は同じ日に立てられない。月の集計でどれに数えるかが決まらないため。
   // 画面では択一にして選べないようにしているが、隠すだけだとAPIや将来のMCPから直接
   // 呼ばれた要求が素通りする。
@@ -140,3 +153,20 @@ export const notEditable = () =>
     { error: "not_editable", message: "この項目はYoteiFlowからは変更できません。" },
     { status: 403 },
   );
+
+/** 時間帯の内訳が記録と食い違うときの応答（issue #1155）。 */
+export const invalidSegments = (message: string) =>
+  NextResponse.json({ error: "invalid_segments", message }, { status: 400 });
+
+/** 「時間帯」列の無い勤務記録DBへ内訳を送られたときの応答。空の内訳は受け流す。 */
+export function segmentsUnsupported(body: WorkWriteInput, supported: boolean): NextResponse | null {
+  if (supported || !body.segments || body.segments.length === 0) return null;
+  return NextResponse.json(
+    {
+      error: "segments_unsupported",
+      message:
+        "勤務記録DBに「時間帯」のプロパティがありません。設定 ▸ Notion から追加してください。",
+    },
+    { status: 400 },
+  );
+}
