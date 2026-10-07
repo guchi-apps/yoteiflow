@@ -10,7 +10,7 @@ import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activi
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
-import { useNowIso } from "@/components/calendar/use-clock";
+import { useNowIso, useSecondNowIso } from "@/components/calendar/use-clock";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
@@ -277,7 +277,6 @@ export function ActivityScreen({
             {running ? (
               <RunningCard
                 running={running}
-                nowIso={nowIso}
                 timeZone={timeZone}
                 disabled={disabled}
                 editingStart={editingStart}
@@ -433,7 +432,6 @@ export function ActivityScreen({
  */
 function RunningCard({
   running,
-  nowIso,
   timeZone,
   disabled,
   editingStart,
@@ -453,8 +451,6 @@ function RunningCard({
   onDiscard,
 }: {
   running: RunningActivityItem;
-  /** 現在時刻。サーバー描画の時点では持たないため null になりうる（use-clock.ts）。 */
-  nowIso: string | null;
   timeZone: string;
   disabled: boolean;
   editingStart: boolean;
@@ -479,6 +475,8 @@ function RunningCard({
   onDiscard: () => void;
 }) {
   const endInvalid = editingEnd ? invalidEnd(endInput, nowInput, running, timeZone) : null;
+  // 経過時間だけ1秒刻みで進める（issue #1124）。他の表示は分単位のまま。
+  const secondNowIso = useSecondNowIso();
 
   return (
     <Card className="bg-primary-container text-on-primary-container">
@@ -492,9 +490,9 @@ function RunningCard({
         {/* この画面を開く理由のほとんどは「どれくらい経ったか」と「止めること」。
             経過時間は画面で最も大きい字にする（M3 Expressive へ更新したとき〈issue #705〉に
             display-small を足し、headline-small から上げた）。 */}
-        {nowIso && (
+        {secondNowIso && (
           <div className="type-display-small tabular-nums">
-            {formatElapsed(running.startedAt, nowIso)}
+            {formatElapsed(running.startedAt, secondNowIso, true)}
           </div>
         )}
 

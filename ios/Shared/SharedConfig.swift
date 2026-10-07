@@ -32,6 +32,7 @@ enum SharedConfig {
     /// （`ios/scripts/check-consistency.mjs` が照合する）。引き継げるのは `/calendar` だけ。
     static let handoffQueryKeys: [String] = [
         "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes",
+        "link", "departAt", "arriveAt",
     ]
     static let handoffPath = "/calendar"
     private static let handoffValueLimit = 2_048
