@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
+import { candidateFormTimes } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
@@ -49,6 +50,8 @@ export type TravelDraft = {
   estimateSource?: TravelEstimateSource;
   /** 共有拡張から渡されたGoogleマップのURL。開いた直後に取り込み、候補が複数なら選ばせる（issue #1160）。 */
   resolveUrl?: string;
+  /** 共有拡張の確認画面で選んだ経路。再取得した候補のうち名前・距離が一致するものを選択済みにする（issue #1168）。 */
+  preselectRoute?: { name: string; distance: string | null };
 };
 
 type GoogleRouteStatus =
@@ -172,12 +175,38 @@ export function TravelForm({
   const appendNote = (text: string) =>
     setNote((current) => (current.includes(text) ? current : [current.trim(), text].filter(Boolean).join("\n")));
 
-  // 共有URLに複数の経路候補があるとき、選ぶまで時刻は変えない（先頭を共有時の経路と断定しない・issue #1160）
+  // 共有URLに複数の経路候補があるとき、利用者が1件選ぶまで確定しない（先頭を共有時の経路と断定しない・issue #1160・#1168）
   const [routeCandidates, setRouteCandidates] = useState<ShareRouteCandidate[] | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
+
+  /** 選んだ経路の行をメモへ置き換える（切り替えても前の経路の行が残らない） */
+  const setRouteNote = (candidate: ShareRouteCandidate) => {
+    const line = `選んだ経路: ${[candidate.name, candidate.distanceText, candidate.representativeText && `代表時間 ${candidate.representativeText}`].filter(Boolean).join(" / ")}`;
+    setNote((current) =>
+      [...current.split("\n").filter((row) => !row.startsWith("選んだ経路: ")), line].join("\n").trim(),
+    );
+  };
+
+  /** 候補を選ぶ。固定した出発／到着日時は保ち、選んだ候補の代表時間だけから反対側を求める（別候補の値は混ぜない） */
+  const selectRouteCandidate = (candidates: ShareRouteCandidate[], index: number) => {
+    const candidate = candidates[index];
+    if (!candidate) return;
+    const times = candidateFormTimes(
+      candidate,
+      { departAt, arriveAt },
+      (iso) => isoToLocalInput(iso, timeZone),
+      draft.linkedEvent ? { departAt, arriveAt } : null,
+    );
+    setDepartAt(times.departAt);
+    setArriveAt(times.arriveAt);
+    setSelectedRoute(index);
+    setEstimateSource(candidate.minutes !== null ? "GOOGLE_MAPS" : "MANUAL");
+    setRouteNote(candidate);
+  };
 
   /**
    * Googleマップの共有URLを貼り付けたとき、読めた経路を入力欄へ反映する。共有・URL貼り付けで同じ解釈（`SharedImport`）を使う。
-   * 日時・所要時間はGoogleを再取得した予測で、取れなかった項目は触らず手で入れてもらう（issue #1142・#1160）。
+   * 日時・所要時間はGoogleを再取得した代表時間で、取れなかった項目は触らず手で入れてもらう（issue #1142・#1160・#1168）。
    */
   const applyGoogleMapsRoute = (item: SharedImport, sourceUrl: string | null) => {
     if (item.origin) setOrigin(item.origin);
@@ -185,21 +214,39 @@ export function TravelForm({
     if (item.mode) setMode(item.mode);
 
     setRouteCandidates(item.candidates);
-    const applied = item.candidates ? false : applyTimes({ startAt: item.startAt, endAt: item.endAt, minutes: item.durationMinutes });
-    if (applied) setEstimateSource(item.estimateSource ?? "MANUAL");
+    setSelectedRoute(null);
+    let applied: boolean;
+    if (item.candidates) {
+      // 未選択のあいだも、指定された出発／到着日時（固定側）は入力欄へ保持する
+      const preselect = draft.preselectRoute;
+      const index = preselect
+        ? item.candidates.findIndex((candidate) => candidate.name === preselect.name && candidate.distanceText === preselect.distance)
+        : -1;
+      if (index >= 0) {
+        selectRouteCandidate(item.candidates, index);
+        applied = true;
+      } else {
+        const fixed = candidateFormTimes(
+          { startAt: item.startAt, endAt: item.endAt, minutes: null },
+          { departAt, arriveAt },
+          (iso) => isoToLocalInput(iso, timeZone),
+          draft.linkedEvent ? { departAt, arriveAt } : null,
+        );
+        if (item.startAt || item.endAt) {
+          setDepartAt(fixed.departAt);
+          setArriveAt(fixed.arriveAt);
+        }
+        applied = false;
+      }
+    } else {
+      applied = applyTimes({ startAt: item.startAt, endAt: item.endAt, minutes: item.durationMinutes });
+      if (applied) setEstimateSource(item.estimateSource ?? "MANUAL");
+    }
     // 元の共有URL・予測の幅・距離をメモへ残し、登録後にも参照できるようにする
     const detail = item.detail ?? sourceUrl;
     if (detail) appendNote(detail);
     setError(null);
     return applied;
-  };
-
-  const pickRouteCandidate = (candidate: ShareRouteCandidate) => {
-    // 別候補の値は混ぜない。選んだ候補の開始・終了・所要時間だけを使う
-    if (!applyTimes({ startAt: candidate.startAt, endAt: candidate.endAt, minutes: candidate.minutes })) return;
-    setEstimateSource("GOOGLE_MAPS");
-    appendNote(`選んだ経路: ${[candidate.name, candidate.distanceText, candidate.durationText].filter(Boolean).join(" / ")}`);
-    setRouteCandidates(null);
   };
 
   const importGoogleMapsRoute = async (value: string) => {
@@ -208,6 +255,7 @@ export function TravelForm({
     const isCurrentRequest = () => googleRouteRequestRef.current === requestId;
     setGoogleRouteStatus({ kind: "analyzing" });
     setRouteCandidates(null);
+    setSelectedRoute(null);
     setError(null);
     try {
       const response = await fetch("/api/travels/google-maps-route", {
@@ -460,23 +508,44 @@ export function TravelForm({
             </p>
           )}
           {routeCandidates && (
-            <div className="flex flex-col gap-1.5" role="group" aria-label="経路候補">
-              <p className="text-xs text-muted-foreground">共有時に選んだ経路を特定できません。使う経路を選ぶと、その経路の時間だけを入力欄へ反映します。</p>
-              {routeCandidates.map((candidate, index) => (
-                <Button
-                  key={`${candidate.name}-${index}`}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-auto justify-start whitespace-normal py-1.5 text-left"
-                  onClick={() => pickRouteCandidate(candidate)}
-                >
-                  {[candidate.name || `候補${index + 1}`, candidate.distanceText, candidate.durationText].filter(Boolean).join(" / ")}
-                  {candidate.startAt && candidate.endAt
-                    ? `（${isoToLocalInput(candidate.startAt, timeZone).slice(11)}〜${isoToLocalInput(candidate.endAt, timeZone).slice(11)}）`
-                    : ""}
-                </Button>
-              ))}
+            <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="経路候補">
+              <p className="text-xs text-muted-foreground">
+                {selectedRoute === null
+                  ? "使う経路を1つ選んでください。選んだ経路の代表時間で出発・到着時刻を求めます（予測幅は参考です）。"
+                  : "経路を変えると、代表時間から時刻を求め直します。"}
+              </p>
+              {routeCandidates.map((candidate, index) => {
+                const selected = selectedRoute === index;
+                const range =
+                  candidate.startAt && candidate.endAt
+                    ? `${isoToLocalInput(candidate.startAt, timeZone).slice(11)}〜${isoToLocalInput(candidate.endAt, timeZone).slice(11)}`
+                    : null;
+                return (
+                  <button
+                    key={`${candidate.name}-${index}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => selectRouteCandidate(routeCandidates, index)}
+                    className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm ${selected ? "border-primary bg-primary/10" : "border-outline-variant"}`}
+                  >
+                    <span aria-hidden className={`mt-1 size-3.5 shrink-0 rounded-full border-2 ${selected ? "border-primary bg-primary" : "border-outline"}`} />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-medium">
+                        {[candidate.name || `候補${index + 1}`, candidate.distanceText].filter(Boolean).join(" / ")}
+                      </span>
+                      <span>
+                        {candidate.representativeText ? `代表時間 ${candidate.representativeText}` : "代表時間は未取得（時刻は手入力）"}
+                        {range ? `（${range}）` : ""}
+                      </span>
+                      {candidate.rangeText && <span className="text-xs text-muted-foreground">参考: 予測幅 {candidate.rangeText}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+              <Button type="button" variant="ghost" size="xs" className="self-start" onClick={() => setRouteCandidates(null)}>
+                手入力で続ける
+              </Button>
             </div>
           )}
           {googleRouteStatus.kind === "error" && (

@@ -115,8 +115,9 @@ export async function resolveGoogleMapsShare(
   const directions = await (deps.directions ?? fetchGoogleMapsDirections)(expandedUrl);
   const candidates = directions.ok ? directions.candidates.slice(0, MAX_CANDIDATES) : [];
   const scheduled = candidates.map((candidate) => ({ candidate, times: scheduleCandidate(candidate, route.schedule, timeZone) }));
-  const chosen = unambiguousCandidate(scheduled);
-  const ambiguous = scheduled.length > 1 && chosen === null;
+  // 候補が複数あるときは自動で確定せず、利用者が選ぶ（issue #1168）。1件ならその候補を採用する
+  const ambiguous = scheduled.length > 1;
+  const chosen = scheduled.length === 1 ? scheduled[0] : null;
 
   // Googleから予測時間が取れなかったときだけ、AIの目安を試す（確定値としては扱わず「（目安）」と断る）。
   // 取れた候補が割れている（共有時の選択を特定できない）ときは、AIで1つに決めない
@@ -133,7 +134,7 @@ export async function resolveGoogleMapsShare(
 
   let times: ScheduledTimes;
   if (chosen) times = chosen.times;
-  else if (ambiguous) times = scheduleMinutes(null, route.schedule, scheduled[0]?.candidate.timeZone ?? timeZone);
+  else if (ambiguous) times = scheduleMinutes(null, route.schedule, scheduled[0]?.candidate.timeZone ?? timeZone); // 固定側の指定日時だけ保持
   else times = scheduleMinutes(aiMinutes, route.schedule, timeZone);
   const minutes = ambiguous ? null : times.minutes;
   const estimateSource: "GOOGLE_MAPS" | "AI" | null = chosen && minutes !== null ? "GOOGLE_MAPS" : aiMinutes !== null ? "AI" : null;
@@ -144,11 +145,11 @@ export async function resolveGoogleMapsShare(
     minutes === null && !ambiguous ? "所要時間" : null,
   ].filter(Boolean);
   const notice = [
-    ambiguous ? "経路候補が複数あり、共有時に選んだ経路を特定できませんでした。移動の入力で経路を選んでください（取得した結果は共有時の画面と一致しないことがあります）。" : null,
+    ambiguous ? "経路候補が複数あります。使う経路を1つ選んでください（取得した結果は共有時の画面と一致しないことがあります）。" : null,
     missing.length > 0 ? `${missing.join("・")}を取得できなかったため、移動の入力で補ってください。` : null,
     unreached,
     minutes === null && aiFailed ? "所要時間の推定（AI）に失敗しました。" : null,
-    estimateSource === "GOOGLE_MAPS" ? "日時・所要時間はGoogleマップを再取得した予測です（予測が範囲のときは上限）。共有時の画面と異なることがあります。" : null,
+    estimateSource === "GOOGLE_MAPS" ? "所要時間はGoogleマップを再取得した経路の代表時間です（予測幅は参考）。共有時の画面と異なることがあります。" : null,
     estimateSource === "AI" ? "所要時間はAIによる目安です。" : null,
   ]
     .filter(Boolean)
@@ -187,17 +188,6 @@ const MAX_CANDIDATES = 5;
 
 type Scheduled = { candidate: DirectionsCandidate; times: ScheduledTimes };
 
-/** すべての候補の開始・終了・所要時間が同じ（または候補が1件）なら、どれを選んでも同じ結果として確定する。 */
-function unambiguousCandidate(scheduled: Scheduled[]): Scheduled | null {
-  const [first] = scheduled;
-  if (!first) return null;
-  const same = scheduled.every(
-    ({ times }) =>
-      times.startAt === first.times.startAt && times.endAt === first.times.endAt && times.minutes === first.times.minutes,
-  );
-  return same && first.times.minutes !== null ? first : null;
-}
-
 /** 経路の候補を持たない分数だけの候補（AIの目安・固定側のみの算出に使う） */
 function bareCandidate(minutes: number | null): DirectionsCandidate {
   return {
@@ -215,7 +205,8 @@ function toShareCandidate({ candidate, times }: Scheduled): ShareRouteCandidate 
   return {
     name: candidate.name,
     distanceText: candidate.distanceText,
-    durationText: candidate.rangeText ?? candidate.representativeText,
+    representativeText: candidate.representativeText,
+    rangeText: candidate.rangeText,
     minutes: times.minutes,
     startAt: times.startAt,
     endAt: times.endAt,
@@ -241,7 +232,7 @@ function buildDetail(
       item.name ? `経路: ${item.name}` : null,
       item.distanceText ? `距離: ${item.distanceText}` : null,
       item.representativeText ? `代表時間: ${item.representativeText}` : null,
-      item.rangeText ? `予測: ${item.rangeText}` : null,
+      item.rangeText ? `（参考）予測幅: ${item.rangeText}` : null,
     ]
       .filter(Boolean)
       .join(" / ");
