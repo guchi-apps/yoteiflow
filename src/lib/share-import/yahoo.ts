@@ -38,6 +38,7 @@ export function resolveYahooShare(text: string, timeZone: string): ShareImportRe
       detail: travel.note || null,
       estimated: false,
       registrable: true,
+      notice: null,
     },
   };
 }

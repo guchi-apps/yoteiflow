@@ -374,6 +374,13 @@ export function CalendarShell({
     const departAt = `${start.date}T${start.startTime}`;
     const minutes = handoff.minutes ?? 30;
     const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
+    // 共有に無かった値は仮の値で埋めているため、確定した情報のように見せず案内を添える（issue #1142）
+    const notice = [
+      "日時は共有に含まれていないため、仮の時刻を入れています。出発・到着時刻を確かめてください。",
+      handoff.minutes === null ? "所要時間は取得できませんでした。" : handoff.estimated ? "所要時間はAIによる目安です。" : null,
+    ]
+      .filter(Boolean)
+      .join("");
     setItemDialog({
       initialKind: "travel",
       drafts: {
@@ -383,6 +390,9 @@ export function CalendarShell({
           mode: handoff.mode,
           departAt,
           arriveAt: arrive,
+          note: handoff.url ?? undefined,
+          estimateSource: handoff.estimated ? "AI" : undefined,
+          notice,
         },
       },
     });
