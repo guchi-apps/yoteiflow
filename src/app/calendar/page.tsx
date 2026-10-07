@@ -36,6 +36,7 @@ import {
 } from "@/services/notion/work-logs";
 import { getTravelSettings } from "@/services/travel/settings";
 import { normalizeWorkMinutes } from "@/types/work";
+import { NarrowWeekFallback } from "@/components/calendar/narrow-week-fallback";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function CalendarPage({
@@ -126,6 +127,7 @@ export default async function CalendarPage({
       {/* バッジの件数は期限が今日以前のタスク（docs/spec.md §32）。カレンダーが取っているのは
           表示中の期間ぶんだけで、期限切れがその外にあると数が合わない。この画面では取り直す。 */}
       <AppBadgeSync />
+      {view === "day7" && !params.view && <NarrowWeekFallback anchorKey={toDateKey(anchor)} />}
       <ActivityIconProvider value={activityIcons}>
       <CalendarShell
         view={view}
