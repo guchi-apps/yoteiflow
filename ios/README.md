@@ -12,6 +12,7 @@
 | 認証シートの戻り先 | `yoteiflow://auth-callback`（ログイン）・`yoteiflow://google-connected`（Calendar連携） |
 | App Group | `group.com.gucchii.yoteiflow`（アプリとウィジェットでトークンを共有する Keychain のアクセスグループ。#926） |
 | ウィジェット拡張 | `YoteiFlowWidget`（Bundle ID `com.gucchii.yoteiflow.widget`） |
+| 睡眠モード連動拡張 | `YoteiFlowIntents`（Bundle ID `com.gucchii.yoteiflow.intents`・ExtensionKitのApp Intents拡張）。フォーカスフィルタ `SleepFocusFilter` を置き、アプリ未起動・ロック中でもシステムが実行する（#1167）。App Groupのkeychainの停止専用トークンで `/api/shortcuts/activity/sleep` を呼び、結果は `SleepFocusDiagnostics` に残して設定 ▸ ヘルスケアに出す。**Xcodeが無い環境で作ったためpbxproj・Swiftは未ビルド・実機未確認** |
 | 共有拡張 | `YoteiFlowShare`（Bundle ID `com.gucchii.yoteiflow.share`）。Yahoo!乗換案内の共有 ▸ YoteiFlow で、経路を確認してから移動を登録する（#1026・#1054）。停止専用トークンのBearerで `/api/shortcuts/travel/preview` を呼び、登録を押したときだけ `/import` を呼ぶ。**共有シートが渡す項目（テキストかURLか）は実機未確認。Xcodeが無い環境で作ったためpbxproj・Swiftは未ビルド** |
 | Associated Domains / Push | 使わない（初回スコープ外） |
 
@@ -91,7 +92,7 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 
 `main` へのデプロイ（`Deploy to Production`）が成功すると、`ios-testflight-trigger.yml` が `ios-testflight.yml`（`iOS TestFlight`）を起動します。kurashio（#591）と同じ構成で、issue-deck のブランチ画面の「iOS配布（TestFlight）の結果」がこのワークフローの段階（判定・署名・ビルド・アップロード・処理待ち・内部グループ配布）を読んで表示します。
 
-- 判定は `ios/scripts/ios-changes.mjs`。配布物（`YoteiFlow/`・`YoteiFlowWidget/`・`YoteiFlowShare/`・`Shared/`・`Config/`・`AppInfo.plist`・`YoteiFlow.xcodeproj/`。README・scripts・版番号の行だけの差分は除く）に、最後の配布印（タグ `ios-testflight/<ビルド番号>`）以降の変更があるときだけ配布する。印は配布し終えたときだけ進むので、失敗した配布の変更は次の判定にも残る
+- 判定は `ios/scripts/ios-changes.mjs`。配布物（`YoteiFlow/`・`YoteiFlowWidget/`・`YoteiFlowShare/`・`YoteiFlowIntents/`・`Shared/`・`Config/`・`AppInfo.plist`・`YoteiFlow.xcodeproj/`。README・scripts・版番号の行だけの差分は除く）に、最後の配布印（タグ `ios-testflight/<ビルド番号>`）以降の変更があるときだけ配布する。印は配布し終えたときだけ進むので、失敗した配布の変更は次の判定にも残る
 - ビルド番号は `run_number*100+run_attempt`。**手動の `upload-testflight.sh`（日時 `YYYYMMDDHHMM`）より小さくなる**ため、同じ版番号で手動のあとに自動配信すると App Store Connect が「ビルド番号が小さい」として拒否する。自動配信へ移したあとは手動アップロードを使わないか、`IOS_BUILD_NUMBER` で自動側より大きい値を指定する
 - 手動実行: `gh workflow run ios-testflight.yml -f sha=<main上のコミット> [-f dry_run=true]`。`dry_run` は判定だけ行いビルドしない
 - 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
@@ -216,3 +217,14 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 ## 初回スコープ外（後続Issue）
 
 TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ （WidgetKitのウィジェットは #926、Live Activity は #971 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。
+
+## 自動テスト（XCTest）
+
+`YoteiFlowTests`（単体テストTarget）と共有scheme `YoteiFlow`（`xcshareddata`）がある。テストは `Shared/` を同じバンドルへ取り込んで実行する純ロジックのみ（`LiveActivityReconcile`・`SharedConfig` のディープリンク検証）で、アプリ本体をホストにしない。実機・WebView・Keychainに依存するものは対象外。
+
+```bash
+xcodebuild test -project ios/YoteiFlow.xcodeproj -scheme YoteiFlow \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+subpc には Xcode が無く、Target は pbxproj を手で編集して足した。**Mac mini での `xcodebuild test` は未確認**（失敗したらpbxprojのTarget定義を疑う）。テストを足すときは `ios/YoteiFlowTests/` にファイルを置くだけでよい（同期グループ）。

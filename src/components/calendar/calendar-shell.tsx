@@ -385,6 +385,7 @@ export function CalendarShell({
             departAt,
             arriveAt: arrive,
             resolveUrl: handoff.url,
+            preselectRoute: handoff.route ?? undefined,
             notice: "Googleマップから日時・所要時間を取得しています。取得できなかった項目は手入力してください。",
           },
         },
@@ -1832,6 +1833,7 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          isActivity={activityCalendars.has(viewingEvent.calendarId)}
           // この予定のために作った移動。往路・復路の2件が同じ予定を指す。
           linkedTravels={data.travels.filter(
             (travel) => travel.linkedEventId === viewingEvent.id,

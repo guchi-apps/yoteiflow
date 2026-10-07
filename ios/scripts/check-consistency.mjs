@@ -159,6 +159,22 @@ export function checkConsistency() {
   if (!read("ios/YoteiFlowShare/ShareViewController.swift").includes('"api/shortcuts/travel/import"')) {
     problems.push("ShareViewController.swift が /api/shortcuts/travel/import を呼んでいません");
   }
+  // 睡眠モード連動の拡張（#1167）: 埋め込み・App Group・フィルタの置き場が揃っている
+  if (!read("ios/Config/YoteiFlowIntents.entitlements").includes(`<string>${appGroup}</string>`)) {
+    problems.push("ios/Config/YoteiFlowIntents.entitlements の App Group が SharedConfig.appGroup と一致しません");
+  }
+  if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;")) {
+    problems.push("睡眠連動拡張の Bundle ID が com.gucchii.yoteiflow.intents ではありません");
+  }
+  if (!pbxproj.includes("YoteiFlowIntents.appex in Embed ExtensionKit Extensions")) {
+    problems.push("睡眠連動拡張がアプリへ埋め込まれていません");
+  }
+  if (!read("ios/Config/YoteiFlowIntents-Info.plist").includes("com.apple.appintents-extension")) {
+    problems.push("睡眠連動拡張の Info.plist に appintents-extension の指定がありません");
+  }
+  if (!read("ios/YoteiFlowIntents/SleepFocusFilter.swift").includes("SetFocusFilterIntent")) {
+    problems.push("SleepFocusFilter が拡張（ios/YoteiFlowIntents）にありません");
+  }
   // 取得はトークン付きの既存ウィジェットAPIだけ。新しいAPIは増やさない
   const widgetApi = read("ios/YoteiFlowWidget/WidgetAPI.swift");
   if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");
@@ -203,7 +219,7 @@ export function checkConsistency() {
   if (!webViewModel.includes("/api/notifications/apns")) problems.push("WebViewModel.swift が /api/notifications/apns を使っていません");
   const apnsConfig = read("src/lib/apns/config.ts");
   const apnsTopic = apnsConfig.match(/DEFAULT_APNS_TOPIC = "([^"]+)"/)?.[1];
-  const bundleId = pbxproj.match(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/)?.[1];
+  const bundleId = pbxproj.match(/PRODUCT_BUNDLE_IDENTIFIER = ([^;.]+\.[^;.]+\.[^;.]+);/)?.[1];
   if (!apnsTopic || apnsTopic !== bundleId) {
     problems.push(`APNsのtopic（DEFAULT_APNS_TOPIC）が Bundle ID と一致しません: TS=${apnsTopic} / Xcode=${bundleId}`);
   }

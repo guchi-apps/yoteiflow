@@ -729,7 +729,14 @@ function DayColumn({
   /** 予定・移動・タスクの印を置ける範囲の左端（px）。レーンが無い日は 0。 */
   const contentLeft = laneWidth === 0 ? 0 : laneWidth + ACTIVITY_LANE_GAP;
 
-  const positioned = utils.layoutOverlaps(plainEvents, dateKey);
+  // 移動も同じ重なり計算に入れ、時間が重なる予定と横に並べる（issue #1172）。
+  const laidOut = utils.layoutOverlaps([...plainEvents, ...travels], dateKey);
+  const positioned = laidOut.flatMap((entry) =>
+    entry.event.kind === "event" ? [{ ...entry, event: entry.event }] : [],
+  );
+  const positionedTravels = laidOut.flatMap((entry) =>
+    entry.event.kind === "travel" ? [{ ...entry, travel: entry.event }] : [],
+  );
   // 記録どうしが重なる日（Googleの画面で直接足した場合）は、レーンの中をさらに分ける。
   const laneItems = utils.layoutOverlaps(activityEvents, dateKey);
   const gridHeight = hourHeight * 24;
@@ -858,11 +865,10 @@ function DayColumn({
       )}
 
       {/*
-        移動は予定より先に置く。予定の重なり計算（layoutOverlaps）には混ぜず、列を分けない。
-        移動は予定に付随するもので、横に並べると予定の幅がそのぶん狭くなるため（docs/spec.md §29）。
-        重なったときに読みたいのは予定のほうなので、移動を背面に置く。
+        移動は予定より先に置き、予定と同じ重なり計算（layoutOverlaps）で横に並べる（issue #1172）。
+        背面に全幅で置くと、時間が重なる予定の裏に隠れて見えなくなるため。重ならなければ全幅のまま。
       */}
-      {travels.map((travel) => {
+      {positionedTravels.map(({ travel, column, columns }) => {
         const startsToday = utils.itemDateKey(travel.start) === dateKey;
         const endsToday = utils.itemDateKey(travel.end) === dateKey;
         const startMinutes = startsToday ? utils.minutesFromMidnight(travel.start) : 0;
@@ -872,7 +878,8 @@ function DayColumn({
           <TravelBlock
             key={travel.id}
             travel={travel}
-            left={contentLeft}
+            left={`calc(${contentLeft}px + (100% - ${contentLeft}px) * ${column} / ${columns})`}
+            width={`calc((100% - ${contentLeft}px) / ${columns})`}
             top={offsetOf(startMinutes)}
             height={Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT)}
             timeText={`${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`}

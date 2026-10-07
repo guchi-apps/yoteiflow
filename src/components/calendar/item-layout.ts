@@ -312,7 +312,7 @@ export function createCalendarDateUtils(timeZone: string) {
    * 位置を持ち回ると倍率を変えるたびに全ての計算をやり直すことになる。
    */
   const eventRange = (
-    event: CalendarEventItem,
+    event: Pick<CalendarEventItem, "start" | "end">,
     dateKey: string,
   ): { startMinutes: number; endMinutes: number } => {
     const startsToday = itemDateKey(event.start) === dateKey;
@@ -356,25 +356,30 @@ export function createCalendarDateUtils(timeZone: string) {
   };
 
   /**
-   * 時間が重なる予定を横に並べる。重なりの集まりごとに列数を決め、
+   * 時間が重なる予定・移動を横に並べる。重なりの集まりごとに列数を決め、
    * 同じ集まりの中で空いている列へ順に割り当てる。
+   *
+   * 移動も同じ計算に混ぜる。背面に全幅で置くと、時間が重なる予定の裏に隠れて見えなくなる
+   * （issue #1172）。ただし移動は紐づく予定の直前・直後に隣接するのが通常形のため、
+   * 最小の高さぶんの占有は課さない（短い移動と次の予定が終了＝開始で接していても割らない）。
    */
-  const layoutOverlaps = (
-    events: CalendarEventItem[],
+  const layoutOverlaps = <T extends Pick<CalendarEventItem, "start" | "end"> & { kind: string }>(
+    events: T[],
     dateKey: string,
-  ): { event: CalendarEventItem; column: number; columns: number }[] => {
+  ): { event: T; column: number; columns: number }[] => {
     const sorted = [...events].sort(
       (a, b) => eventRange(a, dateKey).startMinutes - eventRange(b, dateKey).startMinutes,
     );
 
     /** 画面上で場所を取り終える時刻。最小の高さぶんは、短い予定でも占有しているものとして扱う。 */
-    const occupiedUntil = (event: CalendarEventItem): number => {
+    const occupiedUntil = (event: T): number => {
       const { startMinutes, endMinutes } = eventRange(event, dateKey);
+      if (event.kind === "travel") return endMinutes;
       return Math.max(endMinutes, startMinutes + MIN_EVENT_MINUTES);
     };
 
-    const result: { event: CalendarEventItem; column: number; columns: number }[] = [];
-    let cluster: { event: CalendarEventItem; column: number }[] = [];
+    const result: { event: T; column: number; columns: number }[] = [];
+    let cluster: { event: T; column: number }[] = [];
     let clusterEnd = -1;
 
     const flush = () => {

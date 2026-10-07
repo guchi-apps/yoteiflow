@@ -27,14 +27,16 @@ import { TravelMark } from "./travel-mark";
 export function TravelBlock({
   travel,
   left,
+  width,
   top,
   height,
   timeText,
   onOpen,
 }: {
   travel: TravelItem;
-  /** 左端の活動記録レーンのぶん右へ寄せる（issue #327）。レーンが無い日は 0。 */
-  left: number;
+  /** 左端の活動記録レーンと、重なる予定との列分割を反映した位置（CSSの長さ）。 */
+  left: string;
+  width: string;
   top: number;
   height: number;
   /** 「08:20–09:00」。日をまたぐ移動でも、実際の出発・到着の時刻を出す。 */
@@ -56,11 +58,12 @@ export function TravelBlock({
       type="button"
       onClick={onOpen}
       className={cn(
-        "absolute right-0 flex flex-col overflow-hidden rounded-item border text-on-surface",
+        "absolute flex flex-col overflow-hidden rounded-item border text-on-surface",
         "py-0.5 pr-1.5 text-left text-[10px] leading-tight",
       )}
       style={{
         left,
+        width,
         top,
         height,
         backgroundColor: colors.background,

@@ -112,6 +112,7 @@ final class LiveActivityCoordinator {
     /// ログアウト時。表示中のアクティビティを終わらせ、停止専用トークンを消す
     func signOut() {
         ActivityStopCredentials.clear()
+        SleepFocusDiagnostics.clear()
         pushToStartToken = nil
         Task { await LiveActivityClient.endAll() }
     }
