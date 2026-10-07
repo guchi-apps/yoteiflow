@@ -30,6 +30,9 @@ final class WebViewModel: NSObject, ObservableObject {
     private var lastPushHTTPStatus: Int?
     /// ウィジェット用トークンをこの起動で共有済みか（#926）
     private var hasSyncedWidgetToken = false
+    /// 睡眠連動・ライブアクティビティの停止専用トークンをKeychainへ置けたか。ウィジェット用トークンの成否とは分けて持つ（#1167）
+    private var hasSyncedActivityToken = false
+    private var isSyncingCredentials = false
     /// サーバーへ登録できた push-to-start トークン（ログアウトで消す）
     fileprivate var registeredLiveActivityStartToken: String?
     /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
@@ -321,6 +324,9 @@ extension WebViewModel {
     fileprivate func handleHealthBridge(_ body: Any) async -> [String: Any] {
         let action = (body as? [String: Any])?["action"] as? String ?? "sync"
         switch action {
+        case "sleepFocus":
+            // 睡眠モード連動の最後の呼び出しと、認証情報の準備状態（#1167）。トークンは含めない
+            return SleepFocusDiagnostics.bridgePayload()
         case "status":
             return [
                 "permission": healthSync.permission(),
@@ -606,7 +612,9 @@ extension WebViewModel {
 
         if url.path == "/login" {
             hasSyncedWidgetToken = false
+            hasSyncedActivityToken = false
             WidgetCredentials.clear()
+            SleepFocusDiagnostics.clear()
             // 停止ボタン用トークンも消し、表示中のアクティビティを終わらせる（ログアウト後に
             // 前のアカウントの記録を出し続けたり、止められたりしないように。#971）
             Task { @MainActor in LiveActivityCoordinator.shared.signOut() }
@@ -614,32 +622,34 @@ extension WebViewModel {
             WidgetCenter.shared.reloadAllTimelines()
             return
         }
-        // 画面が変わるたびに呼び直さない。1回の起動で共有できれば足りる
-        guard !hasSyncedWidgetToken, url.path != "/auth/native/start" else { return }
-        hasSyncedWidgetToken = true
+        // 画面が変わるたびに呼び直さない。どちらも共有できていれば足りる。片方だけ失敗しているときは、
+        // 次の画面で失敗した側だけ取り直す
+        guard url.path != "/auth/native/start",
+              !hasSyncedWidgetToken || !hasSyncedActivityToken,
+              !isSyncingCredentials
+        else { return }
+        isSyncingCredentials = true
 
         Task {
-            let script = """
-            const response = await fetch('/api/settings/widget/native', {
-              method: 'POST',
-              credentials: 'same-origin'
-            });
-            if (!response.ok) { return null; }
-            const body = await response.json();
-            return body.token;
-            """
-            let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
-            guard let token = value as? String, !token.isEmpty else {
-                // 未ログインや一時的な失敗。次の画面で取り直す
-                hasSyncedWidgetToken = false
-                return
+            defer { isSyncingCredentials = false }
+            if !hasSyncedWidgetToken {
+                let script = """
+                const response = await fetch('/api/settings/widget/native', {
+                  method: 'POST',
+                  credentials: 'same-origin'
+                });
+                if (!response.ok) { return null; }
+                const body = await response.json();
+                return body.token;
+                """
+                let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
+                if let token = value as? String, !token.isEmpty, WidgetCredentials.save(token: token) {
+                    hasSyncedWidgetToken = true
+                    WidgetCenter.shared.reloadAllTimelines()
+                }
             }
-            if WidgetCredentials.save(token: token) {
-                WidgetCenter.shared.reloadAllTimelines()
-                await syncLiveActivity()
-            } else {
-                hasSyncedWidgetToken = false
-            }
+            // 睡眠連動の停止専用トークンは、ウィジェットの成否と切り離して取り直す（#1167）
+            await syncLiveActivity()
         }
     }
 }
@@ -661,7 +671,16 @@ extension WebViewModel {
         """
         let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
         if let token = value as? String, !token.isEmpty {
-            ActivityStopCredentials.save(token: token)
+            if ActivityStopCredentials.save(token: token) {
+                hasSyncedActivityToken = true
+                SleepFocusDiagnostics.setCredential("saved")
+            } else {
+                hasSyncedActivityToken = false
+                SleepFocusDiagnostics.setCredential("keychainFailed")
+            }
+        } else {
+            hasSyncedActivityToken = false
+            SleepFocusDiagnostics.setCredential("fetchFailed")
         }
         await registerLiveActivityStartToken()
         await LiveActivityCoordinator.shared.reconcile()
