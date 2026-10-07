@@ -24,11 +24,10 @@ export async function PUT(
 
   // その予定の持ち物のうち移動が無くて期限が未設定のものを、この移動の出発へ紐づける（issue #1080）。
   // 失敗しても紐づけは成功のまま。
-  if (!parsed.value.returnLeg) {
-    await attachBringItemsForEvent(userId, parsed.value.eventId).catch((error) =>
-      console.error("[dayspan] bring item attach failed:", error),
-    );
-  }
+  // 予定前の移動がちょうど1件に決まるときだけ自動で付く（issue #1137）。
+  await attachBringItemsForEvent(userId, parsed.value.eventId, parsed.value.event).catch((error) =>
+    console.error("[dayspan] bring item attach failed:", error),
+  );
 
   return NextResponse.json({ travel });
 }

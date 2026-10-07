@@ -12,8 +12,6 @@ export type TravelSettings = {
   /** 既定の出発地。自宅など、多くの移動の起点になる場所。 */
   defaultOrigin: string | null;
   defaultMode: TravelMode;
-  /** 帰りの移動も一緒に作るか。 */
-  roundTrip: boolean;
   /** Googleカレンダーへの書き出し先。null は「予定作成の既定の保存先へ入れる」。 */
   calendarId: string | null;
 };
@@ -21,7 +19,6 @@ export type TravelSettings = {
 export const DEFAULT_TRAVEL_SETTINGS: TravelSettings = {
   defaultOrigin: null,
   defaultMode: "PUBLIC_TRANSIT",
-  roundTrip: true,
   calendarId: null,
 };
 
@@ -31,7 +28,6 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
     select: {
       travelDefaultOrigin: true,
       travelDefaultMode: true,
-      travelRoundTrip: true,
       travelCalendarId: true,
     },
   });
@@ -41,7 +37,6 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
   return {
     defaultOrigin: setting.travelDefaultOrigin,
     defaultMode: setting.travelDefaultMode,
-    roundTrip: setting.travelRoundTrip,
     calendarId: setting.travelCalendarId,
   };
 }
@@ -75,7 +70,6 @@ export async function updateTravelSettings(
     ...(input.defaultMode !== undefined && isTravelMode(input.defaultMode)
       ? { travelDefaultMode: input.defaultMode }
       : {}),
-    ...(input.roundTrip !== undefined ? { travelRoundTrip: input.roundTrip } : {}),
     ...(input.calendarId !== undefined ? { travelCalendarId: input.calendarId } : {}),
   };
 

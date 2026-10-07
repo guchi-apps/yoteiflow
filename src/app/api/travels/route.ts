@@ -7,16 +7,21 @@ import {
   listTravelsInRange,
   toTravelItem,
   validateTravelInput,
-  type TravelReturnInput,
   type TravelWriteInput,
 } from "@/services/travel/plans";
 import {
   attachTravelNotificationSettings,
   listEventNotificationSettings,
 } from "@/services/calendar/event-notification-settings";
+import { parseRelationEvent } from "@/lib/travel-relation";
 import { attachBringItemsForEvent } from "@/services/task-links/bring-items";
 
-type CreateBody = Partial<TravelWriteInput> & { returnTrip?: TravelReturnInput | null };
+/** `returnTrip` は廃止した復路の一括作成（issue #1137）。旧クライアントが送っても無視する。 */
+type CreateBody = Partial<TravelWriteInput> & {
+  eventStart?: string;
+  eventEnd?: string;
+  eventAllDay?: boolean;
+};
 
 /**
  * 指定した月の移動だけを返す（`?month=YYYY-MM`）。タスクの入力画面で紐づける移動を選ぶために使う
@@ -43,7 +48,7 @@ export async function GET(request: Request) {
   });
 }
 
-/** 移動を作る（docs/spec.md §29）。往復のときは復路も同じ呼び出しで作る。 */
+/** 移動を1件作る（docs/spec.md §29）。 */
 export async function POST(request: Request) {
   const userId = await requireUserId();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -55,27 +60,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await createTravel(
-      userId,
-      {
-        origin: body.origin!,
-        destination: body.destination!,
-        mode: body.mode!,
-        departAt: body.departAt!,
-        arriveAt: body.arriveAt!,
-        note: body.note ?? null,
-        estimated: body.estimated ?? false,
-        estimateSource: body.estimateSource,
-        linkedEventId: body.linkedEventId ?? null,
-        linkedCalendarId: body.linkedCalendarId ?? null,
-      },
-      body.returnTrip ?? null,
-    );
+    const result = await createTravel(userId, {
+      origin: body.origin!,
+      destination: body.destination!,
+      mode: body.mode!,
+      departAt: body.departAt!,
+      arriveAt: body.arriveAt!,
+      note: body.note ?? null,
+      estimated: body.estimated ?? false,
+      estimateSource: body.estimateSource,
+      linkedEventId: body.linkedEventId ?? null,
+      linkedCalendarId: body.linkedCalendarId ?? null,
+    });
 
     // その予定の持ち物のうち移動が無くて期限が未設定のものを、この移動の出発へ紐づける
     // （issue #1080）。失敗しても移動の作成は成功のまま。
     if (body.linkedEventId) {
-      await attachBringItemsForEvent(userId, body.linkedEventId).catch((error) =>
+      await attachBringItemsForEvent(userId, body.linkedEventId, parseRelationEvent(body)).catch((error) =>
         console.error("[dayspan] bring item attach failed:", error),
       );
     }

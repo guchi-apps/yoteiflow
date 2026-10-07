@@ -173,7 +173,7 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
           "startTime": "09:30",
           "endTime": "10:00",
           "estimated": true,                  // 所要時間が手入力ではないかどうか（AI / 経路検索 / Yahoo!乗換案内）
-          "returnLeg": false,
+          "returnLeg": false,                 // 非推奨（互換のため返し続ける）。予定との前後は start / end から判断する（issue #1137）
           "note": null
         }
       ]
