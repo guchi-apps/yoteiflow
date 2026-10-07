@@ -99,7 +99,7 @@ final class ShareViewController: UIViewController {
             body["travel"] = [
                 "origin": origin, "destination": destination, "mode": mode,
                 "departAt": startAt, "arriveAt": endAt,
-                "note": item.sourceUrl ?? "", "estimateSource": "AI",
+                "note": item.detail ?? item.sourceUrl ?? "", "estimateSource": item.estimateSource ?? "AI",
             ]
         }
         guard let data = await postJSON("api/shortcuts/travel/import", body: body, token: token) else {
@@ -120,8 +120,10 @@ final class ShareViewController: UIViewController {
             query["mode"] = item.mode
             query["minutes"] = item.durationMinutes.map(String.init)
             // AIの目安かどうかと元の共有URLも渡し、入力画面で推定と分かる形・メモに残す（issue #1142）
-            query["estimated"] = item.estimated && item.durationMinutes != nil ? "1" : nil
+            query["estimated"] = item.estimated && item.estimateSource != "GOOGLE_MAPS" && item.durationMinutes != nil ? "1" : nil
             query["url"] = item.sourceUrl
+            // Googleマップの経路は、本体で日時・予測所要時間を再取得し、候補が複数なら選ばせる（issue #1160）
+            query["resolve"] = item.source == "google_maps" && !link ? "1" : nil
             // 既存の予定に紐づけて追加（issue #1128）。本体で予定を選び、日付は予定の日へ合わせる
             if link, let startAt = item.startAt, let endAt = item.endAt {
                 query["link"] = "1"

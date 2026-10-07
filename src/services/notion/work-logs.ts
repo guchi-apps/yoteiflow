@@ -1,7 +1,13 @@
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
-import type { WorkCapabilities, WorkRecordItem } from "@/types/work";
+import {
+  canHaveSegments,
+  formatWorkSegments,
+  parseWorkSegments,
+  validateWorkSegments,
+} from "@/lib/work-segments";
+import type { WorkCapabilities, WorkRecordItem, WorkSegment } from "@/types/work";
 
 import type { NotionFilterGroup, NotionQueryFilter } from "./client";
 import type { WorkField, WorkPropertyMap } from "./work-database";
@@ -53,6 +59,7 @@ export function workCapabilities(connection: NotionConnection | null): WorkCapab
       companyHoliday: false,
       approval: false,
       memo: false,
+      segments: false,
     };
   }
   const map = workPropertyMap(connection);
@@ -63,6 +70,7 @@ export function workCapabilities(connection: NotionConnection | null): WorkCapab
     companyHoliday: Boolean(map.companyHoliday),
     approval: Boolean(map.businessTrip && map.preApplied && map.postRegistered),
     memo: Boolean(map.memo),
+    segments: Boolean(map.segments),
   };
 }
 
@@ -92,7 +100,7 @@ function normalizeWorkPage(page: WorkPage, map: WorkPropertyMap): WorkRecordItem
   const startDate = dateKeyOf(get("date")?.date?.start);
   if (!startDate) return null;
 
-  return {
+  const record = {
     id: page.id,
     title: text(get("title")?.title) || "(タイトルなし)",
     startDate,
@@ -106,6 +114,17 @@ function normalizeWorkPage(page: WorkPage, map: WorkPropertyMap): WorkRecordItem
     postRegistered: Boolean(get("postRegistered")?.checkbox),
     memo: text(get("memo")?.rich_text) || null,
     url: page.url ?? null,
+  };
+  const segmentsText = text(get("segments")?.rich_text) || null;
+  // 年休・休みの記録に残っている内訳は使わない（勤務予定・移動を作らない種類のため）。
+  const parsed = canHaveSegments(record)
+    ? parseWorkSegments(segmentsText, record)
+    : { segments: [], invalid: false };
+  return {
+    ...record,
+    segments: parsed.segments,
+    segmentsText,
+    segmentsInvalid: parsed.invalid,
   };
 }
 
@@ -333,13 +352,22 @@ export type WorkWriteInput = {
   preApplied?: boolean;
   postRegistered?: boolean;
   memo?: string | null;
+  /**
+   * 時間帯ごとの内訳（issue #1155）。未指定は「触らない」、空配列は列を空にする。
+   * 書き込む文字列は日付の形（単日か期間か）で変わるため、`toProperties()` へは
+   * `segmentsText` に整えてから渡す。
+   */
+  segments?: WorkSegment[];
 };
 
 /**
  * 入力をNotionのプロパティ形へ変換する。
  * DBに無い項目（propertyMapに無いもの）は書き込まず落とす。任意項目が無いのは正常なため。
  */
-function toProperties(input: WorkWriteInput, map: WorkPropertyMap): Record<string, unknown> {
+function toProperties(
+  input: WorkWriteInput & { segmentsText?: string },
+  map: WorkPropertyMap,
+): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   const set = (field: WorkField, value: unknown) => {
     const name = map[field];
@@ -375,6 +403,13 @@ function toProperties(input: WorkWriteInput, map: WorkPropertyMap): Record<strin
   }
   if (input.memo !== undefined) {
     set("memo", { rich_text: input.memo ? [{ type: "text", text: { content: input.memo } }] : [] });
+  }
+  if (input.segmentsText !== undefined) {
+    set("segments", {
+      rich_text: input.segmentsText
+        ? [{ type: "text", text: { content: input.segmentsText } }]
+        : [],
+    });
   }
 
   return properties;
@@ -466,6 +501,69 @@ export function resetPreAppliedOnKindChange(
   return input;
 }
 
+/** 時間帯の内訳が記録と食い違うときのエラー（issue #1155）。API側で400に変える。 */
+export class WorkSegmentsInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkSegmentsInvalidError";
+  }
+}
+
+export type SegmentsUpdate = {
+  /** 書き込む内訳。undefined なら「時間帯」列に触らない。 */
+  segments?: WorkSegment[];
+  /** 送られていない内訳を、記録と食い違ったため空にしたか。 */
+  cleared: boolean;
+  /** 送られた内訳が食い違っているときの、利用者へ出す文。 */
+  error: string | null;
+};
+
+/**
+ * 更新後の記録に対して内訳を決める（issue #1155・計画レビュー指摘1）。
+ *
+ * 内訳は記録本体（日付・出張か・年休か）を前提に書かれている。今日の勤務場所の1押しや日付だけの
+ * 変更のように、内訳を送らずに記録本体だけを変える経路があるため、送られていないときも
+ * 更新後の記録全体で確かめ、食い違ったら**まるごと**空にする。一部の区切りだけを落とすと、
+ * 残った区切りが利用者の意図と違う1日を表し、そのまま勤務予定・移動が作られるため。
+ * 送られた内訳が食い違っているときは書かずに断る（画面の入力の誤り）。
+ */
+export function resolveSegmentsUpdate(
+  previous: WorkRecordItem | null,
+  input: WorkWriteInput,
+): SegmentsUpdate {
+  const base = previous ?? {
+    startDate: input.startDate ?? "",
+    endDate: input.endDate || input.startDate || "",
+    businessTrip: false,
+    annualLeave: null,
+    companyHoliday: false,
+    segments: [],
+    segmentsInvalid: false,
+  };
+  const startDate = input.startDate ?? base.startDate;
+  const merged = {
+    startDate,
+    endDate: input.startDate ? input.endDate || input.startDate : base.endDate,
+    businessTrip: input.businessTrip ?? base.businessTrip,
+    annualLeave: input.annualLeave !== undefined ? input.annualLeave : base.annualLeave,
+    companyHoliday: input.companyHoliday ?? base.companyHoliday,
+  };
+
+  if (input.segments !== undefined) {
+    const error = validateWorkSegments(input.segments, merged);
+    return error
+      ? { cleared: false, error }
+      : { segments: input.segments, cleared: false, error: null };
+  }
+  if (!previous) return { cleared: false, error: null };
+
+  const stale =
+    (previous.segments.length > 0 && validateWorkSegments(previous.segments, merged) !== null) ||
+    // 読めなかった手書きの内訳は、年休・休みに変わったときだけ片付ける（それ以外は触らない）。
+    (previous.segmentsInvalid && !canHaveSegments(merged));
+  return stale ? { segments: [], cleared: true, error: null } : { cleared: false, error: null };
+}
+
 /** 同じ日にすでに登録がある（1日1件）ときのエラー。API側で409に変える。 */
 export class WorkDateTakenError extends Error {
   readonly existingId: string;
@@ -522,15 +620,27 @@ export async function createWorkRecord(
   const map = workPropertyMap(connection);
 
   const endDate = input.endDate || input.startDate;
+  const segmentsUpdate = resolveSegmentsUpdate(null, input);
+  if (segmentsUpdate.error) throw new WorkSegmentsInvalidError(segmentsUpdate.error);
+  const segments = segmentsUpdate.segments ?? [];
+
   const existing = await findOverlapping(notion, connection, {
     startDate: input.startDate,
     endDate,
   });
   if (existing) throw new WorkDateTakenError(existing.id);
 
+  const segmentsText =
+    segments.length > 0
+      ? formatWorkSegments(segments, {
+          startDate: input.startDate,
+          endDate,
+          businessTrip: Boolean(input.businessTrip),
+        })
+      : undefined;
   const page = await notion.pages.create({
     parent: { type: "data_source_id", data_source_id: connection.workDataSourceId },
-    properties: toProperties({ ...input, endDate }, map) as never,
+    properties: toProperties({ ...input, endDate, segmentsText }, map) as never,
   });
 
   return {
@@ -545,6 +655,9 @@ export async function createWorkRecord(
     preApplied: Boolean(input.preApplied),
     postRegistered: Boolean(input.postRegistered),
     memo: input.memo ?? null,
+    segments,
+    segmentsText: segmentsText ?? null,
+    segmentsInvalid: false,
     url: "url" in page ? (page.url ?? null) : null,
   };
 }
@@ -554,8 +667,12 @@ export async function updateWorkRecord(
   connection: NotionConnection,
   pageId: string,
   input: WorkWriteInput,
-): Promise<void> {
+): Promise<{ segmentsCleared: boolean }> {
   const page = await assertWorkPage(notion, connection, pageId);
+  const map = workPropertyMap(connection);
+  const previous = normalizeWorkPage(page, map);
+  const segmentsUpdate = resolveSegmentsUpdate(previous, input);
+  if (segmentsUpdate.error) throw new WorkSegmentsInvalidError(segmentsUpdate.error);
 
   // 日付を動かすときだけ重なりを見る。申請のチェックだけを切り替える操作で
   // Notionへの往復を増やさないため。
@@ -569,13 +686,21 @@ export async function updateWorkRecord(
     if (existing) throw new WorkDateTakenError(existing.id);
   }
 
-  const map = workPropertyMap(connection);
-  const previous = normalizeWorkPage(page, map);
   const effectiveInput = resetPreAppliedOnKindChange(previous, input);
+  let segmentsText: string | undefined;
+  if (segmentsUpdate.segments !== undefined) {
+    const startDate = input.startDate ?? previous?.startDate ?? "";
+    segmentsText = formatWorkSegments(segmentsUpdate.segments, {
+      startDate,
+      endDate: input.startDate ? input.endDate || input.startDate : (previous?.endDate ?? startDate),
+      businessTrip: input.businessTrip ?? previous?.businessTrip ?? false,
+    });
+  }
   await notion.pages.update({
     page_id: pageId,
-    properties: toProperties(effectiveInput, map) as never,
+    properties: toProperties({ ...effectiveInput, segmentsText }, map) as never,
   });
+  return { segmentsCleared: segmentsUpdate.cleared };
 }
 
 /**

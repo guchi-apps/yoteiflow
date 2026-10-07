@@ -18,8 +18,14 @@ test("範囲外の座標・http・長すぎる文字列は捨てる", () => {
 
 test("移動の引き継ぎ", () => {
   assert.deepEqual(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=WALK&minutes=12"), {
-    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, link: null,
+    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false, link: null,
   });
+  // resolve=1 は元のGoogleマップURLがあるときだけ有効（issue #1160）
+  const base = "?newTravel=1&origin=A&destination=B&mode=CAR&resolve=1";
+  const withUrl = parseShareHandoff(`${base}&url=https%3A%2F%2Fmaps.app.goo.gl%2Fabc`);
+  assert.equal(withUrl?.kind === "travel" && withUrl.resolve, true);
+  const withoutUrl = parseShareHandoff(base);
+  assert.equal(withoutUrl?.kind === "travel" && withoutUrl.resolve, false);
   assert.equal(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=ROCKET"), null);
   assert.equal(parseShareHandoff("?newTravel=1&origin=A&mode=CAR"), null);
 });

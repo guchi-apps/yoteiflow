@@ -28,6 +28,8 @@ struct SharedImportItem: Decodable, Equatable {
     let registrable: Bool
     /// 不足している項目・推定値である旨などの案内（issue #1142）。旧サーバーの応答には無いため optional
     let notice: String?
+    /// 所要時間の出どころ（YAHOO / AI / GOOGLE_MAPS）。旧サーバーの応答には無いため optional（issue #1160）
+    let estimateSource: String?
 
     var isRoute: Bool { type == "route" }
 }

@@ -1,13 +1,22 @@
 import { analyzeGoogleMapsRoute } from "@/lib/ai-google-maps-route";
+import {
+  fetchGoogleMapsDirections,
+  scheduleCandidate,
+  type DirectionsCandidate,
+  type DirectionsFetchResult,
+  type ScheduledTimes,
+} from "@/lib/google-maps-directions";
 import { expandGoogleMapsUrl, validGoogleMapsUrl } from "@/lib/google-maps-expand";
 import { parseGoogleMapsPlaceUrl } from "@/lib/google-maps-place";
 import { isGoogleMapsRouteUrl, parseGoogleMapsRouteUrl, type GoogleMapsRoute } from "@/lib/google-maps-route";
-import { SHARE_IMPORT_HEADINGS, type ShareImportResult } from "@/lib/share-import/types";
+import { SHARE_IMPORT_HEADINGS, type ShareImportResult, type ShareRouteCandidate } from "@/lib/share-import/types";
 
 export type GoogleMapsShareDeps = {
   /** 短縮URLの展開（テストで差し替える） */
   expand?: typeof expandGoogleMapsUrl;
   /** 経路の所要時間などの補完（AI）。トークン未設定なら null を返す */
+  /** 経路ページからの予測所要時間・発着時刻の取得（テストで差し替える・issue #1160） */
+  directions?: (expandedUrl: string) => Promise<DirectionsFetchResult>;
   analyze?: (route: GoogleMapsRoute & { url: string }) => Promise<Pick<GoogleMapsRoute, "origin" | "destination" | "mode" | "minutes"> | null>;
 };
 
@@ -31,6 +40,7 @@ async function defaultAnalyze(route: GoogleMapsRoute & { url: string }) {
 export async function resolveGoogleMapsShare(
   value: string,
   deps: GoogleMapsShareDeps = {},
+  timeZone = "Asia/Tokyo",
 ): Promise<ShareImportResult> {
   const url = extractGoogleMapsUrl(value);
   if (!url) {
@@ -92,35 +102,58 @@ export async function resolveGoogleMapsShare(
         sourceUrl,
         detail: null,
         estimated: false,
+        estimateSource: null,
+        scheduleBasis: null,
+        candidates: null,
         registrable: false,
         notice: null,
       },
     };
   }
 
-  // 所要時間はURLに無いためAIで補う。未設定・失敗でもURLから読めた発着地・移動手段は残し、
-  // 所要時間を空のまま移動の入力へ引き継ぐ（取り込みそのものは止めない・issue #1142）
   const { route } = result;
-  let minutes: number | null = null;
+  const directions = await (deps.directions ?? fetchGoogleMapsDirections)(expandedUrl);
+  const candidates = directions.ok ? directions.candidates.slice(0, MAX_CANDIDATES) : [];
+  const scheduled = candidates.map((candidate) => ({ candidate, times: scheduleCandidate(candidate, route.schedule, timeZone) }));
+  const chosen = unambiguousCandidate(scheduled);
+  const ambiguous = scheduled.length > 1 && chosen === null;
+
+  // Googleから予測時間が取れなかったときだけ、AIの目安を試す（確定値としては扱わず「（目安）」と断る）。
+  // 取れた候補が割れている（共有時の選択を特定できない）ときは、AIで1つに決めない
+  let aiMinutes: number | null = null;
   let aiFailed = false;
-  try {
-    minutes = (await analyze({ ...route, url: expandedUrl }))?.minutes ?? null;
-  } catch (error) {
-    aiFailed = true;
-    console.error("[dayspan] Google Maps share analyze failed:", error instanceof Error ? error.message : error);
+  if (!chosen && !ambiguous && scheduled.length === 0) {
+    try {
+      aiMinutes = (await analyze({ ...route, url: expandedUrl }))?.minutes ?? null;
+    } catch (error) {
+      aiFailed = true;
+      console.error("[dayspan] Google Maps share analyze failed:", error instanceof Error ? error.message : error);
+    }
   }
 
-  // 出発日時が共有URLにあり、所要時間も決まったときだけ到着を作れる。無ければ直接登録せず、アプリの移動入力で補う
-  const startAt = route.departAt;
-  const endAt = startAt && minutes !== null ? new Date(new Date(startAt).getTime() + minutes * 60_000).toISOString() : null;
-  const missing = [startAt ? null : "日時", minutes === null ? "所要時間" : null].filter(Boolean);
+  let times: ScheduledTimes;
+  if (chosen) times = chosen.times;
+  else if (ambiguous) times = scheduleMinutes(null, route.schedule, scheduled[0]?.candidate.timeZone ?? timeZone);
+  else times = scheduleMinutes(aiMinutes, route.schedule, timeZone);
+  const minutes = ambiguous ? null : times.minutes;
+  const estimateSource: "GOOGLE_MAPS" | "AI" | null = chosen && minutes !== null ? "GOOGLE_MAPS" : aiMinutes !== null ? "AI" : null;
+
+  const unreached = directions.ok ? null : directionsFailureNotice(directions.reason);
+  const missing = [
+    route.schedule || times.startAt || times.endAt ? null : "日時",
+    minutes === null && !ambiguous ? "所要時間" : null,
+  ].filter(Boolean);
   const notice = [
-    missing.length > 0 ? `共有された経路に${missing.join("・")}が含まれていないため、移動の入力で補ってください。` : null,
+    ambiguous ? "経路候補が複数あり、共有時に選んだ経路を特定できませんでした。移動の入力で経路を選んでください（取得した結果は共有時の画面と一致しないことがあります）。" : null,
+    missing.length > 0 ? `${missing.join("・")}を取得できなかったため、移動の入力で補ってください。` : null,
+    unreached,
     minutes === null && aiFailed ? "所要時間の推定（AI）に失敗しました。" : null,
-    minutes !== null ? "所要時間はAIによる目安です。" : null,
+    estimateSource === "GOOGLE_MAPS" ? "日時・所要時間はGoogleマップを再取得した予測です（予測が範囲のときは上限）。共有時の画面と異なることがあります。" : null,
+    estimateSource === "AI" ? "所要時間はAIによる目安です。" : null,
   ]
     .filter(Boolean)
     .join("");
+  const hasBoth = times.startAt !== null && times.endAt !== null;
   return {
     ok: true,
     item: {
@@ -128,21 +161,94 @@ export async function resolveGoogleMapsShare(
       type: "route",
       heading: SHARE_IMPORT_HEADINGS.googleRoute,
       title: `${route.origin} → ${route.destination}`,
-      // 発着地・移動手段はURLから読めた値をそのまま使う（AIには所要時間だけを補わせる）
+      // 発着地・移動手段はURLから読めた値をそのまま使う（所要時間・日時だけをGoogleの再取得結果から補う）
       origin: route.origin,
       destination: route.destination,
       address: null,
       coordinates: null,
-      startAt,
-      endAt,
+      startAt: times.startAt,
+      endAt: times.endAt,
       durationMinutes: minutes,
       fare: null,
       mode: route.mode,
       sourceUrl,
-      detail: null,
-      estimated: minutes !== null,
-      registrable: startAt !== null && endAt !== null,
+      detail: buildDetail(sourceUrl, route.schedule, chosen?.candidate ?? null, ambiguous ? scheduled : []),
+      estimated: estimateSource !== null,
+      estimateSource,
+      scheduleBasis: route.schedule?.basis ?? null,
+      candidates: ambiguous ? scheduled.map(toShareCandidate) : null,
+      registrable: hasBoth && !ambiguous,
       notice: notice || null,
     },
   };
+}
+
+const MAX_CANDIDATES = 5;
+
+type Scheduled = { candidate: DirectionsCandidate; times: ScheduledTimes };
+
+/** すべての候補の開始・終了・所要時間が同じ（または候補が1件）なら、どれを選んでも同じ結果として確定する。 */
+function unambiguousCandidate(scheduled: Scheduled[]): Scheduled | null {
+  const [first] = scheduled;
+  if (!first) return null;
+  const same = scheduled.every(
+    ({ times }) =>
+      times.startAt === first.times.startAt && times.endAt === first.times.endAt && times.minutes === first.times.minutes,
+  );
+  return same && first.times.minutes !== null ? first : null;
+}
+
+/** 経路の候補を持たない分数だけの候補（AIの目安・固定側のみの算出に使う） */
+function bareCandidate(minutes: number | null): DirectionsCandidate {
+  return {
+    name: "", distanceMeters: null, distanceText: null, rangeMinutes: null, rangeText: null,
+    representativeMinutes: minutes, representativeText: null, otherEndEpoch: null, timeZone: null,
+  };
+}
+
+/** 分数から開始・終了を決める。時刻の指定が無ければ時刻は決めない。分数が無ければ固定側（指定日時そのもの）だけ返す。 */
+function scheduleMinutes(minutes: number | null, schedule: GoogleMapsRoute["schedule"], timeZone: string): ScheduledTimes {
+  return scheduleCandidate(bareCandidate(minutes), schedule, timeZone);
+}
+
+function toShareCandidate({ candidate, times }: Scheduled): ShareRouteCandidate {
+  return {
+    name: candidate.name,
+    distanceText: candidate.distanceText,
+    durationText: candidate.rangeText ?? candidate.representativeText,
+    minutes: times.minutes,
+    startAt: times.startAt,
+    endAt: times.endAt,
+  };
+}
+
+function directionsFailureNotice(reason: "not_directions_page" | "request_failed" | "unreadable"): string {
+  return reason === "request_failed"
+    ? "Googleマップの予測所要時間を取得できませんでした。"
+    : "Googleマップの予測所要時間を読み取れませんでした（形式が変わった可能性があります）。";
+}
+
+/** 移動のメモ／詳細。元URL・予測の幅・距離を残す。再取得した結果であり共有時の画面とは限らない。 */
+function buildDetail(
+  sourceUrl: string,
+  schedule: GoogleMapsRoute["schedule"],
+  candidate: DirectionsCandidate | null,
+  candidates: Scheduled[],
+): string {
+  const lines = [sourceUrl];
+  const describe = (item: DirectionsCandidate) =>
+    [
+      item.name ? `経路: ${item.name}` : null,
+      item.distanceText ? `距離: ${item.distanceText}` : null,
+      item.representativeText ? `代表時間: ${item.representativeText}` : null,
+      item.rangeText ? `予測: ${item.rangeText}` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+  if (candidate) lines.push(describe(candidate));
+  else if (candidates.length > 0) lines.push(...candidates.map(({ candidate: item }) => `候補 ${describe(item)}`));
+  if (candidate || candidates.length > 0) {
+    lines.push(`Googleマップを再取得した結果です${schedule ? (schedule.basis === "depart" ? "（出発指定）" : "（到着指定）") : ""}。共有時の画面とは異なることがあります。`);
+  }
+  return lines.filter(Boolean).join("\n");
 }

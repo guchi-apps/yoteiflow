@@ -10,7 +10,7 @@ export type SharedTravelBody = {
   departAt: string;
   arriveAt: string;
   note: string;
-  estimateSource: "YAHOO" | "AI";
+  estimateSource: "YAHOO" | "AI" | "GOOGLE_MAPS";
 };
 
 function text(value: unknown, max: number): string | null {
@@ -44,6 +44,6 @@ export function parseSharedTravelBody(value: unknown): SharedTravelBody | null {
     departAt,
     arriveAt,
     note,
-    estimateSource: raw.estimateSource === "AI" ? "AI" : "YAHOO",
+    estimateSource: raw.estimateSource === "AI" || raw.estimateSource === "GOOGLE_MAPS" ? raw.estimateSource : "YAHOO",
   };
 }

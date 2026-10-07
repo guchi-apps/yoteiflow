@@ -504,6 +504,8 @@ model WorkGenerated {
   /// YYYY-MM-DD。出張は期間の日ごとに勤務予定を持つ。
   date         String
   kind         WorkGeneratedKind
+  /// 同じ日・同じ種類の中の通し番号。時間帯の内訳（#1155）で1日に複数できる。内訳が無ければ 0。
+  seq          Int                 @default(0)
   status       WorkGeneratedStatus @default(ACTIVE)
 
   googleCalendarId String?
@@ -517,7 +519,7 @@ model WorkGenerated {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, workRecordId, date, kind])
+  @@unique([userId, workRecordId, date, kind, seq])
   @@index([userId, workRecordId])
 }
 

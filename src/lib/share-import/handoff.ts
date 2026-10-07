@@ -26,6 +26,8 @@ export type ShareHandoff =
       estimated: boolean;
       /** 元の共有URL。移動のメモへ残し、登録後にも参照できるようにする（issue #1142） */
       url: string | null;
+      /** 元URLからGoogleマップの日時・所要時間・経路候補を開いた直後に再取得するか（issue #1160）。`url` がある共有のみ */
+      resolve: boolean;
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
       link: { departAt: string; arriveAt: string; note: string } | null;
     };
@@ -117,6 +119,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
       minutes: validMinutes,
       estimated: validMinutes !== null && params.get("estimated") === "1",
       url: googleMapsUrl(params.get("url")),
+      resolve: params.get("resolve") === "1" && googleMapsUrl(params.get("url")) !== null && link === null,
       link,
     };
   }
@@ -131,7 +134,7 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve"] as const;
 
 /** 共有の引き継ぎ（未処理）がURLに載っているか。URL同期などが先にクエリを消さないための判定（issue #1143）。 */
 export function hasHandoffQuery(search: string): boolean {

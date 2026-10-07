@@ -35,6 +35,7 @@ import { dayTone, OFF_DAY_TONE } from "@/lib/day-tone";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
 import { cn } from "@/lib/utils";
+import { segmentsOn, summarizeSegments } from "@/lib/work-segments";
 import {
   annualLeaveDays,
   annualLeaveHours,
@@ -260,7 +261,8 @@ function WorkMonthScreen({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ place, title: place, ...trip }),
+          // 1押しは「その日まるごとこの場所」なので、時間帯の内訳があれば消す（issue #1155）。
+          body: JSON.stringify({ place, title: place, ...trip, segments: [] }),
         },
         "勤務場所を変更できませんでした。",
       );
@@ -639,6 +641,14 @@ function WorkMonthScreen({
                           )}
                         >
                           {recordLabel(record)}
+                          {/* 時間帯の内訳（issue #1155）は項目名に続けて流し、1行に収める
+                              （行の高さを揃える決め・issue #521）。狭いときは末尾から切れる。 */}
+                          {segmentsOn(record, dateKey).length > 0 && (
+                            <span className="type-label-small font-normal text-on-surface-variant">
+                              {"　"}
+                              {summarizeSegments(segmentsOn(record, dateKey), record.title)}
+                            </span>
+                          )}
                         </span>
                       ) : isAutoOffDay(dateKey) ? (
                         // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。

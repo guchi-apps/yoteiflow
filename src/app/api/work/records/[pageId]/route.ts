@@ -10,14 +10,18 @@ import {
   deleteWorkRecord,
   getWorkRecord,
   updateWorkRecord,
+  workCapabilities,
   WorkDateTakenError,
   WorkRecordNotEditableError,
+  WorkSegmentsInvalidError,
 } from "@/services/notion/work-logs";
 
 import {
   checkWorkSync,
   dateTaken,
+  invalidSegments,
   notEditable,
+  segmentsUnsupported,
   splitWorkSync,
   validateWorkBody,
   type WorkRequestBody,
@@ -40,6 +44,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pa
   if (badSync) return badSync;
   const invalid = validateWorkBody(body, { requireStartDate: false });
   if (invalid) return invalid;
+  const unsupported = segmentsUnsupported(body, workCapabilities(connection).segments);
+  if (unsupported) return unsupported;
 
   try {
     const notion = createNotionClient(connection);
@@ -48,16 +54,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pa
       const incomplete = await checkWorkSync(userId, base, body, override);
       if (incomplete) return incomplete;
     }
-    await updateWorkRecord(notion, connection, pageId, body);
+    const { segmentsCleared } = await updateWorkRecord(notion, connection, pageId, body);
     if (override) await saveRecordOverride(userId, pageId, override);
     // 部分更新でも最新の中身から再計算する。同期の失敗は保存の成否と切り離して応答へ載せる。
     const sync = await getWorkRecord(notion, connection, pageId)
       .then((record) => (record ? syncWorkRecord(userId, record) : null))
       .catch(() => null);
-    return NextResponse.json({ ok: true, sync });
+    // 記録本体の変更で時間帯の内訳と食い違い、内訳を空にしたときは画面で知らせる（issue #1155）。
+    return NextResponse.json({ ok: true, sync, segmentsCleared });
   } catch (error) {
     if (error instanceof WorkRecordNotEditableError) return notEditable();
     if (error instanceof WorkDateTakenError) return dateTaken();
+    if (error instanceof WorkSegmentsInvalidError) return invalidSegments(error.message);
     return externalApiError("notion", "勤務記録の更新", error);
   }
 }

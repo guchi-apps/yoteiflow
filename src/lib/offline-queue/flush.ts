@@ -45,7 +45,8 @@ async function sendWorkToday(op: Extract<WriteOp, { kind: "workToday" }>): Promi
         await fetch(`/api/work/records/${plan.id}`, {
           method: "PATCH",
           headers: JSON_HEADERS,
-          body: JSON.stringify({ place: op.place, title: op.place, ...trip }),
+          // 1押しは「その日まるごとこの場所」なので、時間帯の内訳があれば消す（issue #1155）。
+          body: JSON.stringify({ place: op.place, title: op.place, ...trip, segments: [] }),
         }),
       );
     case "post":
