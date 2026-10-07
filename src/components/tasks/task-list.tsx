@@ -1,5 +1,9 @@
 "use client";
 
+import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
+import { applyTaskOps } from "@/lib/offline-queue/ops";
+import { usePendingWrites } from "@/lib/offline-queue/store";
+import { useWriteSynced } from "@/lib/offline-queue/use-write-synced";
 import { useMemo, useState, type ReactNode } from "react";
 import { useOffline } from "next/offline";
 import {
@@ -114,7 +118,11 @@ export function TaskList({
     "Notionのタスクを取得できませんでした。",
   );
   const { data, reload } = resource;
-  const tasks = data?.tasks ?? EMPTY_TASKS;
+  useWriteSynced(reload);
+  // まだ届いていない完了・未完了の操作を重ねて描く（issue #1135）。
+  const queuedWrites = usePendingWrites();
+  const fetchedTasks = data?.tasks ?? EMPTY_TASKS;
+  const tasks = useMemo(() => applyTaskOps(fetchedTasks, queuedWrites), [fetchedTasks, queuedWrites]);
   const tagCatalog = data?.tagCatalog ?? EMPTY_TAG_CATALOG;
   const placeCatalog = data?.placeCatalog ?? EMPTY_PLACE_CATALOG;
   const calendars = data?.calendars ?? EMPTY_CALENDARS;
@@ -192,7 +200,13 @@ export function TaskList({
   const nextSort = () => setSort(TASK_SORTS[(TASK_SORTS.indexOf(sort) + 1) % TASK_SORTS.length]);
 
   const patchTaskDone = async (task: TaskItem, done: boolean, skipped = false) => {
-    if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
+    // オフライン中・先にためた操作があるときは、繰り返しなしの完了と未完了へ戻す操作だけ
+    // 端末にためる。繰り返しの完了は次回分を新規作成するため、再送で二重に作られうる（issue #1135）。
+    if (shouldQueueWrite(offline)) {
+      if (skipped || (done && task.recurrence)) throw new Error(OFFLINE_WRITE_MESSAGE);
+      submitWrite({ kind: "taskDone", taskId: task.id, done });
+      return;
+    }
 
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
