@@ -132,3 +132,9 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
 export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated"] as const;
+
+/** 共有の引き継ぎ（未処理）がURLに載っているか。URL同期などが先にクエリを消さないための判定（issue #1143）。 */
+export function hasHandoffQuery(search: string): boolean {
+  const params = new URLSearchParams(search);
+  return params.has("newEvent") || params.has("newTravel");
+}

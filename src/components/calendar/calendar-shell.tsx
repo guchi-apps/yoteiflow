@@ -47,7 +47,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
-import { HANDOFF_QUERY_KEYS, handoffLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -336,11 +336,17 @@ export function CalendarShell({
     // 解析とURLの掃除をタイマー内で行うため、取り消された1回目に読み取りを奪われない。
     const timer = setTimeout(() => {
     const handoff = parseShareHandoff(window.location.search);
-    if (!handoff) return;
+    const failed = !handoff && hasHandoffQuery(window.location.search);
+    if (!handoff && !failed) return;
 
     const url = new URL(window.location.href);
     for (const key of HANDOFF_QUERY_KEYS) url.searchParams.delete(key);
     window.history.replaceState(window.history.state, "", url.toString());
+    if (!handoff) {
+      // 月表示だけが黙って開く状態にしない（issue #1143）
+      window.alert("共有内容を読み取れませんでした。共有元のアプリからもう一度共有してください。");
+      return;
+    }
 
     const date = utils.todayKey();
     if (handoff.kind === "place") {
@@ -1279,6 +1285,8 @@ export function CalendarShell({
 function syncMonthUrl(month: string) {
   // すでにその月を指しているなら書き換えない。replaceState は Next.js の RESTORE になるため、
   // マウント直後や日表示からの切り替え直後（`date=YYYY-MM-DD` で同じ月）に余分に走らせない。
+  // 共有の引き継ぎが未処理のあいだは書き換えない。クエリごと消えて紐づけ画面が開かなくなる（issue #1143）。
+  if (hasHandoffQuery(window.location.search)) return;
   const params = new URLSearchParams(window.location.search);
   if (params.get("view") === "month" && params.get("date")?.slice(0, 7) === month) return;
 
