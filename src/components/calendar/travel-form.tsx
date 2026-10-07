@@ -6,7 +6,6 @@ import { useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
@@ -40,14 +39,14 @@ export type TravelDraft = {
   arriveAt: string;
   note?: string;
   /**
-   * 元になった予定。復路の起点（予定の終了時刻）と、移動と予定の紐づけに使う。
-   * 「＋」から作った移動には無く、そのときは復路も作らない（帰りの起点が決まらないため）。
+   * 元になった予定。移動と予定の紐づけに使う。時刻は持ち物の期限を予定前の移動へ自動で付けるかの
+   * 判断に渡す（issue #1137）。「＋」から作った移動には無い。
    */
-  linkedEvent?: { id: string; calendarId: string; endAt: string } | null;
-  /** 往復を作るかの初期値。設定の既定値が入る。 */
-  roundTrip?: boolean;
+  linkedEvent?: { id: string; calendarId: string; startAt: string; endAt: string } | null;
   /** 入力欄の上に添える案内（共有拡張から紐づけて作るときの日付・メモの断り。issue #1128）。 */
   notice?: string;
+  /** 所要時間の出どころの初期値（共有で受けたAIの目安など。issue #1142）。無ければ手入力。 */
+  estimateSource?: TravelEstimateSource;
 };
 
 type GoogleRouteStatus =
@@ -84,9 +83,8 @@ export function TravelForm({
   const [note, setNote] = useState(draft.note ?? "");
   // 所要時間の出どころ。手で入れた値・AIの目安・経路検索の結果を保存先にも残す。
   const [estimateSource, setEstimateSource] = useState<TravelEstimateSource>(
-    editing?.estimateSource ?? "MANUAL",
+    editing?.estimateSource ?? draft.estimateSource ?? "MANUAL",
   );
-  const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
   // 通知設定（issue #1112）。出発時刻を基準に、予定と同じ選び方をする。
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
@@ -136,21 +134,29 @@ export function TravelForm({
     setEstimateSource("MANUAL");
   };
 
-  /** Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。 */
-  const applyGoogleMapsRoute = (route: GoogleMapsRoute) => {
+  /**
+   * Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。
+   * 所要時間はURLに無くAIで補う。補えなかったとき（null）は時刻の長さを変えず、手で入れてもらう（issue #1142）。
+   */
+  const applyGoogleMapsRoute = (route: GoogleMapsRoute, sourceUrl: string | null) => {
     setOrigin(route.origin);
     setDestination(route.destination);
     setMode(route.mode);
-    setEstimateSource("GOOGLE_MAPS");
 
     const imported = route.departAt ? isoToLocalInput(route.departAt, timeZone) : departAt;
     // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
     const depart = route.departAt && draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
     const base = new Date(`${depart}:00Z`);
-    if (depart && !Number.isNaN(base.getTime())) {
+    const currentMs = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
+    const durationMs = route.minutes !== null ? route.minutes * 60_000 : Number.isFinite(currentMs) && currentMs > 0 ? currentMs : null;
+    if (depart && !Number.isNaN(base.getTime()) && durationMs !== null) {
       setDepartAt(depart);
-      setArriveAt(new Date(base.getTime() + route.minutes * 60_000).toISOString().slice(0, 16));
+      setArriveAt(new Date(base.getTime() + durationMs).toISOString().slice(0, 16));
     }
+    // AIの見積もりは目安として保存する。補えなかったときは利用者が入れる値なので手入力扱い
+    setEstimateSource(route.minutes !== null ? "AI" : "MANUAL");
+    // 元の共有URLをメモへ残し、登録後にも参照できるようにする（共有拡張からの取り込みと揃える）
+    if (sourceUrl) setNote((current) => (current.includes(sourceUrl) ? current : [current.trim(), sourceUrl].filter(Boolean).join("\n")));
 
     setError(null);
   };
@@ -172,12 +178,16 @@ export function TravelForm({
         if (isCurrentRequest()) setGoogleRouteStatus({ kind: "error", message });
         return;
       }
-      const body = (await response.json()) as { route: GoogleMapsRoute };
+      const body = (await response.json()) as { route: GoogleMapsRoute; sourceUrl?: string | null };
       if (!isCurrentRequest()) return;
-      applyGoogleMapsRoute(body.route);
+      applyGoogleMapsRoute(body.route, body.sourceUrl ?? value);
+      const minutes = body.route.minutes;
       setGoogleRouteStatus({
         kind: "success",
-        message: `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}・所要時間${body.route.minutes}分）。`,
+        message:
+          minutes !== null
+            ? `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}・所要時間${minutes}分はAIによる目安）。`
+            : `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}）。所要時間は取得できなかったため、出発・到着時刻を入力してください。`,
       });
     } catch {
       if (isCurrentRequest()) {
@@ -205,16 +215,6 @@ export function TravelForm({
       const departIso = localInputToIso(departAt, timeZone);
       const arriveIso = localInputToIso(arriveAt, timeZone);
 
-      // 復路は予定の終了時刻に出発し、行きと同じだけかかるものとして置く。
-      const durationMs = new Date(arriveIso).getTime() - new Date(departIso).getTime();
-      const returnTrip =
-        roundTrip && draft.linkedEvent
-          ? {
-              departAt: draft.linkedEvent.endAt,
-              arriveAt: new Date(new Date(draft.linkedEvent.endAt).getTime() + durationMs).toISOString(),
-            }
-          : null;
-
       const payload = {
         origin: origin.trim(),
         destination: destination.trim(),
@@ -228,7 +228,13 @@ export function TravelForm({
           : {
               linkedEventId: draft.linkedEvent?.id ?? null,
               linkedCalendarId: draft.linkedEvent?.calendarId ?? null,
-              returnTrip,
+              ...(draft.linkedEvent
+                ? {
+                    eventStart: draft.linkedEvent.startAt,
+                    eventEnd: draft.linkedEvent.endAt,
+                    eventAllDay: !draft.linkedEvent.startAt.includes("T"),
+                  }
+                : {}),
             }),
       };
 
@@ -275,7 +281,6 @@ export function TravelForm({
       }
 
       const touched: TouchedRange[] = [{ start: departIso, end: arriveIso }];
-      if (returnTrip) touched.push({ start: returnTrip.departAt, end: returnTrip.arriveAt });
       if (editing) touched.push({ start: editing.start, end: editing.end });
 
       const message = exportWarning(body.exports ?? []);
@@ -383,7 +388,7 @@ export function TravelForm({
             onClear={() => changeGoogleRouteUrl("")}
           />
           {googleRouteStatus.kind === "idle" && (
-            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、AIが解析して入力欄へ反映します。</p>
+            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、出発地・目的地・交通手段を入力欄へ反映し、所要時間はAIが目安を補います。</p>
           )}
           {googleRouteStatus.kind === "analyzing" && (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
@@ -417,14 +422,6 @@ export function TravelForm({
         </div>
 
         {draft.notice && <p className="px-4 text-sm text-on-surface-variant">{draft.notice}</p>}
-
-        {/* 往復は元になった予定があるときだけ。単独の移動では帰りの起点が決まらない。 */}
-        {!editing && draft.linkedEvent && (
-          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={roundTrip} onCheckedChange={(v) => setRoundTrip(v === true)} />
-            帰りの移動も作る（予定の終了時刻に出発）
-          </label>
-        )}
 
         <Textarea
           id="travel-note"

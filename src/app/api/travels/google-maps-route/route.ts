@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 
-import { analyzeGoogleMapsRoute } from "@/lib/ai-google-maps-route";
 import { requireUserId } from "@/lib/auth-user";
-import { expandGoogleMapsUrl, validGoogleMapsUrl } from "@/lib/google-maps-expand";
-import { parseGoogleMapsRouteUrl } from "@/lib/google-maps-route";
+import { validGoogleMapsUrl } from "@/lib/google-maps-expand";
+import type { GoogleMapsRoute } from "@/lib/google-maps-route";
+import { resolveGoogleMapsShare } from "@/lib/share-import/google-maps";
 
 type RouteBody = { url?: unknown };
 
 /**
- * Googleマップの共有URLを展開する。HTML本文は読まず、許可したGoogleホストへのリダイレクトだけを追う。
+ * 移動の入力へ貼り付けたGoogleマップの経路URLを読む。HTML本文は読まず、許可したGoogleホストへのリダイレクトだけを追う。
  * ブラウザからはCORSで最終URLを読めないため、利用者が貼り付けた明示操作に限ってサーバーで行う。
+ *
+ * iOS共有拡張の preview と同じ `resolveGoogleMapsShare` を通し、URL形式の扱い（`saddr`/`daddr` など）・
+ * AI未設定や失敗時の扱いを揃える（issue #1142）。AIで所要時間を補えなくても、読めた発着地・移動手段は返す。
  */
 export async function POST(request: Request) {
   const userId = await requireUserId();
@@ -25,29 +28,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを貼り付けてください。" }, { status: 400 });
   }
 
-  try {
-    const found = await expandGoogleMapsUrl(value, parseGoogleMapsRouteUrl);
-    if (found) {
-      const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-      if (!token) {
-        return NextResponse.json(
-          { error: "not_configured", message: "Googleマップ経路のAI解析が設定されていません。" },
-          { status: 503 },
-        );
-      }
-      const route = await analyzeGoogleMapsRoute(token, { ...found.result, url: found.url });
-      return NextResponse.json({ route: { ...found.result, ...route } });
-    }
-  } catch (error) {
-    console.error("[dayspan] Google Maps route URL resolve failed:", error instanceof Error ? error.message : error);
+  const result = await resolveGoogleMapsShare(value);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
+  }
+  const { item } = result;
+  if (item.type !== "route" || !item.origin || !item.destination || !item.mode) {
     return NextResponse.json(
-      { error: "google_maps_request_failed", message: "Googleマップの経路を解析できませんでした。時間をおいてもう一度試してください。" },
-      { status: 502 },
+      { error: "unreadable_route", message: "場所のURLのため、経路として読み取れませんでした。経路を表示した状態で共有したURLを貼り付けてください。" },
+      { status: 422 },
     );
   }
 
-  return NextResponse.json(
-    { error: "unreadable_route", message: "Googleマップの経路URLから出発地と目的地を読み取れませんでした。" },
-    { status: 422 },
-  );
+  const route: GoogleMapsRoute = {
+    origin: item.origin,
+    destination: item.destination,
+    mode: item.mode,
+    minutes: item.durationMinutes,
+    departAt: item.startAt,
+  };
+  return NextResponse.json({ route, estimated: item.estimated, notice: item.notice, sourceUrl: item.sourceUrl });
 }

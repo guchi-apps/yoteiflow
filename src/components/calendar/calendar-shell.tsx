@@ -47,7 +47,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
-import { HANDOFF_QUERY_KEYS, handoffLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -336,11 +336,17 @@ export function CalendarShell({
     // 解析とURLの掃除をタイマー内で行うため、取り消された1回目に読み取りを奪われない。
     const timer = setTimeout(() => {
     const handoff = parseShareHandoff(window.location.search);
-    if (!handoff) return;
+    const failed = !handoff && hasHandoffQuery(window.location.search);
+    if (!handoff && !failed) return;
 
     const url = new URL(window.location.href);
     for (const key of HANDOFF_QUERY_KEYS) url.searchParams.delete(key);
     window.history.replaceState(window.history.state, "", url.toString());
+    if (!handoff) {
+      // 月表示だけが黙って開く状態にしない（issue #1143）
+      window.alert("共有内容を読み取れませんでした。共有元のアプリからもう一度共有してください。");
+      return;
+    }
 
     const date = utils.todayKey();
     if (handoff.kind === "place") {
@@ -368,6 +374,13 @@ export function CalendarShell({
     const departAt = `${start.date}T${start.startTime}`;
     const minutes = handoff.minutes ?? 30;
     const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
+    // 共有に無かった値は仮の値で埋めているため、確定した情報のように見せず案内を添える（issue #1142）
+    const notice = [
+      "日時は共有に含まれていないため、仮の時刻を入れています。出発・到着時刻を確かめてください。",
+      handoff.minutes === null ? "所要時間は取得できませんでした。" : handoff.estimated ? "所要時間はAIによる目安です。" : null,
+    ]
+      .filter(Boolean)
+      .join("");
     setItemDialog({
       initialKind: "travel",
       drafts: {
@@ -377,7 +390,9 @@ export function CalendarShell({
           mode: handoff.mode,
           departAt,
           arriveAt: arrive,
-          roundTrip: false,
+          note: handoff.url ?? undefined,
+          estimateSource: handoff.estimated ? "AI" : undefined,
+          notice,
         },
       },
     });
@@ -410,9 +425,8 @@ export function CalendarShell({
           mode: link.mode,
           departAt: times.departAt,
           arriveAt: times.arriveAt,
-          roundTrip: false,
           note: link.note || undefined,
-          linkedEvent: { id: item.eventId, calendarId: item.calendarId, endAt: item.end },
+          linkedEvent: { id: item.eventId, calendarId: item.calendarId, startAt: item.start, endAt: item.end },
           notice,
         },
       },
@@ -721,8 +735,7 @@ export function CalendarShell({
             timeZone,
           ),
           arriveAt: isoToLocalInput(event.start, timeZone),
-          linkedEvent: { id: event.id, calendarId: event.calendarId, endAt: event.end },
-          roundTrip: travelSettings.roundTrip,
+          linkedEvent: { id: event.id, calendarId: event.calendarId, startAt: event.start, endAt: event.end },
         },
       },
     });
@@ -818,7 +831,6 @@ export function CalendarShell({
           mode: travelSettings.defaultMode,
           departAt: range.start,
           arriveAt: range.end,
-          roundTrip: false,
         },
       },
     });
@@ -1269,6 +1281,8 @@ export function CalendarShell({
 function syncMonthUrl(month: string) {
   // すでにその月を指しているなら書き換えない。replaceState は Next.js の RESTORE になるため、
   // マウント直後や日表示からの切り替え直後（`date=YYYY-MM-DD` で同じ月）に余分に走らせない。
+  // 共有の引き継ぎが未処理のあいだは書き換えない。クエリごと消えて紐づけ画面が開かなくなる（issue #1143）。
+  if (hasHandoffQuery(window.location.search)) return;
   const params = new URLSearchParams(window.location.search);
   if (params.get("view") === "month" && params.get("date")?.slice(0, 7) === month) return;
 
@@ -1875,6 +1889,9 @@ function CalendarBody({
           weekStartsOn={weekStartsOn}
           linkedEventTitle={
             data.events.find((event) => event.id === viewingTravel.linkedEventId)?.title ?? null
+          }
+          linkedEventRange={
+            data.events.find((event) => event.id === viewingTravel.linkedEventId) ?? null
           }
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />

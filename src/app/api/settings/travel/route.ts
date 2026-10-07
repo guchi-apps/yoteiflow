@@ -7,7 +7,6 @@ import { isTravelMode } from "@/types/calendar";
 type Body = {
   defaultOrigin?: string | null;
   defaultMode?: string;
-  roundTrip?: boolean;
   calendarId?: string | null;
 };
 
@@ -36,7 +35,6 @@ export async function PATCH(request: Request) {
     ...(body.defaultMode !== undefined && isTravelMode(body.defaultMode)
       ? { defaultMode: body.defaultMode }
       : {}),
-    ...(body.roundTrip !== undefined ? { roundTrip: Boolean(body.roundTrip) } : {}),
     ...(body.calendarId !== undefined ? { calendarId: body.calendarId } : {}),
   });
 

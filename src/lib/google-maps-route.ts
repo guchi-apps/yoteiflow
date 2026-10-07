@@ -1,7 +1,9 @@
 /**
  * Googleマップで共有された経路URLから、移動入力欄へ反映できる値を読む（docs/spec.md §29）。
  *
- * Google Maps URLsの経路指定と、モバイル共有で使われる`/maps/dir/`のdataパラメータを読む。
+ * Google Maps URLsの経路指定（`origin`・`destination`・`travelmode`）、モバイル共有で使われる
+ * `/maps/dir/`のdataパラメータ、iOSの経路共有の短縮URLが展開される旧形式
+ * （`maps.google.com/?saddr=…&daddr=…&dirflg=d`・issue #1142）を読む。
  * URL形式はGoogle側のものなので、読めない部分は推測せずnullにする。
  */
 
@@ -13,8 +15,8 @@ export type GoogleMapsRoute = {
   origin: string;
   destination: string;
   mode: TravelMode;
-  /** AIが共有経路の情報から補完した所要時間（分）。 */
-  minutes: number;
+  /** AIが共有経路の情報から補完した所要時間（分）。URL自身には無いため、補完できなければnull。 */
+  minutes: number | null;
   /** Googleマップで指定された出発日時。指定が無いときはnull。 */
   departAt: string | null;
 };
@@ -34,6 +36,22 @@ function routeMode(value: string | null): TravelMode {
       return "OTHER";
     default:
       return "CAR";
+  }
+}
+
+/** 旧形式の `dirflg`（d=車・r=公共交通・w=徒歩・b=自転車）。 */
+function dirflgMode(value: string | null): TravelMode | null {
+  switch (value?.toLowerCase()) {
+    case "d":
+      return "CAR";
+    case "r":
+      return "PUBLIC_TRANSIT";
+    case "w":
+      return "WALK";
+    case "b":
+      return "OTHER";
+    default:
+      return null;
   }
 }
 
@@ -74,31 +92,53 @@ function place(value: string | null | undefined): string | null {
   }
 }
 
-/** 経路URL本体を解析する。短縮URLの展開はAPIルートが担当する。 */
-export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
+function googleMapsUrl(input: string): URL | null {
   let url: URL;
   try {
     url = new URL(input.trim());
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" || !isGoogleMapsHost(url.hostname)) return null;
+  return url.protocol === "https:" && isGoogleMapsHost(url.hostname) ? url : null;
+}
+
+/**
+ * 経路を指すURLか（発着地が揃っているかは問わない）。目的地だけの経路（出発地＝現在地）を
+ * 場所の共有と取り違えて予定の場所へ入れないために、場所の解析より先に見る（issue #1142）。
+ */
+export function isGoogleMapsRouteUrl(input: string): boolean {
+  const url = googleMapsUrl(input);
+  if (!url) return false;
+  const segments = url.pathname.split("/").filter(Boolean);
+  return (
+    segments.includes("dir") ||
+    url.searchParams.has("destination") ||
+    url.searchParams.has("daddr") ||
+    url.searchParams.has("saddr")
+  );
+}
+
+/** 経路URL本体を解析する。短縮URLの展開はAPIルートが担当する。 */
+export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
+  const url = googleMapsUrl(input);
+  if (!url) return null;
 
   const segments = url.pathname.split("/").filter(Boolean);
   const dirIndex = segments.findIndex((segment) => segment === "dir");
   const pathOrigin = dirIndex >= 0 ? place(segments[dirIndex + 1]) : null;
   const pathDestination = dirIndex >= 0 ? place(segments[dirIndex + 2]) : null;
-  const origin = place(url.searchParams.get("origin")) ?? pathOrigin;
-  const destination = place(url.searchParams.get("destination")) ?? pathDestination;
+  // 座標だけの出発地（`saddr=34.84,135.61`）も名称が無いまま文字列で保持する
+  const origin = place(url.searchParams.get("origin")) ?? place(url.searchParams.get("saddr")) ?? pathOrigin;
+  const destination = place(url.searchParams.get("destination")) ?? place(url.searchParams.get("daddr")) ?? pathDestination;
   if (!origin || !destination || origin === "data=" || destination === "data=") return null;
 
   const data = url.searchParams.get("data") ?? url.pathname.match(/\/data=([^?]+)/)?.[1] ?? "";
   return {
     origin,
     destination,
-    mode: dataMode(data) ?? routeMode(url.searchParams.get("travelmode")),
+    mode: dataMode(data) ?? dirflgMode(url.searchParams.get("dirflg")) ?? routeMode(url.searchParams.get("travelmode")),
     // URL自身には所要時間が無いため、APIルートでAI解析後に入れる。
-    minutes: 0,
+    minutes: null,
     departAt: dataDepartAt(data),
   };
 }

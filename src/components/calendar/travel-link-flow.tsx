@@ -11,8 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
-import { defaultReturnLeg } from "@/services/travel/link-input";
 import type { CalendarEventItem, TravelItem } from "@/types/calendar";
 
 import { isoToLocalInput } from "./datetime-fields";
@@ -44,8 +42,8 @@ function dateKeyOf(iso: string, timeZone: string): string {
 }
 
 /**
- * 既存の予定と移動を後から結ぶ（issue #1105）。相手を選ぶ（`EventPickerDialog`）→往路か復路かを
- * 決めて確認、の2段。選んだ時点では保存せず、確認のOKで `PUT /api/travels/[id]/link` を呼ぶ。
+ * 既存の予定と移動を後から結ぶ（issue #1105）。相手を選ぶ（`EventPickerDialog`）→確認、の2段。
+ * 往路・復路は選ばせない（issue #1137。予定との前後は日時から判断する）。選んだ時点では保存せず、確認のOKで `PUT /api/travels/[id]/link` を呼ぶ。
  */
 export function TravelLinkFlow({
   side,
@@ -62,7 +60,6 @@ export function TravelLinkFlow({
 }) {
   const [picked, setPicked] = useState<PickedItem | null>(null);
   const [open, setOpen] = useState(true);
-  const [returnLeg, setReturnLeg] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,10 +78,6 @@ export function TravelLinkFlow({
         }
         onCancel={onCancel}
         onSelect={(item) => {
-          const other = side.kind === "event" ? side.event : { start: item.start, end: item.end };
-          const travel = side.kind === "event" ? item.travel : side.travel;
-          const event = side.kind === "event" ? other : item;
-          if (travel) setReturnLeg(defaultReturnLeg(travel, event));
           setPicked(item);
         }}
       />
@@ -98,8 +91,6 @@ export function TravelLinkFlow({
       : { id: picked.eventId, calendarId: picked.calendarId, title: picked.title, start: picked.start, end: picked.end };
 
   // 移動がすでに別の予定へ結ばれているときは付け替えになる。
-  // 出発地と目的地が決まっている移動は、時刻から往路・復路が定まるため選ばせない（issue #1129）。
-  const directionKnown = Boolean(travel?.origin.trim() && travel.destination.trim());
 
   const replacing = Boolean(travel?.linkedEventId && travel.linkedEventId !== event.id);
 
@@ -116,7 +107,14 @@ export function TravelLinkFlow({
       const response = await fetch(`/api/travels/${encodeURIComponent(travel.id)}/link`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ calendarId: event.calendarId, eventId: event.id, returnLeg }),
+        // 予定の時刻は、持ち物の期限を予定前の移動へ自動で付けるかの判断にだけ使う。
+        body: JSON.stringify({
+          calendarId: event.calendarId,
+          eventId: event.id,
+          eventStart: event.start,
+          eventEnd: event.end,
+          eventAllDay: !event.start.includes("T"),
+        }),
       });
       if (!response.ok) {
         setError(await readErrorMessage(response, "紐づけできませんでした。"));
@@ -140,7 +138,7 @@ export function TravelLinkFlow({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>この予定と移動を紐づけますか</DialogTitle>
-          <DialogDescription className="sr-only">予定と移動を結び、必要なら往路か復路かを選びます。</DialogDescription>
+          <DialogDescription className="sr-only">予定と移動を結びます。</DialogDescription>
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3">
@@ -156,25 +154,6 @@ export function TravelLinkFlow({
               {travel ? `${formatLinkedDate(travel.start, timeZone)} 〜 ${formatLinkedDate(travel.end, timeZone)}` : ""}
             </span>
           </div>
-
-          {!directionKnown && (
-          <div className="flex gap-1" role="radiogroup" aria-label="往路か復路か">
-            {([false, true] as const).map((value) => (
-              <Button
-                key={String(value)}
-                type="button"
-                size="sm"
-                role="radio"
-                aria-checked={returnLeg === value}
-                variant={returnLeg === value ? "secondary" : "outline"}
-                className={cn(returnLeg === value && "text-on-secondary-container")}
-                onClick={() => setReturnLeg(value)}
-              >
-                {value ? "復路（予定のあと）" : "往路（予定へ向かう）"}
-              </Button>
-            ))}
-          </div>
-          )}
 
           {replacing && (
             <p className="text-sm text-on-surface-variant">

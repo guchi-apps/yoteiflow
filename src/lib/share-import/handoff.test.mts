@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handoffLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 
 test("場所の引き継ぎを検証して読む", () => {
   const handoff = parseShareHandoff("?newEvent=place&title=Tower&address=大阪&lat=34.1&lng=135.2&url=https%3A%2F%2Fmaps.app.goo.gl%2Fx");
@@ -18,7 +18,7 @@ test("範囲外の座標・http・長すぎる文字列は捨てる", () => {
 
 test("移動の引き継ぎ", () => {
   assert.deepEqual(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=WALK&minutes=12"), {
-    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, link: null,
+    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, link: null,
   });
   assert.equal(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=ROCKET"), null);
   assert.equal(parseShareHandoff("?newTravel=1&origin=A&mode=CAR"), null);
@@ -59,4 +59,25 @@ test("link の note は改行を保ち、上限を超えたら切り捨てず導
   assert.equal(ok?.kind === "travel" && ok.link?.note, note);
   const tooLong = parseShareHandoff(`${base}&note=${encodeURIComponent("あ".repeat(20_001))}`);
   assert.equal(tooLong?.kind === "travel" && tooLong.link, null);
+});
+
+test("経路の引き継ぎで、AIの目安かどうかと元の共有URLを受ける（issue #1142）", () => {
+  const value = parseShareHandoff(
+    "?newTravel=1&origin=35.68,139.76&destination=B&mode=CAR&minutes=25&estimated=1&url=https%3A%2F%2Fmaps.app.goo.gl%2FAbC",
+  );
+  assert.ok(value?.kind === "travel");
+  assert.equal(value.estimated, true);
+  assert.equal(value.url, "https://maps.app.goo.gl/AbC");
+  // 所要時間が無いときは目安の印も立てない
+  const noMinutes = parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=CAR&estimated=1");
+  assert.ok(noMinutes?.kind === "travel");
+  assert.equal(noMinutes.minutes, null);
+  assert.equal(noMinutes.estimated, false);
+});
+
+test("未処理の引き継ぎがURLにあるかを判定する（URL同期が消さないため・issue #1143）", () => {
+  assert.equal(hasHandoffQuery("?newTravel=1&link=1&origin=a"), true);
+  assert.equal(hasHandoffQuery("?newEvent=place&title=x"), true);
+  assert.equal(hasHandoffQuery("?view=month&date=2026-10-01"), false);
+  assert.equal(hasHandoffQuery(""), false);
 });

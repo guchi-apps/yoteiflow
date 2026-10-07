@@ -64,10 +64,15 @@ struct ShareImportView: View {
                     row("日時", "未定（アプリで決めます）")
                 }
                 if let minutes = item.durationMinutes {
-                    row("所要時間", ShareImportViewModel.durationText(minutes) + (item.estimated ? "（目安）" : ""))
+                    row("所要時間", ShareImportViewModel.durationText(minutes) + (item.estimated ? "（AIによる目安）" : ""))
+                } else {
+                    row("所要時間", "未取得（アプリで入力します）")
                 }
                 if let fare = item.fare { row("運賃", "\(fare)円") }
                 if let mode = ShareImportViewModel.modeText(item.mode) { row("移動手段", mode) }
+                if let notice = item.notice, !notice.isEmpty {
+                    Text(notice).font(.footnote).foregroundStyle(.secondary)
+                }
             } else {
                 Text(item.title).font(.title3.bold())
                 if let address = item.address, !address.isEmpty { row("住所", address) }

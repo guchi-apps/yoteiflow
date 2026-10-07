@@ -26,6 +26,9 @@ test("座標だけのqは名前にしない", () => {
 
 test("経路・Google以外・範囲外の座標は読まない", () => {
   assert.equal(parseGoogleMapsPlaceUrl("https://www.google.com/maps/dir/東京駅/大阪駅"), null);
+  // 経路の旧形式（目的地だけ・q付きでも）は場所として読まない（issue #1142）
+  assert.equal(parseGoogleMapsPlaceUrl("https://maps.google.com/?daddr=東京駅&q=35.68,139.76"), null);
+  assert.equal(parseGoogleMapsPlaceUrl("https://maps.google.com/?saddr=35.68,139.76&daddr=東京駅"), null);
   assert.equal(parseGoogleMapsPlaceUrl("https://evil.example/maps/place/x"), null);
   assert.equal(parseGoogleMapsPlaceUrl("https://maps.google.com/?q=99,200"), null);
 });
