@@ -74,6 +74,7 @@ export function EventDetailDialog({
   onEdit,
   onDuplicate,
   onAddTravel,
+  isActivity = false,
   linkedTravels,
   onOpenTravel,
   onLinkTask,
@@ -96,6 +97,8 @@ export function EventDetailDialog({
   onDuplicate: () => void;
   /** この予定への移動を作る（docs/spec.md §29）。終日予定では出さない。 */
   onAddTravel: () => void;
+  /** 活動記録（保存先カレンダーの予定）。実績のため予定向けの導線を出さない（issue #1173）。 */
+  isActivity?: boolean;
   /**
    * この予定に紐づいている移動（issue #327）。
    *
@@ -236,7 +239,7 @@ export function EventDetailDialog({
    * 移動を足せるのは時刻のある予定だけ。終日予定には「何時までに着けばよいか」が無く、
    * 出発時刻を逆算する起点が決まらない。
    */
-  const canAddTravel = !event.allDay;
+  const canAddTravel = !event.allDay && !isActivity;
 
   /*
    * 場所を押したときの行き先（issue #426）。オフライン中は地図もアプリも開けないため
@@ -522,12 +525,14 @@ export function EventDetailDialog({
           )}
 
           {/* 予定の持ち物（issue #1080）。期限は向かう移動の出発から自動で決まる。 */}
-          <BringItemsSection
-            event={event}
-            timeZone={timeZone}
-            readOnly={readOnly}
-            onChanged={() => onBringChanged?.()}
-          />
+          {!isActivity && (
+            <BringItemsSection
+              event={event}
+              timeZone={timeZone}
+              readOnly={readOnly}
+              onChanged={() => onBringChanged?.()}
+            />
+          )}
 
           {/*
             この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
@@ -580,6 +585,8 @@ export function EventDetailDialog({
               あっても紐づけ画面（`TaskLinkDialog`）の中で新しく作れるため、1つに統合した
               （issue #835）。
             */}
+            {!isActivity && (
+              <>
             <Button
               variant="outline"
               size="sm"
@@ -605,6 +612,8 @@ export function EventDetailDialog({
               <EventOutcomeMark className="size-4" />
               {outcome ? "記録を直す" : "中止・不参加にする"}
             </Button>
+              </>
+            )}
           </div>
         </div>
 
