@@ -19,7 +19,7 @@ export async function resolveSharedImport(
   deps?: GoogleMapsShareDeps,
 ): Promise<ShareImportResult> {
   const googleUrl = extractGoogleMapsUrl(input.url ?? "") ?? extractGoogleMapsUrl(input.text ?? "");
-  if (googleUrl) return resolveGoogleMapsShare(googleUrl, deps);
+  if (googleUrl) return resolveGoogleMapsShare(googleUrl, deps, timeZone);
 
   const text = input.text ?? "";
   if (!text.trim()) {

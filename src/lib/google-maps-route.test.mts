@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { isGoogleMapsRouteUrl, parseGoogleMapsRouteUrl } from "@/lib/google-maps-route";
 
-test("共有された経路URLから座標・交通手段・出発日時を読む", () => {
+test("共有された経路URLから座標・交通手段・指定日時（現地の壁時計）を読む", () => {
   assert.deepEqual(
     parseGoogleMapsRouteUrl(
       "https://www.google.com/maps/dir/34.841753,135.61853/34.552378,135.496285/data=!4m11!8j1791103500!3e0",
@@ -13,7 +13,7 @@ test("共有された経路URLから座標・交通手段・出発日時を読�
       destination: "34.552378,135.496285",
       mode: "CAR",
       minutes: null,
-      departAt: "2026-10-04T08:45:00.000Z",
+      schedule: { basis: "depart", local: "2026-10-04T08:45" },
     },
   );
 });
@@ -23,7 +23,7 @@ test("Google Maps URLs形式と交通手段を読む", () => {
     parseGoogleMapsRouteUrl(
       "https://www.google.com/maps/dir/?api=1&origin=東京駅&destination=新大阪駅&travelmode=transit",
     ),
-    { origin: "東京駅", destination: "新大阪駅", mode: "PUBLIC_TRANSIT", minutes: null, departAt: null },
+    { origin: "東京駅", destination: "新大阪駅", mode: "PUBLIC_TRANSIT", minutes: null, schedule: null },
   );
 });
 
@@ -43,7 +43,7 @@ test("saddr・daddr・dirflg 形式を経路として読み、座標だけの出
     destination: "〒100-0001 東京都千代田区千代田１−１",
     mode: "CAR",
     minutes: null,
-    departAt: null,
+    schedule: null,
   });
   assert.equal(isGoogleMapsRouteUrl(legacyRoute), true);
 });
@@ -61,4 +61,13 @@ test("目的地だけの経路は経路として読めないが、経路URLと�
   assert.equal(parseGoogleMapsRouteUrl(onlyDestination), null);
   assert.equal(isGoogleMapsRouteUrl(onlyDestination), true);
   assert.equal(isGoogleMapsRouteUrl("https://www.google.com/maps/place/Tower/@34.1,135.1,17z"), false);
+});
+
+test("!6e の出発／到着指定と !8j を壁時計として読む（issue #1160）", () => {
+  const base = "https://www.google.com/maps/dir/A/B/data=!4m1!2m4!";
+  assert.deepEqual(parseGoogleMapsRouteUrl(`${base}6e0!7e2!8j1791382080!11b1!3e0`)?.schedule, { basis: "depart", local: "2026-10-07T14:08" });
+  assert.deepEqual(parseGoogleMapsRouteUrl(`${base}6e1!7e2!8j1791549000!11b1!3e0`)?.schedule, { basis: "arrive", local: "2026-10-09T12:30" });
+  // 日時の指定が無い・基準が未知の値なら日時は読まない
+  assert.equal(parseGoogleMapsRouteUrl(`${base}6e0!7e2!3e0`)?.schedule, null);
+  assert.equal(parseGoogleMapsRouteUrl(`${base}6e2!7e2!8j1791382080!3e0`)?.schedule, null);
 });

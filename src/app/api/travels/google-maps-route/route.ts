@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { validGoogleMapsUrl } from "@/lib/google-maps-expand";
-import type { GoogleMapsRoute } from "@/lib/google-maps-route";
 import { resolveGoogleMapsShare } from "@/lib/share-import/google-maps";
+import { getTimeZone } from "@/services/travel/plans";
 
 type RouteBody = { url?: unknown };
 
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを貼り付けてください。" }, { status: 400 });
   }
 
-  const result = await resolveGoogleMapsShare(value);
+  const result = await resolveGoogleMapsShare(value, {}, await getTimeZone(userId));
   if (!result.ok) {
     return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
   }
@@ -40,12 +40,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const route: GoogleMapsRoute = {
-    origin: item.origin,
-    destination: item.destination,
-    mode: item.mode,
-    minutes: item.durationMinutes,
-    departAt: item.startAt,
-  };
-  return NextResponse.json({ route, estimated: item.estimated, notice: item.notice, sourceUrl: item.sourceUrl });
+  // 共有拡張の preview と同じ共通モデルをそのまま返し、日時・所要時間・候補の解釈を共有と揃える（issue #1160）
+  return NextResponse.json({ item });
 }

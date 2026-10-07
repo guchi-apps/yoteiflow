@@ -13,6 +13,7 @@ import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
+import { applyGarbageLeaveTime } from "@/lib/garbage-time";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
@@ -100,6 +101,9 @@ export async function loadCalendarData(
     listBringItems(userId),
     listEventNotificationSettings(userId),
   ]);
+
+  // ゴミの日の時刻は、勤務の往路移動の出発時刻から表示時に決める（issue #1156）。
+  notion.reminders = await applyGarbageTimes(userId, range, notion.reminders);
 
   // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
   // 書き出し先のIDと一致する予定を落とす（docs/spec.md §29）。
@@ -320,6 +324,46 @@ export async function loadGoogleEvents(
     calendars,
     errors,
   };
+}
+
+/**
+ * ゴミの日の枠へ、勤務から自動生成した往路移動の出発時刻に応じたゴミ出しの時刻を重ねる。
+ * DaySpanのDBだけを読み、ゴミの日が無い範囲では何も読まない（docs/spec.md §9）。
+ */
+async function applyGarbageTimes(
+  userId: string,
+  range: { timeMin: string; timeMax: string },
+  reminders: ReminderItem[],
+): Promise<ReminderItem[]> {
+  if (!reminders.some((item) => item.source === "garbage" && !item.hasTime)) return reminders;
+
+  const [setting, rows] = await Promise.all([
+    db.uiSetting.findUnique({ where: { userId }, select: { timeZone: true } }),
+    db.workGenerated.findMany({
+      where: {
+        userId,
+        kind: "OUTBOUND",
+        travelPlanId: { not: null },
+        date: { gte: range.timeMin.slice(0, 10), lte: range.timeMax.slice(0, 10) },
+      },
+      select: { date: true, travelPlanId: true },
+    }),
+  ]);
+  const plans = rows.length
+    ? await db.travelPlan.findMany({
+        where: { userId, id: { in: rows.map((row) => row.travelPlanId!) } },
+        select: { id: true, departAt: true },
+      })
+    : [];
+  const departAtById = new Map(plans.map((plan) => [plan.id, plan.departAt]));
+  const departures = new Map<string, Date>();
+  for (const row of rows) {
+    const departAt = departAtById.get(row.travelPlanId!);
+    const current = departures.get(row.date);
+    // 同じ日に往路が複数あるときは、いちばん早い出発に合わせる。
+    if (departAt && (!current || departAt < current)) departures.set(row.date, departAt);
+  }
+  return applyGarbageLeaveTime(reminders, departures, setting?.timeZone ?? "Asia/Tokyo");
 }
 
 async function loadNotionItems(

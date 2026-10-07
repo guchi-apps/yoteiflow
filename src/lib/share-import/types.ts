@@ -21,7 +21,7 @@ export type SharedImport = {
   destination: string | null;
   address: string | null;
   coordinates: { lat: number; lng: number } | null;
-  /** ISO 8601。Googleマップの経路は日時を持たないことが多く、そのときは null */
+  /** ISO 8601。日時が取れなかったとき（Googleマップの日時未指定など）は null */
   startAt: string | null;
   endAt: string | null;
   durationMinutes: number | null;
@@ -31,12 +31,29 @@ export type SharedImport = {
   sourceUrl: string | null;
   /** 折りたたんで出す経路の詳細（生テキスト） */
   detail: string | null;
-  /** 所要時間がAIの見積もりか（Googleマップ経路）。画面に「（目安）」を出す */
+  /** 所要時間がAI・Googleの予測など「目安」か。画面に「（目安）」を出す */
   estimated: boolean;
+  /** 所要時間の出どころ（登録時の `estimateSource`）。取れなかった・Yahoo!以外の確定値でないときは null */
+  estimateSource: "YAHOO" | "AI" | "GOOGLE_MAPS" | null;
+  /** Googleマップで指定された基準（出発指定なら開始、到着指定なら終了が固定側）。指定が無ければ null */
+  scheduleBasis: "depart" | "arrive" | null;
+  /** 経路候補が複数あり共有時の選択を特定できないとき、取得した候補（先頭を選んだものとは扱わない・issue #1160）。無ければ null */
+  candidates: ShareRouteCandidate[] | null;
   /** 直接登録できるか。日時の無い経路は false で、アプリの移動入力へ引き継ぐ */
   registrable: boolean;
   /** 不足している項目・推定値である旨など、確認画面に添える案内（issue #1142）。無ければ null */
   notice: string | null;
+};
+
+/** 再取得した経路候補1件。開始・終了・所要時間はこの候補だけから求めた値で、別候補の値と混ぜない */
+export type ShareRouteCandidate = {
+  name: string;
+  distanceText: string | null;
+  /** 予測の表示（「35 分～1 時間 20 分」など）。無ければ代表時間の表示 */
+  durationText: string | null;
+  minutes: number | null;
+  startAt: string | null;
+  endAt: string | null;
 };
 
 export type ShareImportFailure = {
