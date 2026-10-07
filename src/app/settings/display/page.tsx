@@ -5,6 +5,7 @@ import { DisplaySection } from "@/components/settings/display-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { StartPathSection } from "@/components/settings/start-path-section";
 import { getCurrentUser } from "@/lib/auth-user";
+import { initialViewFromSetting } from "@/lib/calendar-initial-view";
 import { db } from "@/lib/db";
 import { DEFAULT_HOME_PATH, isStartPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
@@ -30,7 +31,10 @@ export default async function DisplaySettingsPage() {
       backLabel="設定"
     >
       <StartPathSection startPath={startPath} />
-      <DisplaySection weekStartsOn={uiSetting?.weekStartsOn ?? 0} />
+      <DisplaySection
+        weekStartsOn={uiSetting?.weekStartsOn ?? 0}
+        defaultView={initialViewFromSetting(uiSetting?.defaultMobileView)}
+      />
     </SettingsShell>
   );
 }
