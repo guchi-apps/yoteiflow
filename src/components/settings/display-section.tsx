@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +19,14 @@ import {
 } from "@/lib/calendar-initial-view";
 import { WEEK_START_OPTIONS } from "@/lib/week-start";
 
+const WIDE_QUERY = "(min-width: 768px)";
+
+function subscribeWide(callback: () => void) {
+  const media = window.matchMedia(WIDE_QUERY);
+  media.addEventListener("change", callback);
+  return () => media.removeEventListener("change", callback);
+}
+
 export function DisplaySection({
   weekStartsOn,
   defaultView,
@@ -29,6 +37,13 @@ export function DisplaySection({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(weekStartsOn);
+  // 週表示を出せる幅（calendar-shell.tsx の desktopOnly と同じ768px）でだけ選択肢に出す。
+  // サーバー描画では出さず、いま保存されている値のときは幅によらず出す（選択中の値が消えないよう）。
+  const wide = useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE_QUERY).matches,
+    () => false,
+  );
   const [view, setView] = useState(defaultView);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,16 +104,18 @@ export function DisplaySection({
           <div className="flex flex-col gap-1">
             <Label htmlFor="initial-view">カレンダーの初期表示</Label>
             <p className="type-body-small text-on-surface-variant">
-              カレンダーを開いたときの表示形式です。画面内で切り替えても、この設定は変わりません。
+              カレンダーを開いたときの表示形式です。週表示は幅の広い画面でだけ選べ、狭い画面では3日表示で開きます。画面内で切り替えても、この設定は変わりません。
             </p>
           </div>
 
           <Select value={view} onValueChange={changeView} disabled={busy || pending}>
-            <SelectTrigger id="initial-view" className="w-32">
+            <SelectTrigger id="initial-view" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {INITIAL_CALENDAR_VIEW_OPTIONS.map((option) => (
+              {INITIAL_CALENDAR_VIEW_OPTIONS.filter(
+                (option) => !option.desktopOnly || wide || option.value === view,
+              ).map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
