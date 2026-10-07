@@ -1833,6 +1833,7 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          isActivity={activityCalendars.has(viewingEvent.calendarId)}
           // この予定のために作った移動。往路・復路の2件が同じ予定を指す。
           linkedTravels={data.travels.filter(
             (travel) => travel.linkedEventId === viewingEvent.id,
