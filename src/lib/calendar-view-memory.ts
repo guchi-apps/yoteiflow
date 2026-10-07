@@ -6,6 +6,8 @@
 // 前回の期間をもう一度取り直す（外部APIへの往復が倍になる）。Cookieなら最初の描画前に読める。
 //
 // 覚えているのは表示形式と日付だけで、予定・タスクの中身は入れない。
+// ただし復元に使うのは日付だけ。表示形式は設定の初期表示で決める（issue #1144・
+// src/lib/calendar-initial-view.ts）。表示形式を書き続けるのは旧Cookieとの互換のため。
 
 import { CALENDAR_VIEWS, type CalendarView } from "./calendar-range";
 

@@ -209,6 +209,8 @@ model UiSetting {
   id     String @id @default(cuid())
   userId String @unique
 
+  // カレンダーの初期表示（issue #1144）。列名は Mobile だが全端末共通で使う。
+  // 選べるのは MONTH / DAY_1 のみ（マイグレーションを避けて既存列を流用）。
   defaultMobileView  CalendarViewType @default(MONTH)
   defaultDesktopView CalendarViewType @default(DAY_7)
   weekStartsOn       Int              @default(0) // 0=日曜
