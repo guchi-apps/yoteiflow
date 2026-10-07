@@ -11,9 +11,15 @@ import {
   nativeHealthImportSummary,
   nativeHealthSummary,
   statusNativeHealth,
+  statusSleepFocus,
   syncNativeHealth,
   type NativeHealthStatus,
 } from "@/lib/native-health";
+import {
+  describeSleepFocusCredential,
+  describeSleepFocusLast,
+  type SleepFocusStatus,
+} from "@/lib/sleep-focus-status";
 
 /**
  * ヘルスケア連携の設定（docs/spec.md §40）。
@@ -38,6 +44,7 @@ export function HealthSection({
     () => false,
   );
   const [status, setStatus] = useState<NativeHealthStatus | null>(null);
+  const [focus, setFocus] = useState<SleepFocusStatus | null>(null);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -46,6 +53,9 @@ export function HealthSection({
     let cancelled = false;
     statusNativeHealth()
       .then((value) => !cancelled && setStatus(value))
+      .catch(() => {});
+    statusSleepFocus()
+      .then((value) => !cancelled && setFocus(value))
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -135,13 +145,14 @@ export function HealthSection({
         <CardContent className="flex flex-col gap-3">
           <h2 className="type-title-medium font-bold">睡眠モードと連動</h2>
           <p className="type-body-medium text-on-surface-variant">
-            iPhoneの睡眠モードをオンにすると{title}の記録を始め、オフにすると止めます。アラームを止めたときも
-            睡眠モードが解除されるため、そこで止まります。
+            iPhoneの睡眠モードをオンにすると{title}の記録を始め、オフにすると止めます。アラームの停止などで
+            睡眠モードが解除されたときも、そこで止まります。
           </p>
           <p className="type-body-small text-on-surface-variant">
             iPhoneの「設定 ＞ 集中モード ＞ 睡眠 ＞ フォーカスフィルタ」でYoteiFlowを追加し、
             「睡眠を記録する」をオンにしてください。止まらなかったときは、記録の画面から止められます。
           </p>
+          {available && focus && <SleepFocusStatusView status={focus} />}
         </CardContent>
       </Card>
 
@@ -155,6 +166,26 @@ export function HealthSection({
         </p>
       )}
     </>
+  );
+}
+
+function SleepFocusStatusView({ status }: { status: SleepFocusStatus }) {
+  const credential = describeSleepFocusCredential(status);
+  const last = status.last ? describeSleepFocusLast(status.last) : null;
+  return (
+    <div className="type-body-small flex flex-col gap-1 rounded-lg bg-surface-container px-3 py-2">
+      <p className="font-medium">連動の状態</p>
+      {last && status.last ? (
+        <p className={last.ok ? undefined : "text-error"}>
+          {new Date(status.last.at).toLocaleString("ja-JP")} ・ {last.text}
+        </p>
+      ) : (
+        <p className="text-on-surface-variant">
+          まだ睡眠モードの切り替えを受け取っていません。フォーカスフィルタの設定を確認し、睡眠モードを切り替えてみてください。
+        </p>
+      )}
+      {credential && <p className="text-error">{credential}</p>}
+    </div>
   );
 }
 

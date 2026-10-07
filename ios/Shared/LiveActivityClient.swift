@@ -19,13 +19,6 @@ enum LiveActivityClient {
         await post(path: "api/shortcuts/activity/stop", body: nil)
     }
 
-    /// 睡眠モード（フォーカス）の切り替えに合わせて睡眠の記録を始める・止める（#1109）。
-    /// 項目はサーバーが決める（睡眠の項目だけ）。トークンが無い・通信に失敗したときは false
-    static func setSleepRecording(_ on: Bool) async -> Bool {
-        let body = try? JSONSerialization.data(withJSONObject: ["mode": on ? "start" : "stop"])
-        return await post(path: "api/shortcuts/activity/sleep", body: body)
-    }
-
     /// activity push token をサーバーへ登録する（以後の update / end の宛先）
     @discardableResult
     static func registerActivityToken(_ token: Data) async -> Bool {
