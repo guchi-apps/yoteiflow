@@ -30,6 +30,20 @@ struct SharedImportItem: Decodable, Equatable {
     let notice: String?
     /// 所要時間の出どころ（YAHOO / AI / GOOGLE_MAPS）。旧サーバーの応答には無いため optional（issue #1160）
     let estimateSource: String?
+    /// 経路候補が複数あるときの候補。利用者が1件選ぶまで確定しない（issue #1168）。旧サーバーの応答には無いため optional
+    let candidates: [RouteCandidate]?
+
+    struct RouteCandidate: Decodable, Equatable {
+        let name: String
+        let distanceText: String?
+        /// 代表時間の表示（採用する時間）
+        let representativeText: String?
+        /// 予測幅の表示（補足）
+        let rangeText: String?
+        let minutes: Int?
+        let startAt: String?
+        let endAt: String?
+    }
 
     var isRoute: Bool { type == "route" }
 }
@@ -55,20 +69,43 @@ final class ShareImportViewModel: ObservableObject {
     /// 詳細（長い経路情報）を開いているか。確認画面では最初は畳む
     @Published var detailExpanded = false
 
+    /// 選択中の経路候補の番号。複数候補のときは利用者が選ぶまで nil のまま（自動では選ばない）
+    @Published var selectedCandidateIndex: Int?
+
+    /// 経路候補が複数あるか
+    var hasCandidateChoice: Bool { (item?.candidates?.count ?? 0) > 1 }
+
+    var selectedCandidate: SharedImportItem.RouteCandidate? {
+        guard let index = selectedCandidateIndex, let candidates = item?.candidates, candidates.indices.contains(index) else { return nil }
+        return candidates[index]
+    }
+
+    /// 複数候補の未選択では確定して進めない
+    var canProceed: Bool { !hasCandidateChoice || selectedCandidate != nil }
+
+    /// 選択中の候補（無ければ共有そのまま）の開始・終了で登録できるか
+    var effectiveRegistrable: Bool {
+        guard let item else { return false }
+        if hasCandidateChoice { return selectedCandidate.map { $0.startAt != nil && $0.endAt != nil } ?? false }
+        return item.registrable
+    }
+
     var onCancel: () -> Void = {}
     var onPrimary: () -> Void = {}
     var onLink: () -> Void = {}
+    /// 経路を選ばずに本体アプリの移動入力で続ける（複数候補の未選択時の逃げ道）
+    var onManual: () -> Void = {}
 
     /// 直接登録できる経路（日時が揃った経路）だけ、既存の予定へ紐づけて追加する入口を出す（issue #1128）
     var canLinkToEvent: Bool {
         guard let item else { return false }
-        return item.registrable && item.isRoute
+        return effectiveRegistrable && item.isRoute
     }
 
     /// 主ボタンの文言。直接登録できるものは「登録」、それ以外は本体アプリで続ける
     var primaryTitle: String {
         guard let item else { return "登録" }
-        if item.registrable { return "登録" }
+        if effectiveRegistrable { return "登録" }
         return item.isRoute ? "移動の入力へ進む" : "この場所を予定に追加"
     }
 

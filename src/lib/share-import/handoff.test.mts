@@ -18,7 +18,8 @@ test("範囲外の座標・http・長すぎる文字列は捨てる", () => {
 
 test("移動の引き継ぎ", () => {
   assert.deepEqual(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=WALK&minutes=12"), {
-    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false, link: null,
+    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false,
+    route: null, link: null,
   });
   // resolve=1 は元のGoogleマップURLがあるときだけ有効（issue #1160）
   const base = "?newTravel=1&origin=A&destination=B&mode=CAR&resolve=1";
@@ -86,4 +87,14 @@ test("未処理の引き継ぎがURLにあるかを判定する（URL同期が�
   assert.equal(hasHandoffQuery("?newEvent=place&title=x"), true);
   assert.equal(hasHandoffQuery("?view=month&date=2026-10-01"), false);
   assert.equal(hasHandoffQuery(""), false);
+});
+
+test("選んだ経路（名前・距離）を引き継ぎ、無ければ null（issue #1168）", () => {
+  const base = "newTravel=1&origin=A&destination=B&mode=CAR&url=https%3A%2F%2Fmaps.app.goo.gl%2Fx&resolve=1";
+  const picked = parseShareHandoff(`${base}&routeName=${encodeURIComponent("国道163号")}&routeDistance=82.5%20km`);
+  assert.ok(picked?.kind === "travel");
+  assert.deepEqual(picked.route, { name: "国道163号", distance: "82.5 km" });
+  const none = parseShareHandoff(base);
+  assert.ok(none?.kind === "travel");
+  assert.equal(none.route, null);
 });

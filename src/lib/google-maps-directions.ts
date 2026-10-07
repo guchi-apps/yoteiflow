@@ -17,7 +17,6 @@ const MAX_BODY_BYTES = 3_000_000;
 const DIRECTIONS_PATH = /preview\/directions\?[^"'\s<>\\]+/;
 const DIRECTIONS_BASE = "https://www.google.com/maps/";
 const USER_AGENT = "Mozilla/5.0 (compatible; YoteiFlow)";
-const MAX_TRAVEL_MINUTES = 48 * 60;
 
 export type DirectionsCandidate = {
   /** 経路名（「国道170号」など）。Googleが名前を付けないものは空文字 */
@@ -130,9 +129,12 @@ export function parseDirectionsResponse(text: string): DirectionsCandidate[] {
   return found;
 }
 
-/** 候補の予測所要時間（分）。範囲なら上限、範囲が無ければ単一の時間。どちらも無ければ null。 */
+/**
+ * 候補の所要時間（分）。採用するのはGoogleが示す代表時間だけ（issue #1168）。
+ * 予測幅の上限・下限で代替しない。代表時間が無ければ null（未取得として手入力で補う）。
+ */
 export function candidateMinutes(candidate: DirectionsCandidate): number | null {
-  return candidate.rangeMinutes?.max ?? candidate.representativeMinutes;
+  return candidate.representativeMinutes;
 }
 
 export type ScheduledTimes = {
@@ -143,8 +145,9 @@ export type ScheduledTimes = {
 };
 
 /**
- * 指定日時と候補の予測時間から開始・終了を決める。出発指定は開始を固定して終了を求め、到着指定は終了を固定して開始を逆算する。
- * Googleが反対側の時刻を返しているときはそれを優先する。指定日時が無ければ時刻は決めず、所要時間だけ返す。
+ * 指定日時と候補の代表時間から開始・終了を決める。出発指定は開始を固定して終了＝出発＋代表時間、
+ * 到着指定は終了を固定して開始＝到着−代表時間（issue #1168）。Googleが予測の上限から算出した反対側の時刻は使わない。
+ * 指定日時が無ければ時刻は決めず、代表時間だけ返す。代表時間が無ければ固定側だけ返す。
  */
 export function scheduleCandidate(
   candidate: DirectionsCandidate,
@@ -163,24 +166,15 @@ export function scheduleCandidate(
   }
   if (Number.isNaN(fixed)) return { startAt: null, endAt: null, minutes };
 
-  let other: number | null = null;
-  const googleOther = candidate.otherEndEpoch !== null ? candidate.otherEndEpoch * 1_000 : null;
-  if (googleOther !== null) {
-    const gap = schedule.basis === "depart" ? googleOther - fixed : fixed - googleOther;
-    if (gap > 0 && gap <= MAX_TRAVEL_MINUTES * 60_000) other = googleOther;
-  }
-  if (other === null && minutes !== null) {
-    other = schedule.basis === "depart" ? fixed + minutes * 60_000 : fixed - minutes * 60_000;
-  }
-  if (other === null) {
+  if (minutes === null) {
     // 固定側だけは決まる。反対側は未取得として空のまま
     const iso = new Date(fixed).toISOString();
     return schedule.basis === "depart" ? { startAt: iso, endAt: null, minutes } : { startAt: null, endAt: iso, minutes };
   }
-
+  const other = schedule.basis === "depart" ? fixed + minutes * 60_000 : fixed - minutes * 60_000;
   const start = schedule.basis === "depart" ? fixed : other;
   const end = schedule.basis === "depart" ? other : fixed;
-  return { startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), minutes: Math.round((end - start) / 60_000) };
+  return { startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(), minutes };
 }
 
 /** HTMLから経路データの取得先を取り出す。Google Mapsの `preview/directions` 以外は採らない。 */
