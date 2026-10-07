@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handoffLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 
 test("場所の引き継ぎを検証して読む", () => {
   const handoff = parseShareHandoff("?newEvent=place&title=Tower&address=大阪&lat=34.1&lng=135.2&url=https%3A%2F%2Fmaps.app.goo.gl%2Fx");
@@ -59,4 +59,11 @@ test("link の note は改行を保ち、上限を超えたら切り捨てず導
   assert.equal(ok?.kind === "travel" && ok.link?.note, note);
   const tooLong = parseShareHandoff(`${base}&note=${encodeURIComponent("あ".repeat(20_001))}`);
   assert.equal(tooLong?.kind === "travel" && tooLong.link, null);
+});
+
+test("未処理の引き継ぎがURLにあるかを判定する（URL同期が消さないため・issue #1143）", () => {
+  assert.equal(hasHandoffQuery("?newTravel=1&link=1&origin=a"), true);
+  assert.equal(hasHandoffQuery("?newEvent=place&title=x"), true);
+  assert.equal(hasHandoffQuery("?view=month&date=2026-10-01"), false);
+  assert.equal(hasHandoffQuery(""), false);
 });
