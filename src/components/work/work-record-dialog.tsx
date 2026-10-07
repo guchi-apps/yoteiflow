@@ -2,11 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useOffline } from "next/offline";
-import { Trash2 } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
+import {
+  buildSegments,
+  newSegmentRow,
+  rowsFromSegments,
+  WorkSegmentsEditor,
+  type SegmentRow,
+} from "@/components/work/work-segments-editor";
 import { useWorkSyncFields } from "@/components/work/work-sync-fields";
+import { enumerateDates } from "@/lib/work-sync/plan";
+import { formatSegmentTime } from "@/lib/work-segments";
 import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { tagChipClass } from "@/components/tags/tag-color";
@@ -161,6 +170,22 @@ export function WorkRecordDialog({
   const [preApplied, setPreApplied] = useState(existing?.preApplied ?? false);
   const [postRegistered, setPostRegistered] = useState(existing?.postRegistered ?? false);
 
+  // 時間帯ごとの内訳（issue #1155）。区切りがある間だけ欄を出し、無ければ「分ける」ボタンだけ。
+  // 開閉の状態は持たない（閉じただけで区切りが残る・送られる、という食い違いを作らない）。
+  // 触っていない内訳は送らない（Notionで手書きされた読めない値を壊さない・サーバー側が
+  // 記録本体の変更に合わせて片付ける）。
+  const [segmentRows, setSegmentRows] = useState<SegmentRow[]>(() =>
+    rowsFromSegments(existing?.segments ?? []),
+  );
+  const [segmentsTouched, setSegmentsTouched] = useState(false);
+  const changeSegments = (rows: SegmentRow[]) => {
+    setSegmentRows(rows);
+    setSegmentsTouched(true);
+  };
+  // Notionで直接書かれ、読めなかった内訳。入れ直すまでは生の値を見せる。
+  const invalidSegmentsText =
+    existing?.segmentsInvalid && !segmentsTouched ? existing.segmentsText : null;
+
   const offline = useOffline();
 
   const businessTrip = kind === "trip";
@@ -203,8 +228,13 @@ export function WorkRecordDialog({
   // 期間を持てるのは出張・全休の年休・会社休業日。半休・時間休は単日に限る（半日ずつ2日ぶん
   // という形が無い）。会社休業日はお盆・年末年始のように続くため、出張と同じく期間で1件にする。
   const spanned = businessTrip || (isLeave && !partialDay) || isHoliday;
+  // 内訳を持てるのは勤務・出張の記録だけ（年休・休みは持たない）。
+  const segmentsAvailable = capabilities.segments && (kind === "work" || businessTrip);
+  const segmented = segmentsAvailable && segmentRows.length > 0;
+  const segmentEndDate = spanned && endDate ? endDate : startDate;
   // 勤務予定・移動のカレンダー反映（issue #1099）。全休・休みの日は作らない。
   const workSync = useWorkSyncFields({
+    segmented,
     recordId: existing?.id ?? null,
     text: businessTrip ? destination : place,
     isTrip: businessTrip,
@@ -285,8 +315,15 @@ export function WorkRecordDialog({
         setError(await readErrorMessage(response, fallback));
         return;
       }
-      const body = (await response.json().catch(() => null)) as { sync?: SyncSummary } | null;
-      finish(describeSync(body?.sync));
+      const body = (await response.json().catch(() => null)) as {
+        sync?: SyncSummary;
+        segmentsCleared?: boolean;
+      } | null;
+      const notes = [
+        body?.segmentsCleared ? "記録の内容が変わったため、時間帯の内訳を外しました。" : null,
+        describeSync(body?.sync),
+      ].filter(Boolean);
+      finish(notes.length > 0 ? notes.join(" ") : null);
     } catch {
       setError(fallback);
     } finally {
@@ -310,6 +347,20 @@ export function WorkRecordDialog({
     if (!businessTrip && !isLeave && !isHoliday && !place) {
       setError("勤務場所を選んでください。");
       return;
+    }
+
+    // 内訳は触ったときだけ送る。分けるのをやめた（区切りを全部消した）ときは空で送り、列を空にする。
+    let segments: ReturnType<typeof buildSegments> | null = null;
+    if (segmentsAvailable && segmentsTouched) {
+      segments = buildSegments(segmentRows, {
+        startDate,
+        endDate: segmentEndDate,
+        businessTrip,
+      });
+      if ("error" in segments) {
+        setError(segments.error);
+        return;
+      }
     }
 
     const sync = workSync.build();
@@ -362,6 +413,7 @@ export function WorkRecordDialog({
         : {}),
       ...(capabilities.annualLeave && isLeave ? { preApplied: nextPreApplied } : {}),
       ...(capabilities.memo ? { memo: memo.trim() || null } : {}),
+      ...(segments && "segments" in segments ? { segments: segments.segments } : {}),
       ...(sync.payload ? { workSync: sync.payload } : {}),
     };
 
@@ -654,6 +706,59 @@ export function WorkRecordDialog({
             )}
           </div>
         )}
+
+        {segmentsAvailable &&
+          (segmentRows.length > 0 || invalidSegmentsText ? (
+            <div className="flex flex-col gap-2 rounded-xl border border-outline-variant p-3">
+              <p className="type-label-large">時間帯ごとの内訳</p>
+              <WorkSegmentsEditor
+                rows={segmentRows}
+                onChange={changeSegments}
+                placeOptions={placeOptions.filter((option) => !isTripPlace(tripPlaces, option.name))}
+                allowTrip={businessTrip}
+                dates={spanned && segmentEndDate !== startDate ? enumerateDates(startDate, segmentEndDate) : null}
+                defaultDestination={destination.trim()}
+                invalidText={invalidSegmentsText}
+              />
+            </div>
+          ) : (
+            // 既定の入力（1日1つの勤務場所・出張）はそのまま。分けたい日だけ押して始める。
+            // 初めは設定の勤務時間と昼休みで午前・午後の2つにする（「朝は在宅、昼から出張」）。
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              onClick={() => {
+                const window = workSync.window;
+                const time = (minutes: number | undefined, fallback: string) =>
+                  minutes === undefined ? fallback : formatSegmentTime(minutes);
+                const firstPlace =
+                  placeOptions.find((option) => !isTripPlace(tripPlaces, option.name))?.name ?? "";
+                const date = spanned ? startDate : null;
+                changeSegments([
+                  newSegmentRow({
+                    date,
+                    start: time(window?.start, "09:00"),
+                    end: time(window?.lunchStart, "12:00"),
+                    trip: false,
+                    place: businessTrip ? firstPlace : place,
+                    destination: "",
+                  }),
+                  newSegmentRow({
+                    date,
+                    start: time(window?.lunchEnd, "13:00"),
+                    end: time(window?.end, "18:00"),
+                    trip: businessTrip,
+                    place: businessTrip ? "" : place,
+                    destination: "",
+                  }),
+                ]);
+              }}
+            >
+              <Clock className="size-4" />
+              時間帯ごとに分ける
+            </Button>
+          ))}
 
         {workSync.node}
 

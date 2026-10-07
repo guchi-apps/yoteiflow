@@ -35,6 +35,9 @@ const record = (patch: Partial<WorkRecordItem>): WorkRecordItem => ({
   preApplied: false,
   postRegistered: false,
   memo: null,
+  segments: [],
+  segmentsText: null,
+  segmentsInvalid: false,
   url: null,
   ...patch,
 });
@@ -240,4 +243,145 @@ test("場所DBに当たらない・住所が無いときは名前のまま（#11
   const outbound = items.find((item) => item.kind === "OUTBOUND")!;
   assert.equal(outbound.origin, "自宅");
   assert.equal(outbound.destination, "栗東");
+});
+
+// --- 時間帯の内訳（issue #1155） ---
+
+const segmentRoutes: Record<string, number> = {
+  "自宅→大阪": 90,
+  "大阪→京都": 40,
+  "京都→自宅": 75,
+  "大阪→自宅": 90,
+  "自宅→栗東": 60,
+};
+const segmentLookup: RouteLookup = (o, d) =>
+  segmentRoutes[`${o}→${d}`] ? { minutes: segmentRoutes[`${o}→${d}`], mode: "PUBLIC_TRANSIT" } : null;
+const summary = (items: ReturnType<typeof planWorkItems>["items"]) =>
+  items.map((item) => [item.kind, item.seq, hhmm(item.start), hhmm(item.end), item.title]);
+
+test("朝は在宅、13:00から出張: 往路は出張の区切りの開始に着き、復路は終わりに出る", () => {
+  const { items, missingRoutes } = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "大阪",
+      place: null,
+      segments: [
+        { date: null, start: 525, end: 720, place: "在宅", trip: false, destination: null },
+        { date: null, start: 780, end: 1035, place: null, trip: true, destination: null },
+      ],
+    }),
+    settings,
+    [],
+    segmentLookup,
+    // 区切りを使う記録では、記録ごとの時刻・所要時間の指定は使わない。
+    { override: { startMinutes: 600, endMinutes: 660, outbound: { minutes: 5 } } },
+  );
+  assert.deepEqual(missingRoutes, []);
+  assert.deepEqual(summary(items), [
+    ["WORK", 0, "08:45", "12:00", "勤務（在宅）"],
+    ["WORK", 1, "13:00", "17:15", "出張（大阪）"],
+    ["OUTBOUND", 0, "11:30", "13:00", "自宅 → 大阪"],
+    ["RETURN", 0, "17:15", "18:45", "大阪 → 自宅"],
+  ]);
+});
+
+test("複数の出張先: 大阪のあと京都へは往路として京都の開始に着く", () => {
+  const { items } = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "大阪",
+      place: null,
+      segments: [
+        { date: null, start: 600, end: 900, place: null, trip: true, destination: null },
+        { date: null, start: 960, end: 1080, place: null, trip: true, destination: "京都" },
+      ],
+    }),
+    settings,
+    [],
+    segmentLookup,
+  );
+  assert.deepEqual(
+    summary(items).filter((row) => row[0] !== "WORK"),
+    [
+      ["OUTBOUND", 0, "08:30", "10:00", "自宅 → 大阪"],
+      ["OUTBOUND", 1, "15:20", "16:00", "大阪 → 京都"],
+      ["RETURN", 0, "18:00", "19:15", "京都 → 自宅"],
+    ],
+  );
+});
+
+test("出社→在宅: 出社の終わりに復路を出し、在宅の区切りでは移動しない", () => {
+  const { items } = planWorkItems(
+    record({
+      segments: [
+        { date: null, start: 525, end: 720, place: "栗東", trip: false, destination: null },
+        { date: null, start: 780, end: 1035, place: "在宅", trip: false, destination: null },
+      ],
+    }),
+    settings,
+    [],
+    lookup,
+  );
+  assert.deepEqual(
+    summary(items).filter((row) => row[0] !== "WORK"),
+    [
+      ["OUTBOUND", 0, "07:45", "08:45", "自宅 → 栗東"],
+      ["RETURN", 0, "12:00", "13:00", "栗東 → 自宅"],
+    ],
+  );
+});
+
+test("期間の出張は内訳の無い日を記録の行き先で通し、日をまたいで場所を持ち越す", () => {
+  const { items } = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "大阪",
+      place: null,
+      startDate: "2026-10-05",
+      endDate: "2026-10-06",
+      segments: [
+        { date: "2026-10-05", start: 525, end: 720, place: "在宅", trip: false, destination: null },
+        { date: "2026-10-05", start: 780, end: 1035, place: null, trip: true, destination: null },
+      ],
+    }),
+    settings,
+    [],
+    segmentLookup,
+  );
+  assert.deepEqual(
+    items.map((item) => [item.kind, item.date, hhmm(item.start)]),
+    [
+      ["WORK", "2026-10-05", "08:45"],
+      ["WORK", "2026-10-05", "13:00"],
+      ["OUTBOUND", "2026-10-05", "11:30"],
+      ["WORK", "2026-10-06", "08:45"],
+      ["RETURN", "2026-10-06", "17:15"],
+    ],
+  );
+});
+
+test("内訳の移動で既定の移動時間が無い組は推測せず挙げ、反映オフの移動は作らない", () => {
+  const segments = [
+    { date: null, start: 525, end: 720, place: "在宅", trip: false, destination: null },
+    { date: null, start: 780, end: 1035, place: null, trip: true, destination: "神戸" },
+  ];
+  const planned = planWorkItems(
+    record({ businessTrip: true, title: "大阪", place: null, segments }),
+    settings,
+    [],
+    segmentLookup,
+  );
+  assert.deepEqual(planned.missingRoutes, [
+    { origin: "自宅", destination: "神戸" },
+    { origin: "神戸", destination: "自宅" },
+  ]);
+  const off = planWorkItems(
+    record({ businessTrip: true, title: "大阪", place: null, segments }),
+    settings,
+    [],
+    segmentLookup,
+    { override: { outbound: { enabled: false }, return: { enabled: false } } },
+  );
+  assert.deepEqual(off.missingRoutes, []);
+  assert.deepEqual(off.items.map((item) => item.kind), ["WORK", "WORK"]);
 });

@@ -45,6 +45,7 @@ export function useWorkSyncFields({
   fullDayOff,
   startDate,
   endDate,
+  segmented = false,
 }: {
   recordId: string | null;
   /** 勤務場所、または出張の行き先の入力。 */
@@ -55,6 +56,12 @@ export function useWorkSyncFields({
   fullDayOff: boolean;
   startDate: string;
   endDate: string;
+  /**
+   * 時間帯の内訳を使っているか（issue #1155）。使っている間は勤務の時刻を区切りが決め、
+   * 移動は場所が変わるたびに既定の移動時間で作るため、時刻・所要時間の欄を出さず反映の
+   * オン・オフだけを選ばせる。
+   */
+  segmented?: boolean;
 }) {
   const [config, setConfig] = useState<SyncConfig | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -121,6 +128,18 @@ export function useWorkSyncFields({
   /** 保存前の検証。送る指定が無ければ payload は undefined（既存の指定・既定のまま）。 */
   const build = (): { payload?: WorkRecordOverride; error?: string } => {
     if (!config || !config.enabled || !form || fullDayOff) return {};
+    if (segmented) {
+      // 時刻・所要時間は区切りと既定の移動時間が決める。この記録の指定には反映の有無だけを残す。
+      return {
+        payload: {
+          workEnabled: form.workEnabled,
+          startMinutes: null,
+          endMinutes: null,
+          outbound: { enabled: form.outEnabled, minutes: null },
+          return: { enabled: form.backEnabled, minutes: null },
+        },
+      };
+    }
     const result = checkForm(form, config, context, { fullDayOff });
     return result.ok ? { payload: result.payload } : { error: result.message };
   };
@@ -191,6 +210,35 @@ export function useWorkSyncFields({
       </div>
     );
 
+    if (segmented) {
+      const toggle = (
+        id: string,
+        label: string,
+        field: "workEnabled" | "outEnabled" | "backEnabled",
+      ) => (
+        <div key={id} className="flex items-center gap-3">
+          <Switch
+            aria-label={`${label}をカレンダーへ反映`}
+            checked={form[field]}
+            onCheckedChange={(checked) => change({ [field]: checked })}
+          />
+          <span className="type-body-medium">{label}</span>
+        </div>
+      );
+      return (
+        <div className="flex flex-col gap-3 rounded-xl border border-outline-variant p-3">
+          <p className="type-label-large">カレンダーへの反映</p>
+          {toggle("work", "勤務予定", "workEnabled")}
+          {toggle("out", "往路（自宅から・場所の移動）", "outEnabled")}
+          {toggle("back", "復路（自宅へ）", "backEnabled")}
+          <p className="type-body-small text-on-surface-variant">
+            時間帯を分けている間は、区切りごとに勤務予定を作り、場所が変わるたびに移動を作ります。
+            時刻は区切りから決まり、所要時間は設定の「勤務」の既定の移動時間を使います。
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col gap-3 rounded-xl border border-outline-variant p-3">
         <p className="type-label-large">カレンダーへの反映</p>
@@ -250,5 +298,15 @@ export function useWorkSyncFields({
     );
   })();
 
-  return { node, build };
+  /** 時間帯を分け始めるときの初期の区切り（午前・午後）に使う、設定の勤務時間と昼休み。 */
+  const window = config
+    ? {
+        start: config.startMinutes,
+        end: config.endMinutes,
+        lunchStart: config.lunchStartMinutes,
+        lunchEnd: config.lunchEndMinutes,
+      }
+    : null;
+
+  return { node, build, window };
 }

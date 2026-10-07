@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resetPreAppliedOnKindChange, workKindFlag } from "@/services/notion/work-logs";
+import {
+  resetPreAppliedOnKindChange,
+  resolveSegmentsUpdate,
+  workKindFlag,
+} from "@/services/notion/work-logs";
 import type { WorkRecordItem } from "@/types/work";
 
 function record(overrides: Partial<WorkRecordItem>): WorkRecordItem {
@@ -17,6 +21,9 @@ function record(overrides: Partial<WorkRecordItem>): WorkRecordItem {
     preApplied: true,
     postRegistered: false,
     memo: null,
+    segments: [],
+    segmentsText: null,
+    segmentsInvalid: false,
     url: null,
     ...overrides,
   };
@@ -138,4 +145,48 @@ test("resetPreAppliedOnKindChange: 出張のまま保存し直しても強制し
   const result = resetPreAppliedOnKindChange(previous, input);
 
   assert.equal(result.preApplied, undefined);
+});
+
+// --- 時間帯の内訳の整合（issue #1155・計画レビュー指摘1） ---
+
+const morningHome = { date: null, start: 525, end: 720, place: "在宅", trip: false, destination: null };
+const afternoonTrip = { date: null, start: 780, end: 1035, place: null, trip: true, destination: null };
+
+test("内訳を送らない変更でも、記録と食い違えば内訳をまるごと空にする", () => {
+  const trip = record({ businessTrip: true, segments: [morningHome, afternoonTrip] });
+  // 出張→勤務（今日の勤務場所の1押しなど）: 出張の区切りが残るため消す。
+  assert.deepEqual(resolveSegmentsUpdate(trip, { businessTrip: false, place: "出社" }), {
+    segments: [],
+    cleared: true,
+    error: null,
+  });
+  // 年休に変えた。
+  assert.equal(resolveSegmentsUpdate(trip, { annualLeave: "全休" }).cleared, true);
+  // 単日→期間: 区切りに日付が無く、どの日のものか決まらない。
+  assert.equal(
+    resolveSegmentsUpdate(trip, { startDate: "2026-10-05", endDate: "2026-10-06" }).cleared,
+    true,
+  );
+  // 単日のまま日付だけ動かすのは食い違わない。手続きの切り替えも触らない。
+  assert.deepEqual(resolveSegmentsUpdate(trip, { startDate: "2026-10-12" }), {
+    cleared: false,
+    error: null,
+  });
+  assert.deepEqual(resolveSegmentsUpdate(trip, { preApplied: true }), { cleared: false, error: null });
+});
+
+test("送られた内訳が食い違っていれば断り、空配列は列を空にする", () => {
+  const work = record({ businessTrip: false });
+  assert.match(resolveSegmentsUpdate(work, { segments: [afternoonTrip] }).error!, /出張の記録だけ/);
+  assert.deepEqual(resolveSegmentsUpdate(work, { segments: [] }), {
+    segments: [],
+    cleared: false,
+    error: null,
+  });
+});
+
+test("読めなかった手書きの内訳は、年休・休みに変わったときだけ片付ける", () => {
+  const invalid = record({ businessTrip: false, segmentsInvalid: true, segmentsText: "午後は出張" });
+  assert.equal(resolveSegmentsUpdate(invalid, { place: "出社" }).cleared, false);
+  assert.equal(resolveSegmentsUpdate(invalid, { companyHoliday: true }).cleared, true);
 });

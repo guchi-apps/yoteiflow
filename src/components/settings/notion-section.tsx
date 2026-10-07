@@ -353,7 +353,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
   };
 
   /**
-   * 使用中の勤務記録DBへ、年休・出張・会社休業日・事前申請・事後登録・メモのプロパティを足す。
+   * 使用中の勤務記録DBへ、年休・出張・会社休業日・事前申請・事後登録・メモ・時間帯のプロパティを足す。
    * この4つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
    */
   const addWorkOptionalProperties = async () => {
@@ -770,7 +770,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <p className="text-xs text-muted-foreground">
                 その日どこで働いたかと、出張・年休の申請の済み未済、会社の休業日を記録します。
                 タイトル・日付・勤務場所が必要です。年休（セレクト）と出張・会社休業日・事前申請・
-                事後登録（チェックボックス）は名前が一致したときだけ対応付けます。
+                事後登録（チェックボックス）、時間帯（テキスト）は名前が一致したときだけ対応付けます。
               </p>
               {state.workDataSourceId && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
@@ -791,13 +791,15 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                     state.workPropertyMap?.annualLeave &&
                     state.workPropertyMap?.companyHoliday &&
                     state.workPropertyMap?.preApplied &&
-                    state.workPropertyMap?.postRegistered
+                    state.workPropertyMap?.postRegistered &&
+                    state.workPropertyMap?.segments
                   ) && (
                     <div className="flex flex-col items-start gap-2">
                       <p className="text-xs text-muted-foreground">
-                        出張・年休・会社休業日のプロパティが揃っていません。足すと、出張の
+                        出張・年休・会社休業日・時間帯のプロパティが揃っていません。足すと、出張の
                         事前申請・事後登録と年休の事前申請の済み・未済を勤務の画面で追え、
-                        会社の休業日も登録できるようになります。無いままでも勤務場所は登録できます。
+                        会社の休業日の登録や、1日を時間帯ごとに分けた記録（朝は在宅、昼から出張など）も
+                        できるようになります。無いままでも勤務場所は登録できます。
                       </p>
                       <Button
                         variant="outline"
@@ -806,7 +808,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                         onClick={addWorkOptionalProperties}
                       >
                         <Plus className="size-4" />
-                        出張・年休・会社休業日のプロパティを追加
+                        足りないプロパティを追加
                       </Button>
                     </div>
                   )}

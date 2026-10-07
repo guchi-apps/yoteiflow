@@ -166,8 +166,12 @@ async function reconcile(
     (row) => !isSkipped(row.kind),
   );
   expectedItems = expectedItems.filter((item) => !isSkipped(item.kind));
-  const rowByKey = new Map(rows.map((row) => [`${row.date}|${row.kind}`, row]));
-  const expectedByKey = new Map(expectedItems.map((item) => [`${item.date}|${item.kind}`, item]));
+  // 区切り（issue #1155）の増減で後ろの seq がずれると、手動調整した予定が別の区切りと
+  // 突き合わされうる。内容から安定したキーを作るより単純さを採った（docs/spec.md §46）。
+  const rowByKey = new Map(rows.map((row) => [`${row.date}|${row.kind}|${row.seq}`, row]));
+  const expectedByKey = new Map(
+    expectedItems.map((item) => [`${item.date}|${item.kind}|${item.seq}`, item]),
+  );
   const keys = new Set([...rowByKey.keys(), ...expectedByKey.keys()]);
 
   let calendarId: string | null | undefined;
@@ -207,6 +211,7 @@ async function reconcile(
             workRecordId,
             date: item!.date,
             kind: item!.kind,
+            seq: item!.seq,
             snapshot: expected as object,
           };
           if (item!.kind === "WORK") {
@@ -352,6 +357,14 @@ export async function validateOverrideForRecord(
     override,
     placeDefaults: placeDefaultsLookup(defaultRows),
   });
+  // 時間帯の内訳（issue #1155）では、この画面に所要時間の欄が無く、1日に移動が複数ありうる。
+  // どの組の既定の移動時間が無いのかを名指しして、設定で入れるか反映をオフにしてもらう。
+  if (record.segments.length > 0 && plan.missingRoutes.length > 0) {
+    const routes = plan.missingRoutes.map((route) =>
+      route.origin === null ? "移動の出発地（設定の「移動」）" : `${route.origin} → ${route.destination}`,
+    );
+    return `${routes.join("・")} の既定の移動時間が未設定です。設定の「勤務」で入れるか、往路・復路の反映をオフにしてください。`;
+  }
   const parts: string[] = [];
   for (const route of plan.missingRoutes) {
     if (route.origin === null) {
