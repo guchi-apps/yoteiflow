@@ -30,6 +30,7 @@ test("link=1 は発着時刻が揃っているときだけ紐づけ導線にな�
   assert.deepEqual(ok?.kind === "travel" && ok.link, {
     departAt: "2026-10-06T00:00:00.000Z",
     arriveAt: "2026-10-06T00:30:00.000Z",
+    note: "",
   });
   const noLink = parseShareHandoff(`${base}&departAt=2026-10-06T00:00:00.000Z&arriveAt=2026-10-06T00:30:00.000Z`);
   assert.equal(noLink?.kind === "travel" && noLink.link, null);
@@ -49,4 +50,13 @@ test("紐づけ先の予定の日へ到着日を寄せ、所要時間ぶん遡�
     departAt: "2026-10-09T23:40",
     arriveAt: "2026-10-10T00:20",
   });
+});
+
+test("link の note は改行を保ち、上限を超えたら切り捨てず導線ごと断る", () => {
+  const base = "?newTravel=1&origin=A&destination=B&mode=PUBLIC_TRANSIT&link=1&departAt=2026-10-06T00:00:00.000Z&arriveAt=2026-10-06T00:30:00.000Z";
+  const note = "◯発 10:00\n乗換 ※運賃注記\n" + "あ".repeat(5_000);
+  const ok = parseShareHandoff(`${base}&note=${encodeURIComponent(note)}`);
+  assert.equal(ok?.kind === "travel" && ok.link?.note, note);
+  const tooLong = parseShareHandoff(`${base}&note=${encodeURIComponent("あ".repeat(20_001))}`);
+  assert.equal(tooLong?.kind === "travel" && tooLong.link, null);
 });

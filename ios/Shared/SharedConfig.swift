@@ -32,10 +32,12 @@ enum SharedConfig {
     /// （`ios/scripts/check-consistency.mjs` が照合する）。引き継げるのは `/calendar` だけ。
     static let handoffQueryKeys: [String] = [
         "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes",
-        "link", "departAt", "arriveAt",
+        "link", "departAt", "arriveAt", "note",
     ]
     static let handoffPath = "/calendar"
     private static let handoffValueLimit = 2_048
+    /// 経路詳細のメモ（`note`）の上限。Web側の `MAX_HANDOFF_NOTE` と揃える。超えても切り捨てず、呼び出し側が断る
+    static let handoffNoteLimit = 20_000
 
     /// 共有拡張が本体へ渡すURL。`yoteiflow://open?path=/calendar&newEvent=place&…` の形
     static func handoffURL(query: [String: String]) -> URL {
@@ -44,7 +46,9 @@ enum SharedConfig {
         components.host = deepLinkHost
         var items = [URLQueryItem(name: "path", value: handoffPath)]
         for key in handoffQueryKeys {
-            if let value = query[key], !value.isEmpty { items.append(URLQueryItem(name: key, value: String(value.prefix(handoffValueLimit)))) }
+            guard let value = query[key], !value.isEmpty else { continue }
+            // note は全文を渡す（切り捨てない）。他の値は従来の上限で切る
+            items.append(URLQueryItem(name: key, value: key == "note" ? value : String(value.prefix(handoffValueLimit))))
         }
         components.queryItems = items
         return components.url!
@@ -63,7 +67,7 @@ enum SharedConfig {
 
         var components = URLComponents()
         components.path = path
-        let handoff = items.filter { handoffQueryKeys.contains($0.name) && ($0.value?.count ?? 0) <= handoffValueLimit }
+        let handoff = items.filter { handoffQueryKeys.contains($0.name) && ($0.value?.count ?? 0) <= ($0.name == "note" ? handoffNoteLimit : handoffValueLimit) }
         if !handoff.isEmpty { components.queryItems = handoff }
         return components.string ?? path
     }
