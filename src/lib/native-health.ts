@@ -6,6 +6,7 @@
  */
 
 import { NATIVE_HEALTH_BRIDGE } from "@/lib/native-auth/native-app";
+import { parseSleepFocusStatus, type SleepFocusStatus } from "@/lib/sleep-focus-status";
 
 export type NativeHealthPermission = "unavailable" | "notDetermined" | "denied" | "granted";
 
@@ -147,4 +148,11 @@ export function nativeHealthImportSummary(result: NativeHealthImportResult, titl
   if (result.importPermission === "unavailable") return "この端末ではヘルスケアを使えません。";
   if (result.imported > 0) return `ヘルスケアから${title}を${result.imported}件取り込みました。`;
   return `取り込む新しい${title}はありません。`;
+}
+
+/** 睡眠モード連動の最後の呼び出しと認証情報の準備状態を、アプリから読む（トークンは含まれない）。 */
+export async function statusSleepFocus(): Promise<SleepFocusStatus> {
+  const target = bridge();
+  if (!target) throw new Error("アプリの睡眠モード連動を呼べませんでした。アプリを最新にしてください。");
+  return parseSleepFocusStatus(await target.postMessage({ action: "sleepFocus" }));
 }
