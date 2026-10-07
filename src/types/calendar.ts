@@ -341,7 +341,7 @@ export type TravelItem = {
   estimateSource: TravelEstimateSource;
   /** 元になった予定。予定側から「移動を足す」の済み・未済を判断するために持つ。 */
   linkedEventId: string | null;
-  /** 復路かどうか。同じ予定から2件作られたときの並び順・表示に使う。 */
+  /** @deprecated 互換用。表示・判定には使わず、予定との前後は日時から決める（issue #1137）。 */
   returnLeg: boolean;
   /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
   exported: boolean;

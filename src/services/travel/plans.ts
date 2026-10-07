@@ -43,12 +43,12 @@ export type TravelWriteInput = {
   estimated?: boolean;
   linkedEventId?: string | null;
   linkedCalendarId?: string | null;
-  /** 復路として作るか。省略時は、`createTravel` が往路・復路の並びから決める。 */
+  /**
+   * 勤務同期（issue #1081）が生成する移動の旧区分。画面・判定では使わず、予定との前後は
+   * 日時から決める（issue #1137）。通常の登録は省略（false）。
+   */
   returnLeg?: boolean;
 };
-
-/** 復路。行きと同じ経路を入れ替えて作るため、時刻だけを受け取る。 */
-export type TravelReturnInput = { departAt: string; arriveAt: string };
 
 /**
  * 入力の検証。作成・更新のどちらの経路でも同じ条件で断る。
@@ -125,51 +125,32 @@ export async function getTravel(userId: string, travelId: string): Promise<Trave
 }
 
 /**
- * 移動を作る。復路を渡された場合は、出発地と目的地を入れ替えた2件目も作る。
- *
- * 行きだけ作られても帰りは手で入れ直すことになるため、既定では呼び出し側が復路を渡す
- * （設定で片道に変えられる。docs/spec.md §29）。
+ * 移動を1件作る。帰りの移動も必要なら別の移動として登録する（issue #1137。
+ * 以前あった復路の一括作成は廃止した）。
  */
 export async function createTravel(
   userId: string,
   input: TravelWriteInput,
-  returnTrip?: TravelReturnInput | null,
 ): Promise<TravelSaveResult> {
   const calendarId = await resolveTravelCalendarId(userId);
   const timeZone = await getTimeZone(userId);
 
-  const legs: TravelWriteInput[] = [input];
-  if (returnTrip) {
-    legs.push({
-      ...input,
-      origin: input.destination,
-      destination: input.origin,
-      departAt: returnTrip.departAt,
-      arriveAt: returnTrip.arriveAt,
-    });
-  }
+  const plan = await db.travelPlan.create({
+    data: { ...toWriteData(input), userId, returnLeg: input.returnLeg ?? false },
+  });
 
-  const travels: TravelItem[] = [];
-  const exports: TravelExportResult[] = [];
+  const exported = await exportTravelToGoogle(userId, plan, calendarId, timeZone);
 
-  for (const [index, leg] of legs.entries()) {
-    const plan = await db.travelPlan.create({
-      data: { ...toWriteData(leg), userId, returnLeg: leg.returnLeg ?? index > 0 },
-    });
-
-    const exported = await exportTravelToGoogle(userId, plan, calendarId, timeZone);
-    exports.push(exported);
-
-    travels.push(
+  return {
+    travels: [
       toTravelItem(
         exported.status === "exported"
           ? { ...plan, googleCalendarId: exported.calendarId, googleEventId: exported.eventId }
           : plan,
       ),
-    );
-  }
-
-  return { travels, exports };
+    ],
+    exports: [exported],
+  };
 }
 
 /**
@@ -241,7 +222,8 @@ export async function updateTravel(
  *
  * 紐づけ先の予定は存在を確かめない。Googleへの往復が増えるうえ、予定は取得範囲の外にもありうる
  * （タスクの紐づけと同じ割り切り）。Googleへ書き出す内容に紐づけは含まれないため再書き出しもしない。
- * 画面の判定は予定IDだけで、カレンダーIDは保存するだけ。
+ * 画面の判定は予定IDだけで、カレンダーIDは保存するだけ。往路・復路は持たず（issue #1137）、
+ * 経路・日時も書き換えない。
  */
 export async function setTravelLink(
   userId: string,
@@ -254,8 +236,8 @@ export async function setTravelLink(
   const updated = await db.travelPlan.update({
     where: { id: existing.id },
     data: link
-      ? { linkedEventId: link.eventId, linkedCalendarId: link.calendarId, returnLeg: link.returnLeg }
-      : { linkedEventId: null, linkedCalendarId: null, returnLeg: false },
+      ? { linkedEventId: link.eventId, linkedCalendarId: link.calendarId }
+      : { linkedEventId: null, linkedCalendarId: null },
   });
 
   return toTravelItem(updated);

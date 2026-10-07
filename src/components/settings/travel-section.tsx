@@ -13,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TravelSettings } from "@/services/travel/settings";
@@ -141,20 +140,6 @@ export function TravelSection({
             ))}
           </div>
         </div>
-
-        <label className="flex min-h-11 items-center justify-between gap-4">
-          <span className="flex flex-col">
-            <span className="type-body-large">帰りの移動も作る</span>
-            <span className="type-body-small text-on-surface-variant">
-              予定の終了時刻に出発する移動を、行きと一緒に作ります。
-            </span>
-          </span>
-          <Switch
-            checked={value.roundTrip}
-            disabled={busy}
-            onCheckedChange={(checked) => send({ roundTrip: checked })}
-          />
-        </label>
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="travel-calendar">Googleカレンダーへの書き出し先</Label>

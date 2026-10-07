@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
+import { parseRelationEvent } from "@/lib/travel-relation";
 import { attachBringItemsForEvent } from "@/services/task-links/bring-items";
 import { taskLinkErrorResponse } from "@/services/task-links/response";
 
-/** 出発へ紐づいていない持ち物を、その予定へ向かう移動の出発へ紐づける（issue #1080）。 */
+/** 出発へ紐づいていない持ち物を、期限の対象の移動の出発へ紐づける（issue #1080・#1137）。 */
 export async function POST(request: Request) {
   const userId = await requireUserId();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await request.json()) as { eventId?: string };
+  const body = (await request.json()) as {
+    eventId?: string;
+    /** 利用者が選んだ期限の対象の移動（明示選択）。 */
+    travelId?: string;
+    eventStart?: string;
+    eventEnd?: string;
+    eventAllDay?: boolean;
+  };
   if (!body.eventId) {
     return NextResponse.json(
       { error: "invalid_request", message: "eventId は必須です。" },
@@ -18,7 +26,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await attachBringItemsForEvent(userId, body.eventId);
+    const result = await attachBringItemsForEvent(
+      userId,
+      body.eventId,
+      parseRelationEvent(body),
+      body.travelId || null,
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return taskLinkErrorResponse(error, "持ち物の紐づけ");

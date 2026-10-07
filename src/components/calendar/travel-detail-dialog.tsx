@@ -8,6 +8,7 @@ import { Bell, CalendarClock, ChevronRight, CloudOff, Link2, MapPin, Pencil, Rou
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { eventLeadLabel } from "@/lib/event-notification";
 import { placeDisplayName } from "@/lib/place-text";
+import { TRAVEL_RELATION_LABELS, travelRelation } from "@/lib/travel-relation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,6 +52,7 @@ export function TravelDetailDialog({
   onLinked,
   onCreateTask,
   linkedEventTitle,
+  linkedEventRange,
   weekStartsOn = 0,
 }: {
   travel: TravelItem;
@@ -70,6 +72,8 @@ export function TravelDetailDialog({
   onCreateTask?: (stage: TaskEventStage, target: TaskLinkTarget) => void;
   /** 紐づいている予定の名前。取得済みの予定から引いた値で、範囲外などで引けなければ null。 */
   linkedEventTitle?: string | null;
+  /** 紐づく予定の日時。取れないとき（表示範囲外など）は前後を断定しない（issue #1137）。 */
+  linkedEventRange?: { start: string; end: string; allDay: boolean } | null;
   weekStartsOn?: number;
 }) {
   // 既存の予定を後から結ぶ・外す（issue #1105）。
@@ -232,7 +236,7 @@ export function TravelDetailDialog({
             <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               <span className="min-w-0 flex-1 truncate">
                 {travel.linkedEventId
-                  ? `${travel.returnLeg ? "復路" : "往路"}: ${linkedEventTitle ?? "予定（表示範囲外）"}`
+                  ? `${TRAVEL_RELATION_LABELS[travelRelation(travel, linkedEventRange)]}: ${linkedEventTitle ?? "予定（表示範囲外）"}`
                   : "予定とは紐づいていません"}
               </span>
               <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkEvent}>
