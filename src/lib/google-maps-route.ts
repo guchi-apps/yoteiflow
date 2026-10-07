@@ -17,8 +17,14 @@ export type GoogleMapsRoute = {
   mode: TravelMode;
   /** AIが共有経路の情報から補完した所要時間（分）。URL自身には無いため、補完できなければnull。 */
   minutes: number | null;
-  /** Googleマップで指定された出発日時。指定が無いときはnull。 */
-  departAt: string | null;
+  /** Googleマップで指定された出発／到着日時（現地の壁時計）。指定が無いときはnull。 */
+  schedule: GoogleMapsSchedule | null;
+};
+
+export type GoogleMapsSchedule = {
+  basis: "depart" | "arrive";
+  /** 現地の壁時計 `YYYY-MM-DDTHH:mm`（タイムゾーンは別に決める） */
+  local: string;
 };
 
 /** リダイレクトを追跡してよいGoogle Mapsのホストか。 */
@@ -71,15 +77,22 @@ function dataMode(data: string): TravelMode | null {
   }
 }
 
-function dataDepartAt(data: string): string | null {
+/**
+ * 指定日時。`!6e0`=出発指定、`!6e1`=到着指定（`!6e`が無く`!8j`だけのものは出発指定として扱う）。
+ * `!8j` は通常のUNIX時刻ではなく、**現地の壁時計をUTCとして数えた値**（14:08出発が1791382080＝UTCの14:08。
+ * 実リンクで確認・issue #1160）。実際の時刻へ直すのはタイムゾーンが分かる側（`google-maps-directions.ts`）で行い、
+ * ここでは壁時計（`YYYY-MM-DDTHH:mm`）のまま持つ。固定の時差は足し引きしない。
+ */
+function dataSchedule(data: string): GoogleMapsSchedule | null {
   const value = /!8j(\d{10,13})(?:!|$)/.exec(data)?.[1];
   if (!value) return null;
+  const basisCode = /!6e(\d)!7e\d+!8j/.exec(data)?.[1];
+  // 0=出発・1=到着。それ以外（未知の値）は意味を断定できないため日時ごと読まない
+  if (basisCode !== undefined && basisCode !== "0" && basisCode !== "1") return null;
 
-  const timestamp = Number(value) * (value.length === 10 ? 1_000 : 1);
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2100
-    ? null
-    : date.toISOString();
+  const date = new Date(Number(value) * (value.length === 10 ? 1_000 : 1));
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2100) return null;
+  return { basis: basisCode === "1" ? "arrive" : "depart", local: date.toISOString().slice(0, 16) };
 }
 
 function place(value: string | null | undefined): string | null {
@@ -139,6 +152,6 @@ export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
     mode: dataMode(data) ?? dirflgMode(url.searchParams.get("dirflg")) ?? routeMode(url.searchParams.get("travelmode")),
     // URL自身には所要時間が無いため、APIルートでAI解析後に入れる。
     minutes: null,
-    departAt: dataDepartAt(data),
+    schedule: dataSchedule(data),
   };
 }

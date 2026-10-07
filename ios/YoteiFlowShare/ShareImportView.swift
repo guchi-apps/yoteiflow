@@ -64,7 +64,7 @@ struct ShareImportView: View {
                     row("日時", "未定（アプリで決めます）")
                 }
                 if let minutes = item.durationMinutes {
-                    row("所要時間", ShareImportViewModel.durationText(minutes) + (item.estimated ? "（AIによる目安）" : ""))
+                    row("所要時間", ShareImportViewModel.durationText(minutes) + (item.estimateSource == "GOOGLE_MAPS" ? "（Googleマップの予測）" : item.estimated ? "（AIによる目安）" : ""))
                 } else {
                     row("所要時間", "未取得（アプリで入力します）")
                 }

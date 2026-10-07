@@ -372,6 +372,25 @@ export function CalendarShell({
     }
     const start = toQuickEventDraft(date, DEFAULT_START_MINUTES);
     const departAt = `${start.date}T${start.startTime}`;
+    if (handoff.resolve && handoff.url) {
+      // Googleマップの日時・予測所要時間は移動の入力で再取得する。取れるまでの時刻は仮の値（issue #1160）
+      const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + 30 * 60_000).toISOString().slice(0, 16);
+      setItemDialog({
+        initialKind: "travel",
+        drafts: {
+          travel: {
+            origin: handoff.origin,
+            destination: handoff.destination,
+            mode: handoff.mode,
+            departAt,
+            arriveAt: arrive,
+            resolveUrl: handoff.url,
+            notice: "Googleマップから日時・所要時間を取得しています。取得できなかった項目は手入力してください。",
+          },
+        },
+      });
+      return;
+    }
     const minutes = handoff.minutes ?? 30;
     const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
     // 共有に無かった値は仮の値で埋めているため、確定した情報のように見せず案内を添える（issue #1142）

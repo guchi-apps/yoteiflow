@@ -2,14 +2,14 @@
 
 import { useOffline } from "next/offline";
 import { Bell, BellOff, CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
-import type { GoogleMapsRoute } from "@/lib/google-maps-route";
+import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -47,6 +47,8 @@ export type TravelDraft = {
   notice?: string;
   /** 所要時間の出どころの初期値（共有で受けたAIの目安など。issue #1142）。無ければ手入力。 */
   estimateSource?: TravelEstimateSource;
+  /** 共有拡張から渡されたGoogleマップのURL。開いた直後に取り込み、候補が複数なら選ばせる（issue #1160）。 */
+  resolveUrl?: string;
 };
 
 type GoogleRouteStatus =
@@ -135,30 +137,69 @@ export function TravelForm({
   };
 
   /**
-   * Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。
-   * 所要時間はURLに無くAIで補う。補えなかったとき（null）は時刻の長さを変えず、手で入れてもらう（issue #1142）。
+   * 開始・終了（ISO）または所要時間（分）を入力欄へ反映する。予定に紐づく移動は予定の日を動かさず時刻だけ取り込む。
+   * 片側（固定側）しか決まらないときは、もう一方を今の長さで保つ。何も決まらなければ触らない。
    */
-  const applyGoogleMapsRoute = (route: GoogleMapsRoute, sourceUrl: string | null) => {
-    setOrigin(route.origin);
-    setDestination(route.destination);
-    setMode(route.mode);
-
-    const imported = route.departAt ? isoToLocalInput(route.departAt, timeZone) : departAt;
-    // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
-    const depart = route.departAt && draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
-    const base = new Date(`${depart}:00Z`);
+  const applyTimes = (times: { startAt: string | null; endAt: string | null; minutes: number | null }) => {
+    const toInput = (iso: string, reference: string) => {
+      const local = isoToLocalInput(iso, timeZone);
+      return draft.linkedEvent ? `${reference.slice(0, 10)}${local.slice(10)}` : local;
+    };
     const currentMs = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
-    const durationMs = route.minutes !== null ? route.minutes * 60_000 : Number.isFinite(currentMs) && currentMs > 0 ? currentMs : null;
-    if (depart && !Number.isNaN(base.getTime()) && durationMs !== null) {
+    const durationMs = times.minutes !== null ? times.minutes * 60_000 : Number.isFinite(currentMs) && currentMs > 0 ? currentMs : null;
+    const format = (ms: number) => new Date(ms).toISOString().slice(0, 16);
+    if (times.startAt && times.endAt) {
+      const depart = toInput(times.startAt, departAt);
+      const length = new Date(times.endAt).getTime() - new Date(times.startAt).getTime();
       setDepartAt(depart);
-      setArriveAt(new Date(base.getTime() + durationMs).toISOString().slice(0, 16));
+      setArriveAt(format(new Date(`${depart}:00Z`).getTime() + length));
+    } else if (times.startAt && durationMs !== null) {
+      const depart = toInput(times.startAt, departAt);
+      setDepartAt(depart);
+      setArriveAt(format(new Date(`${depart}:00Z`).getTime() + durationMs));
+    } else if (times.endAt && durationMs !== null) {
+      const arrive = toInput(times.endAt, arriveAt);
+      setArriveAt(arrive);
+      setDepartAt(format(new Date(`${arrive}:00Z`).getTime() - durationMs));
+    } else if (times.minutes !== null) {
+      setArriveAt(format(new Date(`${departAt}:00Z`).getTime() + times.minutes * 60_000));
+    } else {
+      return false;
     }
-    // AIの見積もりは目安として保存する。補えなかったときは利用者が入れる値なので手入力扱い
-    setEstimateSource(route.minutes !== null ? "AI" : "MANUAL");
-    // 元の共有URLをメモへ残し、登録後にも参照できるようにする（共有拡張からの取り込みと揃える）
-    if (sourceUrl) setNote((current) => (current.includes(sourceUrl) ? current : [current.trim(), sourceUrl].filter(Boolean).join("\n")));
+    return true;
+  };
 
+  const appendNote = (text: string) =>
+    setNote((current) => (current.includes(text) ? current : [current.trim(), text].filter(Boolean).join("\n")));
+
+  // 共有URLに複数の経路候補があるとき、選ぶまで時刻は変えない（先頭を共有時の経路と断定しない・issue #1160）
+  const [routeCandidates, setRouteCandidates] = useState<ShareRouteCandidate[] | null>(null);
+
+  /**
+   * Googleマップの共有URLを貼り付けたとき、読めた経路を入力欄へ反映する。共有・URL貼り付けで同じ解釈（`SharedImport`）を使う。
+   * 日時・所要時間はGoogleを再取得した予測で、取れなかった項目は触らず手で入れてもらう（issue #1142・#1160）。
+   */
+  const applyGoogleMapsRoute = (item: SharedImport, sourceUrl: string | null) => {
+    if (item.origin) setOrigin(item.origin);
+    if (item.destination) setDestination(item.destination);
+    if (item.mode) setMode(item.mode);
+
+    setRouteCandidates(item.candidates);
+    const applied = item.candidates ? false : applyTimes({ startAt: item.startAt, endAt: item.endAt, minutes: item.durationMinutes });
+    if (applied) setEstimateSource(item.estimateSource ?? "MANUAL");
+    // 元の共有URL・予測の幅・距離をメモへ残し、登録後にも参照できるようにする
+    const detail = item.detail ?? sourceUrl;
+    if (detail) appendNote(detail);
     setError(null);
+    return applied;
+  };
+
+  const pickRouteCandidate = (candidate: ShareRouteCandidate) => {
+    // 別候補の値は混ぜない。選んだ候補の開始・終了・所要時間だけを使う
+    if (!applyTimes({ startAt: candidate.startAt, endAt: candidate.endAt, minutes: candidate.minutes })) return;
+    setEstimateSource("GOOGLE_MAPS");
+    appendNote(`選んだ経路: ${[candidate.name, candidate.distanceText, candidate.durationText].filter(Boolean).join(" / ")}`);
+    setRouteCandidates(null);
   };
 
   const importGoogleMapsRoute = async (value: string) => {
@@ -166,6 +207,7 @@ export function TravelForm({
     googleRouteRequestRef.current = requestId;
     const isCurrentRequest = () => googleRouteRequestRef.current === requestId;
     setGoogleRouteStatus({ kind: "analyzing" });
+    setRouteCandidates(null);
     setError(null);
     try {
       const response = await fetch("/api/travels/google-maps-route", {
@@ -178,16 +220,19 @@ export function TravelForm({
         if (isCurrentRequest()) setGoogleRouteStatus({ kind: "error", message });
         return;
       }
-      const body = (await response.json()) as { route: GoogleMapsRoute; sourceUrl?: string | null };
+      const { item } = (await response.json()) as { item: SharedImport };
       if (!isCurrentRequest()) return;
-      applyGoogleMapsRoute(body.route, body.sourceUrl ?? value);
-      const minutes = body.route.minutes;
+      const applied = applyGoogleMapsRoute(item, item.sourceUrl ?? value);
+      const modeLabel = item.mode ? TRAVEL_MODE_LABELS[item.mode] : "";
       setGoogleRouteStatus({
         kind: "success",
-        message:
-          minutes !== null
-            ? `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}・所要時間${minutes}分はAIによる目安）。`
-            : `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[body.route.mode]}）。所要時間は取得できなかったため、出発・到着時刻を入力してください。`,
+        message: [
+          `Googleマップの経路を反映しました${modeLabel ? `（${modeLabel}）` : ""}。`,
+          applied ? "出発・到着時刻は保存前に直せます。" : item.candidates ? null : "日時・所要時間を反映できなかったため、出発・到着時刻を入力してください。",
+          item.notice,
+        ]
+          .filter(Boolean)
+          .join(""),
       });
     } catch {
       if (isCurrentRequest()) {
@@ -202,6 +247,18 @@ export function TravelForm({
     setGoogleRouteUrl(value);
     setGoogleRouteStatus({ kind: "idle" });
   };
+
+  // 共有拡張から渡されたURLは、開いた直後に1回だけ取り込む（同期でsetStateしないようタイマー内で呼ぶ）
+  const resolveUrl = draft.resolveUrl;
+  useEffect(() => {
+    if (!resolveUrl || editing) return;
+    const timer = setTimeout(() => {
+      setGoogleRouteUrl(resolveUrl);
+      void importGoogleMapsRoute(resolveUrl);
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolveUrl]);
 
   const save = async () => {
     if (offline) {
@@ -388,12 +445,12 @@ export function TravelForm({
             onClear={() => changeGoogleRouteUrl("")}
           />
           {googleRouteStatus.kind === "idle" && (
-            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、出発地・目的地・交通手段を入力欄へ反映し、所要時間はAIが目安を補います。</p>
+            <p className="text-xs text-muted-foreground">Googleマップの経路URLを貼り付けると、出発地・目的地・交通手段を入力欄へ反映し、所要時間はGoogleマップの予測を再取得して反映します。</p>
           )}
           {googleRouteStatus.kind === "analyzing" && (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
               <LoaderCircle className="size-4 animate-spin" />
-              AIが経路を解析しています…
+              Googleマップの経路を読み取っています…
             </p>
           )}
           {googleRouteStatus.kind === "success" && (
@@ -401,6 +458,26 @@ export function TravelForm({
               <CheckCircle2 className="size-4 text-travel" />
               {googleRouteStatus.message}
             </p>
+          )}
+          {routeCandidates && (
+            <div className="flex flex-col gap-1.5" role="group" aria-label="経路候補">
+              <p className="text-xs text-muted-foreground">共有時に選んだ経路を特定できません。使う経路を選ぶと、その経路の時間だけを入力欄へ反映します。</p>
+              {routeCandidates.map((candidate, index) => (
+                <Button
+                  key={`${candidate.name}-${index}`}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto justify-start whitespace-normal py-1.5 text-left"
+                  onClick={() => pickRouteCandidate(candidate)}
+                >
+                  {[candidate.name || `候補${index + 1}`, candidate.distanceText, candidate.durationText].filter(Boolean).join(" / ")}
+                  {candidate.startAt && candidate.endAt
+                    ? `（${isoToLocalInput(candidate.startAt, timeZone).slice(11)}〜${isoToLocalInput(candidate.endAt, timeZone).slice(11)}）`
+                    : ""}
+                </Button>
+              ))}
+            </div>
           )}
           {googleRouteStatus.kind === "error" && (
             <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
