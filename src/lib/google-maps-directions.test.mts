@@ -54,42 +54,56 @@ test("候補を読み、手順の行は候補にしない", () => {
   assert.equal(candidates[0].representativeMinutes, 50);
 });
 
-test("出発指定14:08＋範囲の上限80分＝15:28（9時間ずれない・14:58や23:08にならない）", () => {
+test("出発指定14:08＋代表50分＝14:58（予測幅の上限80分＝15:28にならない・9時間ずれない）", () => {
   const [first] = parseDirectionsResponse(departResponse);
   const times = scheduleCandidate(first, departSchedule, TZ);
   assert.equal(times.startAt, "2026-10-07T05:08:00.000Z"); // 14:08 JST
-  assert.equal(times.endAt, "2026-10-07T06:28:00.000Z"); // 15:28 JST
-  assert.equal(times.minutes, 80);
+  assert.equal(times.endAt, "2026-10-07T05:58:00.000Z"); // 14:58 JST
+  assert.equal(times.minutes, 50);
 });
 
-test("到着指定12:30−150分＝10:00（Googleが返す出発時刻を優先）", () => {
+test("到着指定12:30−代表110分＝10:40（Googleが返す反対側の時刻で上書きしない）", () => {
   const candidates = parseDirectionsResponse(arriveResponse);
   const kyoshi = candidates.find((item) => item.name === "京滋バイパス")!;
   const times = scheduleCandidate(kyoshi, arriveSchedule, TZ);
-  assert.equal(times.startAt, "2026-10-09T01:00:00.000Z"); // 10:00 JST
   assert.equal(times.endAt, "2026-10-09T03:30:00.000Z"); // 12:30 JST
-  assert.equal(times.minutes, 150);
+  assert.equal(times.minutes, 110);
+  assert.equal(times.startAt, "2026-10-09T01:40:00.000Z"); // 12:30 − 1時間50分 = 10:40 JST
 });
 
-test("反対側の時刻が無ければ、予測の上限から逆算・加算する（日付またぎ含む）", () => {
+test("検証例: 到着12:30で 1時間50分→10:40 / 2時間→10:30 / 1時間50分→10:40", () => {
+  const make = (minutes: number): DirectionsCandidate => ({
+    name: "", distanceMeters: null, distanceText: null, rangeMinutes: { min: 60, max: 200 }, rangeText: null,
+    representativeMinutes: minutes, representativeText: null, otherEndEpoch: null, timeZone: null,
+  });
+  const jst = (iso: string | null) => new Date(new Date(iso!).getTime() + 9 * 3_600_000).toISOString().slice(11, 16);
+  for (const [minutes, start] of [[110, "10:40"], [120, "10:30"], [110, "10:40"]] as const) {
+    const times = scheduleCandidate(make(minutes), arriveSchedule, TZ);
+    assert.equal(jst(times.startAt), start);
+    assert.equal(jst(times.endAt), "12:30");
+  }
+});
+
+test("代表時間から逆算・加算する（日付またぎ含む・予測幅は使わない）", () => {
   const base: DirectionsCandidate = {
     name: "", distanceMeters: null, distanceText: null, rangeMinutes: { min: 30, max: 90 }, rangeText: null,
     representativeMinutes: 60, representativeText: null, otherEndEpoch: null, timeZone: null,
   };
-  // 23:30出発＋90分＝翌1:00
+  // 23:30出発＋60分＝翌0:30
   const forward = scheduleCandidate(base, { basis: "depart", local: "2026-10-07T23:30" }, TZ);
-  assert.equal(forward.endAt, "2026-10-07T16:00:00.000Z");
-  // 0:30到着−90分＝前日23:00
+  assert.equal(forward.endAt, "2026-10-07T15:30:00.000Z");
+  // 0:30到着−60分＝前日23:30
   const backward = scheduleCandidate(base, { basis: "arrive", local: "2026-10-08T00:30" }, TZ);
-  assert.equal(backward.startAt, "2026-10-07T14:00:00.000Z");
+  assert.equal(backward.startAt, "2026-10-07T14:30:00.000Z");
 });
 
-test("範囲が無く単一の時間だけなら、その時間を使う。日時が無ければ時刻は決めず所要時間だけ返す", () => {
+test("代表時間だけを使い、範囲だけで代表時間が無ければ未取得（null）。日時が無ければ時刻は決めず所要時間だけ返す", () => {
   const single: DirectionsCandidate = {
     name: "", distanceMeters: null, distanceText: null, rangeMinutes: null, rangeText: null,
     representativeMinutes: 42, representativeText: null, otherEndEpoch: null, timeZone: null,
   };
   assert.equal(candidateMinutes(single), 42);
+  assert.equal(candidateMinutes({ ...single, representativeMinutes: null, rangeMinutes: { min: 30, max: 90 } }), null);
   assert.deepEqual(scheduleCandidate(single, null, TZ), { startAt: null, endAt: null, minutes: 42 });
   assert.equal(scheduleCandidate(single, departSchedule, TZ).minutes, 42);
 });
@@ -131,22 +145,44 @@ const share = (url: string, response: string) =>
     analyze: async () => assert.fail("Googleの予測が取れたときはAIを使わない"),
   }, TZ);
 
-test("共有（出発指定）: 候補が違っても結果が同じなら確定し、14:08〜15:28・GOOGLE_MAPS・詳細を保持する", async () => {
+test("共有（出発指定）: 候補が複数なら自動で確定せず、指定の出発日時だけ保持する。選んだ候補は14:08＋代表50分＝14:58", async () => {
   const result = await share(dirUrl(0, 1791382080), departResponse);
   assert.ok(result.ok);
   const { item } = result;
-  assert.equal(item.startAt, "2026-10-07T05:08:00.000Z");
-  assert.equal(item.endAt, "2026-10-07T06:28:00.000Z");
-  assert.equal(item.durationMinutes, 80);
-  assert.equal(item.estimateSource, "GOOGLE_MAPS");
-  assert.equal(item.registrable, true);
-  assert.equal(item.candidates, null);
-  assert.match(item.detail ?? "", /35 分～1 時間 20 分/);
-  assert.match(item.detail ?? "", /18\.5 km/);
+  assert.equal(item.candidates?.length, 2);
+  assert.equal(item.registrable, false);
+  assert.equal(item.durationMinutes, null);
+  assert.equal(item.scheduleBasis, "depart");
+  assert.equal(item.startAt, "2026-10-07T05:08:00.000Z"); // 固定側（出発14:08）だけ
+  assert.equal(item.endAt, null);
+  const [first] = item.candidates ?? [];
+  assert.equal(first.minutes, 50);
+  assert.equal(first.endAt, "2026-10-07T05:58:00.000Z"); // 14:58（予測の上限15:28にならない）
+  assert.equal(first.representativeText, "50 分");
+  assert.equal(first.rangeText, "35 分～1 時間 20 分");
   assert.match(item.detail ?? "", /^https:\/\/www\.google\.com\/maps\/dir\//);
 });
 
-test("共有（到着指定）: 候補が割れるときは先頭を選ばず候補を返し、候補ごとの時間が対応する", async () => {
+test("共有（1候補）: その候補を採用し、14:08〜14:58・GOOGLE_MAPS・予測幅は参考として保持する", async () => {
+  const [only] = parseDirectionsResponse(departResponse);
+  const result = await resolveGoogleMapsShare(dirUrl(0, 1791382080), {
+    expand: async (value, parse) => ({ result: parse(value)!, url: value }),
+    directions: async () => ({ ok: true, candidates: [only] }),
+    analyze: async () => assert.fail("Googleの予測が取れたときはAIを使わない"),
+  }, TZ);
+  assert.ok(result.ok);
+  const { item } = result;
+  assert.equal(item.startAt, "2026-10-07T05:08:00.000Z");
+  assert.equal(item.endAt, "2026-10-07T05:58:00.000Z");
+  assert.equal(item.durationMinutes, 50);
+  assert.equal(item.estimateSource, "GOOGLE_MAPS");
+  assert.equal(item.registrable, true);
+  assert.equal(item.candidates, null);
+  assert.match(item.detail ?? "", /代表時間: 50 分/);
+  assert.match(item.detail ?? "", /（参考）予測幅: 35 分～1 時間 20 分/);
+});
+
+test("共有（到着指定）: 3候補は選択式で、代表時間から 10:40 / 10:30 / 10:40 を作る", async () => {
   const result = await share(dirUrl(1, 1791549000), arriveResponse);
   assert.ok(result.ok);
   const { item } = result;
@@ -156,12 +192,13 @@ test("共有（到着指定）: 候補が割れるときは先頭を選ばず候
   assert.equal(item.endAt, "2026-10-09T03:30:00.000Z"); // 固定側（到着12:30）だけ
   assert.equal(item.candidates?.length, 3);
   const byName = Object.fromEntries((item.candidates ?? []).map((candidate) => [candidate.name, candidate]));
-  assert.equal(byName["国道422号"].startAt, "2026-10-09T01:20:00.000Z"); // 10:20
-  assert.equal(byName["国道422号"].minutes, 130);
-  assert.equal(byName["国道163号"].startAt, "2026-10-09T00:50:00.000Z"); // 9:50
-  assert.equal(byName["京滋バイパス"].startAt, "2026-10-09T01:00:00.000Z"); // 10:00
-  assert.equal(byName["京滋バイパス"].minutes, 150);
-  assert.match(item.notice ?? "", /特定できません/);
+  assert.equal(byName["国道422号"].startAt, "2026-10-09T01:40:00.000Z"); // 10:40
+  assert.equal(byName["国道422号"].minutes, 110);
+  assert.equal(byName["国道163号"].startAt, "2026-10-09T01:30:00.000Z"); // 10:30
+  assert.equal(byName["国道163号"].minutes, 120);
+  assert.equal(byName["京滋バイパス"].startAt, "2026-10-09T01:40:00.000Z"); // 10:40（他候補の値が混ざらない）
+  for (const candidate of item.candidates ?? []) assert.equal(candidate.endAt, "2026-10-09T03:30:00.000Z");
+  assert.match(item.notice ?? "", /1つ選んでください/);
 });
 
 test("取得失敗: 発着地を保ち、日時・所要時間は未取得と明示してAIの値を確定扱いしない", async () => {

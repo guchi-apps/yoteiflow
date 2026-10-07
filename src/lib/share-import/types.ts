@@ -37,7 +37,7 @@ export type SharedImport = {
   estimateSource: "YAHOO" | "AI" | "GOOGLE_MAPS" | null;
   /** Googleマップで指定された基準（出発指定なら開始、到着指定なら終了が固定側）。指定が無ければ null */
   scheduleBasis: "depart" | "arrive" | null;
-  /** 経路候補が複数あり共有時の選択を特定できないとき、取得した候補（先頭を選んだものとは扱わない・issue #1160）。無ければ null */
+  /** 経路候補が複数あるとき、取得した候補。利用者が明示的に1件選ぶまで確定しない（先頭を選んだものとは扱わない・issue #1160・#1168）。無ければ null */
   candidates: ShareRouteCandidate[] | null;
   /** 直接登録できるか。日時の無い経路は false で、アプリの移動入力へ引き継ぐ */
   registrable: boolean;
@@ -49,8 +49,11 @@ export type SharedImport = {
 export type ShareRouteCandidate = {
   name: string;
   distanceText: string | null;
-  /** 予測の表示（「35 分～1 時間 20 分」など）。無ければ代表時間の表示 */
-  durationText: string | null;
+  /** 代表時間の表示（「50 分」など）。採用する時間はこちら（issue #1168） */
+  representativeText: string | null;
+  /** 予測幅の表示（「35 分～1 時間 20 分」など）。補足情報で、採用値ではない */
+  rangeText: string | null;
+  /** 代表時間（分）。無ければ null（未取得として手入力で補う） */
   minutes: number | null;
   startAt: string | null;
   endAt: string | null;

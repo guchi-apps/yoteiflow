@@ -28,6 +28,8 @@ export type ShareHandoff =
       url: string | null;
       /** 元URLからGoogleマップの日時・所要時間・経路候補を開いた直後に再取得するか（issue #1160）。`url` がある共有のみ */
       resolve: boolean;
+      /** 共有拡張の確認画面で選んだ経路候補（名前・距離）。再取得後に同じ候補を選択済みにする（issue #1168） */
+      route: { name: string; distance: string | null } | null;
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
       link: { departAt: string; arriveAt: string; note: string } | null;
     };
@@ -111,6 +113,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
     const minutes = rawMinutes === null || rawMinutes.trim() === "" ? Number.NaN : Number(rawMinutes);
     const validMinutes = Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES ? minutes : null;
     const link = params.get("link") === "1" ? linkTimes(params.get("departAt"), params.get("arriveAt"), params.get("note")) : null;
+    const routeName = text(params.get("routeName"));
     return {
       kind: "travel",
       origin,
@@ -121,6 +124,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
       url: googleMapsUrl(params.get("url")),
       resolve: params.get("resolve") === "1" && googleMapsUrl(params.get("url")) !== null && link === null,
       link,
+      route: routeName ? { name: routeName, distance: text(params.get("routeDistance")) } : null,
     };
   }
   return null;
@@ -134,7 +138,7 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance"] as const;
 
 /** 共有の引き継ぎ（未処理）がURLに載っているか。URL同期などが先にクエリを消さないための判定（issue #1143）。 */
 export function hasHandoffQuery(search: string): boolean {

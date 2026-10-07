@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		4B52A4013061870000F8C8D5 /* YoteiFlowIntents.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = YoteiFlowIntents.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B52A1F13061842200F8C8D5 /* YoteiFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YoteiFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B52A2013061850000F8C8D5 /* YoteiFlowWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YoteiFlowWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B52A2203061860000F8C8D5 /* YoteiFlowShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YoteiFlowShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -14,11 +15,19 @@
 /* End PBXFileReference section */
 
 /* Begin PBXBuildFile section */
+		4B52A4023061870000F8C8D5 /* YoteiFlowIntents.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 4B52A4013061870000F8C8D5 /* YoteiFlowIntents.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B52A2113061850000F8C8D5 /* YoteiFlowWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4B52A2013061850000F8C8D5 /* YoteiFlowWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B52A2213061860000F8C8D5 /* YoteiFlowShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4B52A2203061860000F8C8D5 /* YoteiFlowShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		4B52A4033061870000F8C8D5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4B52A1E93061842200F8C8D5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4B52A4093061870000F8C8D5;
+			remoteInfo = YoteiFlowIntents;
+		};
 		4B52A2123061850000F8C8D5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4B52A1E93061842200F8C8D5 /* Project object */;
@@ -36,6 +45,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		4B52A4043061870000F8C8D5 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				4B52A4023061870000F8C8D5 /* YoteiFlowIntents.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B52A2103061850000F8C8D5 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -51,6 +71,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		4B52A4053061870000F8C8D5 /* YoteiFlowIntents */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = YoteiFlowIntents;
+			sourceTree = "<group>";
+		};
 		4B52A1F33061842200F8C8D5 /* YoteiFlow */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = YoteiFlow;
@@ -79,6 +104,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		4B52A4063061870000F8C8D5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B52A1EE3061842200F8C8D5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -117,6 +149,7 @@
 				4B52A2033061850000F8C8D5 /* YoteiFlowWidget */,
 				4B52A2043061850000F8C8D5 /* Shared */,
 				4B52A2233061860000F8C8D5 /* YoteiFlowShare */,
+				4B52A4053061870000F8C8D5 /* YoteiFlowIntents */,
 				4B52A3023061870000F8C8D5 /* YoteiFlowTests */,
 				4B52A1F23061842200F8C8D5 /* Products */,
 			);
@@ -128,6 +161,7 @@
 				4B52A1F13061842200F8C8D5 /* YoteiFlow.app */,
 				4B52A2013061850000F8C8D5 /* YoteiFlowWidget.appex */,
 				4B52A2203061860000F8C8D5 /* YoteiFlowShare.appex */,
+				4B52A4013061870000F8C8D5 /* YoteiFlowIntents.appex */,
 				4B52A3013061870000F8C8D5 /* YoteiFlowTests.xctest */,
 			);
 			name = Products;
@@ -136,6 +170,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		4B52A4093061870000F8C8D5 /* YoteiFlowIntents */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4B52A4133061870000F8C8D5 /* Build configuration list for PBXNativeTarget "YoteiFlowIntents" */;
+			buildPhases = (
+				4B52A4073061870000F8C8D5 /* Sources */,
+				4B52A4063061870000F8C8D5 /* Frameworks */,
+				4B52A4083061870000F8C8D5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4B52A4053061870000F8C8D5 /* YoteiFlowIntents */,
+				4B52A2043061850000F8C8D5 /* Shared */,
+			);
+			name = YoteiFlowIntents;
+			productName = YoteiFlowIntents;
+			productReference = 4B52A4013061870000F8C8D5 /* YoteiFlowIntents.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
 		4B52A1F03061842200F8C8D5 /* YoteiFlow */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4B52A1FC3061842300F8C8D5 /* Build configuration list for PBXNativeTarget "YoteiFlow" */;
@@ -144,12 +199,14 @@
 				4B52A1EE3061842200F8C8D5 /* Frameworks */,
 				4B52A1EF3061842200F8C8D5 /* Resources */,
 				4B52A2103061850000F8C8D5 /* Embed Foundation Extensions */,
+				4B52A4043061870000F8C8D5 /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				4B52A2143061850000F8C8D5 /* PBXTargetDependency */,
 				4B52A2253061860000F8C8D5 /* PBXTargetDependency */,
+				4B52A4103061870000F8C8D5 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4B52A1F33061842200F8C8D5 /* YoteiFlow */,
@@ -242,6 +299,9 @@
 					4B52A21F3061860000F8C8D5 = {
 						CreatedOnToolsVersion = 27.0;
 					};
+					4B52A4093061870000F8C8D5 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					4B52A3003061870000F8C8D5 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -264,12 +324,20 @@
 				4B52A1F03061842200F8C8D5 /* YoteiFlow */,
 				4B52A1FF3061850000F8C8D5 /* YoteiFlowWidget */,
 				4B52A21F3061860000F8C8D5 /* YoteiFlowShare */,
+				4B52A4093061870000F8C8D5 /* YoteiFlowIntents */,
 				4B52A3003061870000F8C8D5 /* YoteiFlowTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4B52A4083061870000F8C8D5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B52A1EF3061842200F8C8D5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -301,6 +369,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4B52A4073061870000F8C8D5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B52A1ED3061842200F8C8D5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -332,6 +407,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		4B52A4103061870000F8C8D5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4B52A4093061870000F8C8D5 /* YoteiFlowIntents */;
+			targetProxy = 4B52A4033061870000F8C8D5 /* PBXContainerItemProxy */;
+		};
 		4B52A2143061850000F8C8D5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 4B52A1FF3061850000F8C8D5 /* YoteiFlowWidget */;
@@ -345,6 +425,58 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4B52A4113061870000F8C8D5 /* Debug configuration for PBXNativeTarget "YoteiFlowIntents" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/YoteiFlowIntents.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6AA3WFTR94;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/YoteiFlowIntents-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4B52A4123061870000F8C8D5 /* Release configuration for PBXNativeTarget "YoteiFlowIntents" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/YoteiFlowIntents.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6AA3WFTR94;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/YoteiFlowIntents-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		4B52A1FA3061842300F8C8D5 /* Debug configuration for PBXProject "YoteiFlow" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -685,6 +817,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4B52A4133061870000F8C8D5 /* Build configuration list for PBXNativeTarget "YoteiFlowIntents" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B52A4113061870000F8C8D5 /* Debug configuration for PBXNativeTarget "YoteiFlowIntents" */,
+				4B52A4123061870000F8C8D5 /* Release configuration for PBXNativeTarget "YoteiFlowIntents" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		4B52A1EC3061842200F8C8D5 /* Build configuration list for PBXProject "YoteiFlow" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -38,6 +38,10 @@ final class ShareViewController: UIViewController {
             if let item = self?.model.item { self?.handOffToApp(item, link: true) }
         }
 
+        model.onManual = { [weak self] in
+            if let item = self?.model.item { self?.handOffToApp(item, manual: true) }
+        }
+
         Task { await loadPreview() }
     }
 
@@ -79,7 +83,8 @@ final class ShareViewController: UIViewController {
 
     private func primaryAction() {
         guard let item = model.item else { return }
-        if item.registrable {
+        if model.hasCandidateChoice && model.selectedCandidate == nil { return }
+        if model.effectiveRegistrable {
             Task { await registerRoute(item) }
         } else {
             handOffToApp(item)
@@ -95,11 +100,18 @@ final class ShareViewController: UIViewController {
         if item.source == "yahoo_transit", let text = shared.text {
             body["text"] = text
         } else if let origin = item.origin, let destination = item.destination, let mode = item.mode,
-                  let startAt = item.startAt, let endAt = item.endAt {
+                  let startAt = model.selectedCandidate?.startAt ?? item.startAt,
+                  let endAt = model.selectedCandidate?.endAt ?? item.endAt {
+            // 複数候補のときは選んだ経路の代表時間で求めた日時を載せ、選択経路をメモへ残す（issue #1168）
+            var note = item.detail ?? item.sourceUrl ?? ""
+            if let chosen = model.selectedCandidate {
+                let label = [chosen.name, chosen.distanceText, chosen.representativeText.map { "代表時間 \($0)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " / ")
+                note += "\n選んだ経路: " + label
+            }
             body["travel"] = [
                 "origin": origin, "destination": destination, "mode": mode,
                 "departAt": startAt, "arriveAt": endAt,
-                "note": item.detail ?? item.sourceUrl ?? "", "estimateSource": item.estimateSource ?? "AI",
+                "note": note, "estimateSource": item.estimateSource ?? "AI",
             ]
         }
         guard let data = await postJSON("api/shortcuts/travel/import", body: body, token: token) else {
@@ -111,21 +123,27 @@ final class ShareViewController: UIViewController {
     }
 
     /// 本体アプリを開いて入力を引き継ぐ。開けないときはURLをコピーして案内する
-    private func handOffToApp(_ item: SharedImportItem, link: Bool = false) {
+    private func handOffToApp(_ item: SharedImportItem, link: Bool = false, manual: Bool = false) {
         var query: [String: String] = [:]
         if item.isRoute {
             query["newTravel"] = "1"
             query["origin"] = item.origin
             query["destination"] = item.destination
             query["mode"] = item.mode
-            query["minutes"] = item.durationMinutes.map(String.init)
+            let chosen = manual ? nil : model.selectedCandidate
+            query["minutes"] = (chosen?.minutes ?? item.durationMinutes).map(String.init)
+            // 選んだ経路を本体へ引き継ぎ、再取得後に同じ候補を選択済みにする（issue #1168）
+            if let chosen, !chosen.name.isEmpty {
+                query["routeName"] = chosen.name
+                query["routeDistance"] = chosen.distanceText
+            }
             // AIの目安かどうかと元の共有URLも渡し、入力画面で推定と分かる形・メモに残す（issue #1142）
             query["estimated"] = item.estimated && item.estimateSource != "GOOGLE_MAPS" && item.durationMinutes != nil ? "1" : nil
             query["url"] = item.sourceUrl
             // Googleマップの経路は、本体で日時・予測所要時間を再取得し、候補が複数なら選ばせる（issue #1160）
             query["resolve"] = item.source == "google_maps" && !link ? "1" : nil
             // 既存の予定に紐づけて追加（issue #1128）。本体で予定を選び、日付は予定の日へ合わせる
-            if link, let startAt = item.startAt, let endAt = item.endAt {
+            if link, let startAt = model.selectedCandidate?.startAt ?? item.startAt, let endAt = model.selectedCandidate?.endAt ?? item.endAt {
                 query["link"] = "1"
                 query["departAt"] = startAt
                 query["arriveAt"] = endAt

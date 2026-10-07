@@ -24,6 +24,7 @@ export const DISTRIBUTED_PATHSPEC = [
   "ios/YoteiFlow",
   "ios/YoteiFlowWidget",
   "ios/YoteiFlowShare",
+  "ios/YoteiFlowIntents",
   "ios/YoteiFlow.xcodeproj",
   // アプリとウィジェットの両ターゲットが共有するソース・設定（pbxprojの Shared グループ、
   // INFOPLIST_FILE、CODE_SIGN_ENTITLEMENTS が指す先）
