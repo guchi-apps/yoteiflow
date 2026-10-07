@@ -130,6 +130,7 @@ export type InternalTravel = {
   estimated: boolean;
   /** 所要時間の出どころ。MANUAL / AI / TRANSIT（旧trainroute経由の経路検索。撤去済み・過去データのみ）/ YAHOO（Yahoo!乗換案内）/ GOOGLE_MAPS（Googleマップで調べた所要時間） */
   estimateSource: TravelEstimateSource;
+  /** @deprecated 互換のため返す。予定との前後は start / end から判断する（issue #1137）。 */
   returnLeg: boolean;
   note: string | null;
 };

@@ -383,7 +383,6 @@ export function CalendarShell({
           mode: handoff.mode,
           departAt,
           arriveAt: arrive,
-          roundTrip: false,
         },
       },
     });
@@ -416,9 +415,8 @@ export function CalendarShell({
           mode: link.mode,
           departAt: times.departAt,
           arriveAt: times.arriveAt,
-          roundTrip: false,
           note: link.note || undefined,
-          linkedEvent: { id: item.eventId, calendarId: item.calendarId, endAt: item.end },
+          linkedEvent: { id: item.eventId, calendarId: item.calendarId, startAt: item.start, endAt: item.end },
           notice,
         },
       },
@@ -727,8 +725,7 @@ export function CalendarShell({
             timeZone,
           ),
           arriveAt: isoToLocalInput(event.start, timeZone),
-          linkedEvent: { id: event.id, calendarId: event.calendarId, endAt: event.end },
-          roundTrip: travelSettings.roundTrip,
+          linkedEvent: { id: event.id, calendarId: event.calendarId, startAt: event.start, endAt: event.end },
         },
       },
     });
@@ -824,7 +821,6 @@ export function CalendarShell({
           mode: travelSettings.defaultMode,
           departAt: range.start,
           arriveAt: range.end,
-          roundTrip: false,
         },
       },
     });
@@ -1883,6 +1879,9 @@ function CalendarBody({
           weekStartsOn={weekStartsOn}
           linkedEventTitle={
             data.events.find((event) => event.id === viewingTravel.linkedEventId)?.title ?? null
+          }
+          linkedEventRange={
+            data.events.find((event) => event.id === viewingTravel.linkedEventId) ?? null
           }
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />

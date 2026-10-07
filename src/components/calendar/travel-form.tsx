@@ -6,7 +6,6 @@ import { useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
@@ -40,12 +39,10 @@ export type TravelDraft = {
   arriveAt: string;
   note?: string;
   /**
-   * 元になった予定。復路の起点（予定の終了時刻）と、移動と予定の紐づけに使う。
-   * 「＋」から作った移動には無く、そのときは復路も作らない（帰りの起点が決まらないため）。
+   * 元になった予定。移動と予定の紐づけに使う。時刻は持ち物の期限を予定前の移動へ自動で付けるかの
+   * 判断に渡す（issue #1137）。「＋」から作った移動には無い。
    */
-  linkedEvent?: { id: string; calendarId: string; endAt: string } | null;
-  /** 往復を作るかの初期値。設定の既定値が入る。 */
-  roundTrip?: boolean;
+  linkedEvent?: { id: string; calendarId: string; startAt: string; endAt: string } | null;
   /** 入力欄の上に添える案内（共有拡張から紐づけて作るときの日付・メモの断り。issue #1128）。 */
   notice?: string;
 };
@@ -86,7 +83,6 @@ export function TravelForm({
   const [estimateSource, setEstimateSource] = useState<TravelEstimateSource>(
     editing?.estimateSource ?? "MANUAL",
   );
-  const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
   // 通知設定（issue #1112）。出発時刻を基準に、予定と同じ選び方をする。
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
@@ -205,16 +201,6 @@ export function TravelForm({
       const departIso = localInputToIso(departAt, timeZone);
       const arriveIso = localInputToIso(arriveAt, timeZone);
 
-      // 復路は予定の終了時刻に出発し、行きと同じだけかかるものとして置く。
-      const durationMs = new Date(arriveIso).getTime() - new Date(departIso).getTime();
-      const returnTrip =
-        roundTrip && draft.linkedEvent
-          ? {
-              departAt: draft.linkedEvent.endAt,
-              arriveAt: new Date(new Date(draft.linkedEvent.endAt).getTime() + durationMs).toISOString(),
-            }
-          : null;
-
       const payload = {
         origin: origin.trim(),
         destination: destination.trim(),
@@ -228,7 +214,13 @@ export function TravelForm({
           : {
               linkedEventId: draft.linkedEvent?.id ?? null,
               linkedCalendarId: draft.linkedEvent?.calendarId ?? null,
-              returnTrip,
+              ...(draft.linkedEvent
+                ? {
+                    eventStart: draft.linkedEvent.startAt,
+                    eventEnd: draft.linkedEvent.endAt,
+                    eventAllDay: !draft.linkedEvent.startAt.includes("T"),
+                  }
+                : {}),
             }),
       };
 
@@ -275,7 +267,6 @@ export function TravelForm({
       }
 
       const touched: TouchedRange[] = [{ start: departIso, end: arriveIso }];
-      if (returnTrip) touched.push({ start: returnTrip.departAt, end: returnTrip.arriveAt });
       if (editing) touched.push({ start: editing.start, end: editing.end });
 
       const message = exportWarning(body.exports ?? []);
@@ -417,14 +408,6 @@ export function TravelForm({
         </div>
 
         {draft.notice && <p className="px-4 text-sm text-on-surface-variant">{draft.notice}</p>}
-
-        {/* 往復は元になった予定があるときだけ。単独の移動では帰りの起点が決まらない。 */}
-        {!editing && draft.linkedEvent && (
-          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={roundTrip} onCheckedChange={(v) => setRoundTrip(v === true)} />
-            帰りの移動も作る（予定の終了時刻に出発）
-          </label>
-        )}
 
         <Textarea
           id="travel-note"
