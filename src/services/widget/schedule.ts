@@ -6,6 +6,7 @@ import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import { placeDisplayName } from "@/lib/place-text";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
+import { getActivityCalendarId } from "@/services/activity/settings";
 import { listEvents, toCalendarItems } from "@/services/google-calendar/events";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
 import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
@@ -70,10 +71,11 @@ async function loadSource(
   const range = { timeMin, timeMax };
 
   // 移動と中止・不参加の記録はDaySpanのDBにあり、外部APIの往復は増えない。Googleと並行に読む。
-  const [events, travelPlans, outcomes] = await Promise.all([
+  const [events, travelPlans, outcomes, activityCalendarId] = await Promise.all([
     loadEvents(accounts, range),
     listTravelsInRange(userId, range),
     listEventOutcomes(userId),
+    getActivityCalendarId(userId),
   ]);
 
   // 1つも取れず、取りにいったカレンダーが全部失敗した状態は「取得できなかった」。予定が0件
@@ -94,6 +96,8 @@ async function loadSource(
 
   for (const event of attachEventOutcomes(events.items, outcomes)) {
     if (exportedEventIds.has(event.id)) continue;
+    // 活動記録は実績で、これからの予定を読むウィジェットには出さない（issue #1185）。
+    if (activityCalendarId && event.calendarId === activityCalendarId) continue;
     if (!utils.eventCoversDay(event, dateKey)) continue;
 
     items.push({
@@ -104,6 +108,8 @@ async function loadSource(
       end: event.allDay ? null : event.end,
       detail: event.location,
       mode: null,
+      origin: null,
+      destination: null,
       outcome: event.outcome?.kind ?? null,
     });
   }
@@ -124,6 +130,8 @@ async function loadSource(
       end: travel.end,
       detail: `${minutesBetween(travel.start, travel.end)}分`,
       mode: travel.mode,
+      origin: placeDisplayName(travel.origin),
+      destination: placeDisplayName(travel.destination),
       outcome: null,
     });
   }

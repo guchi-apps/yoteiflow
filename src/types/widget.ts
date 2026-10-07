@@ -46,6 +46,9 @@ export type WidgetScheduleItem = {
   detail: string | null;
   /** 移動の交通手段。予定は null。 */
   mode: TravelMode | null;
+  /** 移動の出発地・目的地（場所名のみ）。予定は null。title は目的地だけなので、行き先を並べて出すために別に持つ。 */
+  origin: string | null;
+  destination: string | null;
   /** 中止・不参加の記録（docs/spec.md §37）。付いていなければ null。 */
   outcome: EventOutcomeKind | null;
   /** 応答を作った時点で終わっているか。判定はサーバーの `now` で行う。 */

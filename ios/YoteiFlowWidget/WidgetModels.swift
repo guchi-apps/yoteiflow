@@ -38,6 +38,10 @@ struct SchedulePayload: Decodable {
         let detail: String?
         let outcome: String?
         let past: Bool
+        // 移動のときだけ入る。古い応答には無いため Optional
+        var mode: String? = nil
+        var origin: String? = nil
+        var destination: String? = nil
     }
 
     let timeZone: String
