@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
-import { isInitialCalendarView, settingFromInitialView } from "@/lib/calendar-initial-view";
+import {
+  initialViewFromSetting,
+  isInitialCalendarView,
+  settingFromInitialView,
+} from "@/lib/calendar-initial-view";
 import { db } from "@/lib/db";
 
 type Body = { weekStartsOn?: number; defaultView?: string };
@@ -35,15 +39,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "weekStartsOn must be 0-6" }, { status: 400 });
   }
 
-  // 初期表示は月表示・日表示（1日）だけ（issue #1144）。
+  // 初期表示は月・1日・3日・週（issue #1144・#1153）。
   if (defaultView !== undefined && !isInitialCalendarView(defaultView)) {
-    return NextResponse.json({ error: "defaultView must be month or day1" }, { status: 400 });
+    return NextResponse.json({ error: "defaultView must be month, day1, day3 or day7" }, { status: 400 });
   }
 
   const data = {
     ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
     ...(defaultView !== undefined
-      ? { defaultMobileView: settingFromInitialView(defaultView as "month" | "day1") }
+      ? { defaultMobileView: settingFromInitialView(defaultView) }
       : {}),
   };
 
@@ -55,6 +59,6 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({
     weekStartsOn: setting.weekStartsOn,
-    defaultView: setting.defaultMobileView === "DAY_1" ? "day1" : "month",
+    defaultView: initialViewFromSetting(setting.defaultMobileView),
   });
 }

@@ -3801,9 +3801,11 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 
 ## 48. カレンダーの初期表示（issue #1144）
 
-設定 ▸ 表示の「カレンダーの初期表示」で、カレンダーを開いたときの表示形式を「月表示」「日表示（1日）」から選べる。
-3日・週は選択肢にしない。未設定は月表示。保存先は `UiSetting.defaultMobileView`（列名は Mobile だが
-全端末・Web/iOS共通。マイグレーションを避けて未使用だった列を流用。`MONTH` / `DAY_1` のみ受ける）。
+設定 ▸ 表示の「カレンダーの初期表示」で、カレンダーを開いたときの表示形式を「月表示」「1日表示」「3日表示」「週表示（7日）」から選べる（issue #1153）。
+週表示は768px以上でだけ選択肢に出す（カレンダーの週ボタンと同じ条件。保存済みの値のときは常に出す）。
+設定は全端末共通のため、URLに `view` が無く設定由来で週になったときは、768px未満ではクライアント
+（`NarrowWeekFallback`）が3日表示へ `router.replace` で退避する。未設定は月表示。保存先は `UiSetting.defaultMobileView`（列名は Mobile だが
+全端末・Web/iOS共通。マイグレーションを避けて未使用だった列を流用。`MONTH` / `DAY_1` / `DAY_3` / `DAY_7` を受ける）。
 
 表示形式の決まり方（`/calendar`・`resolveCalendarView()`）:
 
