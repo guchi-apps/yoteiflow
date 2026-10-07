@@ -27,6 +27,10 @@ import { useShoppingViewPrefs } from "@/components/shopping/use-shopping-view-pr
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LinearProgress } from "@/components/ui/linear-progress";
+import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
+import { applyBoughtOps } from "@/lib/offline-queue/ops";
+import { usePendingWrites } from "@/lib/offline-queue/store";
+import { useWriteSynced } from "@/lib/offline-queue/use-write-synced";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
@@ -72,6 +76,7 @@ export function ShoppingScreen({
     "買い物リストを取得できませんでした。",
   );
   const { data, reload } = resource;
+  useWriteSynced(reload);
   const items = data?.items ?? EMPTY_ITEMS;
   const fetchedOptions = data?.categoryOptions ?? EMPTY_OPTIONS;
   const wishlistReady = data?.wishlistReady ?? false;
@@ -113,12 +118,16 @@ export function ShoppingScreen({
     () => items.filter((item) => item.wishlisted === (view === "wishlist")),
     [items, view],
   );
+  const queuedWrites = usePendingWrites();
   const shown = useMemo(
     () =>
-      listedItems.map((item) =>
-        item.id in pendingBought ? { ...item, bought: pendingBought[item.id] } : item,
+      applyBoughtOps(
+        listedItems.map((item) =>
+          item.id in pendingBought ? { ...item, bought: pendingBought[item.id] } : item,
+        ),
+        queuedWrites,
       ),
-    [listedItems, pendingBought],
+    [listedItems, pendingBought, queuedWrites],
   );
 
   const tabKeys = useMemo(
@@ -145,8 +154,10 @@ export function ShoppingScreen({
    * 失敗の理由も出す（黙って戻ると、押したはずのチェックが外れた理由が読めない）。
    */
   const toggleBought = async (item: ShoppingItem, bought: boolean) => {
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
+    // オフライン中・先にためた操作があるときは、端末にためて通信が戻ったときに送る（issue #1135）。
+    if (shouldQueueWrite(offline)) {
+      setError(null);
+      submitWrite({ kind: "shoppingBought", itemId: item.id, bought });
       return;
     }
 
