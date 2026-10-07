@@ -29,6 +29,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { WorkMonthData } from "@/types/work";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
+import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
+import { useWriteSynced } from "@/lib/offline-queue/use-write-synced";
 import { dayTone, OFF_DAY_TONE } from "@/lib/day-tone";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
@@ -126,6 +128,7 @@ function WorkMonthScreen({
   const placeOptions = useMemo(() => resource.data?.placeOptions ?? [], [resource.data]);
   const loadError = resource.error;
   const loaded = resource.data !== null;
+  useWriteSynced(resource.reload);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,6 +227,19 @@ function WorkMonthScreen({
    */
   const pickToday = async (place: string) => {
     if (!todayEditableByChip) return;
+
+    // オフライン中・先にためた操作があるときは、意図（日付と場所）だけをためる。送信時にその日の
+    // 記録を引き直して、取り消し・変更・新規を選ぶ（issue #1135）。キャッシュ上の記録は古いことがある。
+    if (shouldQueueWrite(offline)) {
+      setError(null);
+      submitWrite({
+        kind: "workToday",
+        date: todayKey,
+        place: todayRecord && todayRecord.place === place ? null : place,
+        ...(capabilities.businessTrip ? { businessTrip: isTripPlace(tripPlaces, place) } : {}),
+      });
+      return;
+    }
 
     const trip = capabilities.businessTrip
       ? { businessTrip: isTripPlace(tripPlaces, place) }
