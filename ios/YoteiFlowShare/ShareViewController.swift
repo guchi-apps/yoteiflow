@@ -124,6 +124,14 @@ final class ShareViewController: UIViewController {
                 query["link"] = "1"
                 query["departAt"] = startAt
                 query["arriveAt"] = endAt
+                // 経路詳細は通常の登録と同じ生成規則のメモ（preview の detail）を丸ごと渡す。切り捨てない
+                if let note = item.detail, !note.isEmpty {
+                    guard note.count <= SharedConfig.handoffNoteLimit else {
+                        finish("経路の詳細が長すぎて引き継げませんでした。通常の「登録」を使うか、経路を絞ってもう一度共有してください。")
+                        return
+                    }
+                    query["note"] = note
+                }
             }
         } else {
             query["newEvent"] = "place"
@@ -140,7 +148,7 @@ final class ShareViewController: UIViewController {
                 self?.complete()
             } else {
                 UIPasteboard.general.url = item.sourceUrl.flatMap(URL.init(string:))
-                self?.finish("YoteiFlowを開けませんでした。アプリを開いて、予定の場所欄へ貼り付けてください（URLはコピーしました）。")
+                self?.finish(link ? "YoteiFlowを開けませんでした。もう一度共有して「予定に紐づけて追加」を選んでください（メモなしでは追加されていません）。" : "YoteiFlowを開けませんでした。アプリを開いて、予定の場所欄へ貼り付けてください（URLはコピーしました）。")
             }
         }
     }

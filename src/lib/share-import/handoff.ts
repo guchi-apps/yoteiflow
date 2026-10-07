@@ -11,6 +11,8 @@ import { isTravelMode, type TravelMode } from "@/types/calendar";
 
 const MAX_TEXT = 500;
 const MAX_MINUTES = 24 * 60;
+/** 経路詳細のメモ。他の値（500字）と違い、共有された経路の全文を渡すため大きく取る。超えたら黙って切らず、メモなしで開く側へ倒すのではなく導線ごと無効にする。 */
+export const MAX_HANDOFF_NOTE = 20_000;
 
 export type ShareHandoff =
   | { kind: "place"; title: string; address: string; lat: number | null; lng: number | null; url: string | null }
@@ -21,7 +23,7 @@ export type ShareHandoff =
       mode: TravelMode;
       minutes: number | null;
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
-      link: { departAt: string; arriveAt: string } | null;
+      link: { departAt: string; arriveAt: string; note: string } | null;
     };
 
 function text(value: string | null): string | null {
@@ -52,11 +54,17 @@ function isoTime(value: string | null): string | null {
 }
 
 /** 紐づけ用の発着時刻。読めない・到着が出発以前なら紐づけ導線にせず、従来の入力へ落とす。 */
-function linkTimes(depart: string | null, arrive: string | null): { departAt: string; arriveAt: string } | null {
+function linkTimes(
+  depart: string | null,
+  arrive: string | null,
+  note: string | null,
+): { departAt: string; arriveAt: string; note: string } | null {
+  // メモは切り捨てない。上限を超える値は、欠けたメモで成功したように見せず導線ごと断る（拡張側も同じ上限で先に断る）
+  if (note !== null && note.length > MAX_HANDOFF_NOTE) return null;
   const departAt = isoTime(depart);
   const arriveAt = isoTime(arrive);
   if (!departAt || !arriveAt || new Date(arriveAt).getTime() <= new Date(departAt).getTime()) return null;
-  return { departAt, arriveAt };
+  return { departAt, arriveAt, note: note ?? "" };
 }
 
 /**
@@ -94,7 +102,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
     const mode = params.get("mode");
     if (!origin || !destination || !isTravelMode(mode)) return null;
     const minutes = Number(params.get("minutes"));
-    const link = params.get("link") === "1" ? linkTimes(params.get("departAt"), params.get("arriveAt")) : null;
+    const link = params.get("link") === "1" ? linkTimes(params.get("departAt"), params.get("arriveAt"), params.get("note")) : null;
     return {
       kind: "travel",
       origin,
@@ -115,4 +123,4 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note"] as const;
