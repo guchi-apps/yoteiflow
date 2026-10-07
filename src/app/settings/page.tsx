@@ -20,7 +20,13 @@ import {
 } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { AttentionDot } from "@/components/settings/attention-dot";
 import { Card } from "@/components/ui/card";
+import { countNotionActions } from "@/lib/notion-action-needed";
+import type { PropertyMap } from "@/services/notion/task-database";
+import type { PlacePropertyMap } from "@/services/notion/place-database";
+import type { ShoppingPropertyMap } from "@/services/notion/shopping-database";
+import type { WorkPropertyMap } from "@/services/notion/work-database";
 import { WIDE_TWO_COLUMN_ROW_CLASS } from "@/components/ui/wide-section";
 import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
@@ -56,6 +62,20 @@ export default async function SettingsPage() {
     getNotificationSettings(user.id),
     cookies(),
   ]);
+
+  // 保存済みの対応付けだけで数える（外部APIの往復を足さない）。最大24時間遅れうる目安。
+  const notionActionCount = notionConnection
+    ? countNotionActions({
+        taskDataSourceId: notionConnection.taskDataSourceId,
+        propertyMap: notionConnection.propertyMap as PropertyMap | null,
+        placeDataSourceId: notionConnection.placeDataSourceId,
+        placePropertyMap: notionConnection.placePropertyMap as PlacePropertyMap | null,
+        workDataSourceId: notionConnection.workDataSourceId,
+        workPropertyMap: notionConnection.workPropertyMap as WorkPropertyMap | null,
+        shoppingDataSourceId: notionConnection.shoppingDataSourceId,
+        shoppingPropertyMap: notionConnection.shoppingPropertyMap as ShoppingPropertyMap | null,
+      })
+    : 0;
 
   const startPathCookieValue = cookieStore.get(START_PATH_COOKIE)?.value;
   // 設定画面の戻り先はアプリの起点（起動画面）で揃える（docs/spec.md §4）。
@@ -124,6 +144,7 @@ export default async function SettingsPage() {
             href="/settings/notion"
             icon={NotebookPen}
             label="Notion"
+            attention={notionActionCount > 0}
             value={
               !notionConnection
                 ? "未接続"
@@ -238,11 +259,14 @@ function MenuItem({
   icon: Icon,
   label,
   value,
+  attention = false,
 }: {
   href: string;
   icon: ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  /** 操作が必要なことを示す丸印を出す（issue #1171）。 */
+  attention?: boolean;
 }) {
   return (
     <Link
@@ -255,7 +279,10 @@ function MenuItem({
       <Icon className="size-5 shrink-0 text-on-surface-variant" />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="type-body-large">{label}</span>
+        <span className="type-body-large flex items-center gap-2">
+          {label}
+          {attention && <AttentionDot />}
+        </span>
         <span className="type-body-small truncate text-on-surface-variant">{value}</span>
       </div>
 

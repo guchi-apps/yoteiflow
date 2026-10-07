@@ -30,6 +30,8 @@ import {
   SHOPPING_FIELD_REQUIREMENTS,
   type ShoppingPropertyMap,
 } from "@/services/notion/shopping-database";
+import { AttentionDot } from "@/components/settings/attention-dot";
+import { notionActionCounts } from "@/lib/notion-action-needed";
 import { WORK_FIELD_REQUIREMENTS, type WorkPropertyMap } from "@/services/notion/work-database";
 
 type MissingProperty = { field: string; label: string; types: string[] };
@@ -512,6 +514,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                 <div className="flex items-center gap-2 text-sm">
                   <Badge variant="secondary">タスクDB</Badge>
+                  {notionActionCounts.task(state) > 0 && <AttentionDot label="プロパティの追加が必要" />}
                   <span className="font-medium">{state.taskTitle}</span>
                 </div>
                 {state.propertyMap && (
@@ -651,6 +654,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Badge variant="secondary">場所DB</Badge>
+                    {notionActionCounts.place(state) > 0 && <AttentionDot label="プロパティの追加が必要" />}
                     <span className="font-medium">{state.placeTitle}</span>
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -776,6 +780,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Badge variant="secondary">勤務記録DB</Badge>
+                  {notionActionCounts.work(state) > 0 && <AttentionDot label="プロパティの追加が必要" />}
                     <span className="font-medium">{state.workTitle}</span>
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -851,6 +856,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Badge variant="secondary">買い物リストDB</Badge>
+                  {notionActionCounts.shopping(state) > 0 && <AttentionDot label="プロパティの追加が必要" />}
                     <span className="font-medium">{state.shoppingTitle}</span>
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
