@@ -18,7 +18,8 @@ const TIME_KEY = /^([01]\d|2[0-3]):[0-5]\d$/;
  * 認証は読み取り用の `DAYSPAN_INTERNAL_API_KEY` とは別の `DAYSPAN_INTERNAL_EVENTS_API_KEY`。読み取り用の
  * キーが漏れても予定を書き込まれないようにするための分離（起点: guchi-apps/aide-bot#184）。
  *
- * 作成だけを持つ。編集・削除は無い（取り消せない操作をサーバー間経路へ出さないため）。
+ * 同じ鍵で予定の更新・1回分の削除もできる（`[eventId]/route.ts`・issue #805。削除は現在のタイトルの一致が必須）。
+ * 繰り返しの「これ以降・すべて」の削除は持たない。鍵が漏れたときの影響範囲は docs/internal-api.md の認証節と揃える。
  */
 export async function POST(request: Request) {
   const unauthorized = await requireInternalEventsApiKey(request);

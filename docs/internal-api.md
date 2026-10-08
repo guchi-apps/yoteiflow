@@ -21,7 +21,7 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
 
 キーの比較は `node:crypto` の `timingSafeEqual` で定数時間で行う（`src/lib/internal-auth.ts`）。トークンはクエリではなく `Authorization` ヘッダーで受ける。クエリに載せるとApacheのアクセスログにそのまま残る（iPhoneウィジェットのトークンと同じ理由。docs/spec.md §28）。
 
-**書き込み系（`POST` / `PATCH` / `DELETE /api/internal/events`）は読み取りとは別の鍵（issue-deckの `DAYSPAN_INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `DAYSPAN_INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。
+**書き込み系（`POST` / `PATCH` / `DELETE /api/internal/events`）は読み取りとは別の鍵（issue-deckの `DAYSPAN_INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `DAYSPAN_INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。この鍵が漏れると、予定の作成・更新と、タイトルを添えた1回分の削除ができる（繰り返しの「これ以降・すべて」の削除は無い）。
 
 **タスクの作成・更新・状態変更はさらに別のissue-deck共有トークン `DAYSPAN_INTERNAL_TASKS_API_KEY` を使う。** 読み取り鍵・予定の書き込み鍵のいずれでもタスクは変更できない。3鍵は共有トークンAPIから実行時に取得し、ローカル開発・移行中に取得できないときだけ `INTERNAL_API_KEY`・`INTERNAL_EVENTS_API_KEY`・`INTERNAL_TASKS_API_KEY` へ順にフォールバックする。GitHub Secret、CI・deployの転送、VPSの`.env`へは配らない。
 
