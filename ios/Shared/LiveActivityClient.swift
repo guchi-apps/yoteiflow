@@ -14,9 +14,19 @@ enum LiveActivityClient {
         #endif
     }
 
-    /// 記録を止める。トークンが無い・通信に失敗したときは false
-    static func stopRecording() async -> Bool {
-        await post(path: "api/shortcuts/activity/stop", body: nil)
+    /// 記録を止める。トークンが無い・通信に失敗したときは false。
+    /// 表示中の記録（開始時刻・項目名）を添え、サーバーで別の記録に変わっていたら止めさせない（#1181）
+    /// 別の記録に変わっていて止めなかったときも true を返さず、`.recordChanged` で区別する
+    enum StopOutcome { case stopped, recordChanged, failed }
+
+    static func stopRecording(startedAtEpoch: Double?, title: String?) async -> StopOutcome {
+        var body: Data?
+        if let startedAtEpoch, let title {
+            body = try? JSONSerialization.data(withJSONObject: ["startedAtEpoch": startedAtEpoch, "title": title])
+        }
+        guard let data = await postData(path: "api/shortcuts/activity/stop", body: body) else { return .failed }
+        let status = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? String
+        return status == "record_changed" ? .recordChanged : .stopped
     }
 
     /// activity push token をサーバーへ登録する（以後の update / end の宛先）
@@ -28,7 +38,11 @@ enum LiveActivityClient {
     }
 
     private static func post(path: String, body: Data?) async -> Bool {
-        guard let token = ActivityStopCredentials.load() else { return false }
+        await postData(path: path, body: body) != nil
+    }
+
+    private static func postData(path: String, body: Data?) async -> Data? {
+        guard let token = ActivityStopCredentials.load() else { return nil }
 
         var request = URLRequest(url: SharedConfig.baseURL.appending(path: path))
         request.httpMethod = "POST"
@@ -39,10 +53,10 @@ enum LiveActivityClient {
         }
         request.timeoutInterval = 15
 
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse
-        else { return false }
-        return http.statusCode == 200
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200
+        else { return nil }
+        return data
     }
 
     /// 表示中の記録のアクティビティをすべて終わらせる
@@ -61,7 +75,13 @@ struct StopRecordingIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         // 失敗しても表示は消さない（止まっていないのに消えると、記録が続いていることに気付けない）。
         // 止まったあとは、サーバーからの end でも消える
-        if await LiveActivityClient.stopRecording() {
+        let shown = Activity<RecordingActivityAttributes>.activities.first?.content.state
+        let outcome = await LiveActivityClient.stopRecording(
+            startedAtEpoch: shown?.startedAtEpoch,
+            title: shown?.title
+        )
+        // 別の記録に変わっていた場合は止めていないので表示を消さない（サーバーからの update で今の記録に変わる）
+        if outcome == .stopped {
             await LiveActivityClient.endAll()
         }
         return .result()
