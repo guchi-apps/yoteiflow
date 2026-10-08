@@ -57,7 +57,7 @@ struct ShareImportView: View {
     private func summary(_ item: SharedImportItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if item.isRoute {
-                Text("\(item.origin ?? "") → \(item.destination ?? "")").font(.title3.bold())
+                Text(([item.origin ?? ""] + (item.via ?? []) + [item.destination ?? ""]).joined(separator: " → ")).font(.title3.bold())
                 let chosen = model.selectedCandidate
                 let startAt = chosen?.startAt ?? item.startAt
                 let endAt = chosen?.endAt ?? item.endAt
@@ -155,6 +155,9 @@ struct ShareImportView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canProceed)
             }
+            .controlSize(.large)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
             if model.hasCandidateChoice && model.selectedCandidate == nil {
                 Button { model.onManual() } label: {
                     Text("手入力で続ける").frame(maxWidth: .infinity)
@@ -164,9 +167,6 @@ struct ShareImportView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
             }
-            .controlSize(.large)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
         }
         .background(.bar)
     }

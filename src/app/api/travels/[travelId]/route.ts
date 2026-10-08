@@ -28,6 +28,7 @@ export async function PATCH(
     const result = await updateTravel(userId, travelId, {
       origin: body.origin!,
       destination: body.destination!,
+      via: body.via ?? null,
       mode: body.mode!,
       departAt: body.departAt!,
       arriveAt: body.arriveAt!,

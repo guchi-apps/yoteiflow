@@ -109,7 +109,7 @@ final class ShareViewController: UIViewController {
                 note += "\n選んだ経路: " + label
             }
             body["travel"] = [
-                "origin": origin, "destination": destination, "mode": mode,
+                "origin": origin, "destination": destination, "via": item.via ?? [], "mode": mode,
                 "departAt": startAt, "arriveAt": endAt,
                 "note": note, "estimateSource": item.estimateSource ?? "AI",
             ]
@@ -129,6 +129,7 @@ final class ShareViewController: UIViewController {
             query["newTravel"] = "1"
             query["origin"] = item.origin
             query["destination"] = item.destination
+            query["via"] = (item.via ?? []).isEmpty ? nil : item.via?.joined(separator: "\n")
             query["mode"] = item.mode
             let chosen = manual ? nil : model.selectedCandidate
             query["minutes"] = (chosen?.minutes ?? item.durationMinutes).map(String.init)

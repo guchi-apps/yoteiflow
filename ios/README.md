@@ -113,8 +113,8 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 
 APIキーの自動署名は App ID・App Group を**作れない**（既存のものへ紐付けるだけ）ため、初回の前に Apple Developer の Identifiers で手動登録する。
 
-1. App ID `com.gucchii.yoteiflow`（アプリ本体）・`com.gucchii.yoteiflow.widget`（Widget）・`com.gucchii.yoteiflow.share`（共有拡張・#1026）を作る。**拡張を足したときは、その App ID もここで足す**。未登録だと `No profiles for '…share' were found` と `Authentication failed: Make sure a bearer token…` でアーカイブが落ちる（#1041）
-2. App Group `group.com.gucchii.yoteiflow` を作り、3つすべての App ID の App Groups capability に紐付ける
+1. App ID `com.gucchii.yoteiflow`（アプリ本体）・`com.gucchii.yoteiflow.widget`（Widget）・`com.gucchii.yoteiflow.share`（共有拡張・#1026）・`com.gucchii.yoteiflow.intents`（睡眠モード連動拡張・#1167。未登録のまま配布して #1187 で落ちた）を作る。**拡張を足したときは、その App ID もここで足す**。未登録だと `No profiles for '…share' were found` と `Authentication failed: Make sure a bearer token…` でアーカイブが落ちる（#1041）
+2. App Group `group.com.gucchii.yoteiflow` を作り、4つすべての App ID の App Groups capability に紐付ける
 3. アプリ本体の App ID には Push Notifications も有効にする（APNs・#925）
 
 ## 開発環境と本番の切り替え

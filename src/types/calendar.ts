@@ -327,6 +327,8 @@ export type TravelItem = {
   title: string;
   origin: string;
   destination: string;
+  /** 経由地（順番どおり）。経由なしは空配列（issue #1197） */
+  via: string[];
   mode: TravelMode;
   /** ISO 8601。移動は必ず時刻を持つ（終日の移動という概念が無い）。 */
   start: string;

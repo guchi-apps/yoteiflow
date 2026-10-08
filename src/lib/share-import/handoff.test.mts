@@ -18,7 +18,7 @@ test("範囲外の座標・http・長すぎる文字列は捨てる", () => {
 
 test("移動の引き継ぎ", () => {
   assert.deepEqual(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=WALK&minutes=12"), {
-    kind: "travel", origin: "A", destination: "B", mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false,
+    kind: "travel", origin: "A", destination: "B", via: [], mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false,
     route: null, link: null,
   });
   // resolve=1 は元のGoogleマップURLがあるときだけ有効（issue #1160）
@@ -97,4 +97,9 @@ test("選んだ経路（名前・距離）を引き継ぎ、無ければ null（
   const none = parseShareHandoff(base);
   assert.ok(none?.kind === "travel");
   assert.equal(none.route, null);
+});
+
+test("経由地は改行区切りの via で受け、順番を保つ（issue #1197）", () => {
+  const handoff = parseShareHandoff("?newTravel=1&origin=A&destination=D&mode=CAR&via=B%0AC");
+  assert.deepEqual(handoff?.kind === "travel" ? handoff.via : null, ["B", "C"]);
 });
