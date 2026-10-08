@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isUserIdAllowed } from "@/lib/access/user-access";
 import { externalApiMessage } from "@/lib/api-error";
 import {
   ActivityCalendarNotFoundError,
@@ -19,7 +20,8 @@ export async function resolveActivityStopUserId(
 ): Promise<{ ok: true; userId: string } | { ok: false; response: NextResponse }> {
   const token = readBearerToken(request.headers.get("authorization"));
   const userId = token ? await resolveUserIdByActivityStopToken(token) : null;
-  if (!userId) {
+  // 許可を取り消された利用者はトークンが生きていても通さない（issue #1179）
+  if (!userId || !(await isUserIdAllowed(userId))) {
     return {
       ok: false,
       response: unauthorized("トークンが無効です。アプリでログインし直してください。"),

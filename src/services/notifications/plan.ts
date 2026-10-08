@@ -3,6 +3,7 @@ import type { NotificationKind } from "@prisma/client";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { eventLeadAnnouncement, resolveEventLeadMinutes } from "@/lib/event-notification";
+import { isUserIdAllowed } from "@/lib/access/user-access";
 import { db } from "@/lib/db";
 import { listEventNotificationSettings, toEventNotificationOverride } from "@/services/calendar/event-notification-settings";
 import { planTravelDrafts } from "@/services/notifications/plan-travels";
@@ -84,8 +85,11 @@ export async function listUsersToPlan(now: Date): Promise<string[]> {
   });
   const byUser = new Map(settings.map((row) => [row.userId, row]));
 
-  return rows
-    .map((row) => row.userId)
+  // 許可を取り消された利用者には通知を作らない（issue #1179）。購読・端末の行は消えないため、ここで外す。
+  const allowed = await Promise.all(rows.map(async (row) => ((await isUserIdAllowed(row.userId)) ? row.userId : null)));
+
+  return allowed
+    .filter((userId): userId is string => userId !== null)
     .filter((userId) => {
       const setting = byUser.get(userId);
       // 設定が無い利用者は既定（予定・タスクとも通知する）で扱う。許可した直後がこの状態になる。

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isUserIdAllowed } from "@/lib/access/user-access";
 import { resolveUserIdByWidgetToken } from "@/services/activity/widget-token";
 
 /**
@@ -26,7 +27,8 @@ export async function resolveWidgetUserId(
   }
 
   const userId = await resolveUserIdByWidgetToken(token);
-  if (!userId) {
+  // 許可を取り消された利用者はトークンが生きていても通さない（issue #1179）
+  if (!userId || !(await isUserIdAllowed(userId))) {
     return {
       ok: false,
       response: unauthorized("トークンが無効です。設定のiPhoneウィジェットから台本を取り直してください。"),
