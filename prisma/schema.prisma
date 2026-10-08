@@ -390,6 +390,8 @@ model TravelPlan {
 
   origin      String
   destination String
+  // 経由地の名前の配列（JSON文字列）。経由なしはnull（issue #1197・src/lib/travel-via.ts）
+  via         String?    @db.Text
   mode        TravelMode @default(PUBLIC_TRANSIT)
 
   departAt DateTime

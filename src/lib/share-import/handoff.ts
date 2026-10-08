@@ -7,6 +7,7 @@
  * （`SharedConfig.handoffURL`）と許可キーを揃えること（`check-consistency.mjs`が照合する）。
  */
 
+import { normalizeVia } from "@/lib/travel-via";
 import { isTravelMode, type TravelMode } from "@/types/calendar";
 
 const MAX_TEXT = 500;
@@ -20,6 +21,8 @@ export type ShareHandoff =
       kind: "travel";
       origin: string;
       destination: string;
+      /** 経由地（順番どおり）。無ければ空配列（issue #1197） */
+      via: string[];
       mode: TravelMode;
       minutes: number | null;
       /** 所要時間がAIの推定か（Googleマップ経路・issue #1142）。入力画面で出どころを「AIによる目安」にする */
@@ -118,6 +121,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
       kind: "travel",
       origin,
       destination,
+      via: normalizeVia((params.get("via") ?? "").split("\n")),
       mode,
       minutes: validMinutes,
       estimated: validMinutes !== null && params.get("estimated") === "1",
@@ -138,7 +142,7 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "via", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance"] as const;
 
 /** 共有の引き継ぎ（未処理）がURLに載っているか。URL同期などが先にクエリを消さないための判定（issue #1143）。 */
 export function hasHandoffQuery(search: string): boolean {

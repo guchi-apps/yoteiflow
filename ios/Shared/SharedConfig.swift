@@ -31,7 +31,7 @@ enum SharedConfig {
     /// Web側の `src/lib/share-import/handoff.ts`（`HANDOFF_QUERY_KEYS`）と揃えること
     /// （`ios/scripts/check-consistency.mjs` が照合する）。引き継げるのは `/calendar` だけ。
     static let handoffQueryKeys: [String] = [
-        "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "mode", "minutes",
+        "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "via", "mode", "minutes",
         "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance",
     ]
     static let handoffPath = "/calendar"

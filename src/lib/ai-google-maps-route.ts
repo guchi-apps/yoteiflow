@@ -18,6 +18,8 @@ export type GoogleMapsRouteAnalysis = {
 export type GoogleMapsRouteAnalysisInput = {
   origin: string;
   destination: string;
+  /** 経由地（順番どおり）。所要時間は経由を含む全行程で求める（issue #1197） */
+  waypoints?: string[];
   mode: TravelMode;
   url: string;
 };
@@ -38,12 +40,12 @@ export function buildGoogleMapsRouteAnalysisPrompt(input: GoogleMapsRouteAnalysi
 - origin と destination は構造化情報にある値をそのまま使う。空文字にしない
 - mode は ${["CAR", "PUBLIC_TRANSIT", "WALK", "OTHER"].join(", ")} のいずれか
 - minutes は経路の所要時間を分で表す1以上1440以下の整数
-- URLに所要時間が含まれない場合だけ、発着地と交通手段から妥当な所要時間を1つ補完する
+- URLに所要時間が含まれない場合だけ、発着地（経由地があれば経由して通る全行程）と交通手段から妥当な所要時間を1つ補完する
 - 実在しない路線・施設・交通手段を創作しない
 
 # 構造化情報
 出発地: ${input.origin}
-目的地: ${input.destination}
+${input.waypoints && input.waypoints.length > 0 ? `経由地（この順に通る）: ${input.waypoints.join(" → ")}\n` : ""}目的地: ${input.destination}
 交通手段: ${input.mode}
 共有URL: ${input.url}`;
 }

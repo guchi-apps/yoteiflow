@@ -1,5 +1,6 @@
 import { resolveActivityStopUserId, shortcutError, shortcutJson } from "@/app/api/shortcuts/shared";
 import { externalApiMessage } from "@/lib/api-error";
+import { travelTitle } from "@/lib/travel-title";
 import { parseSharedTravelBody, type SharedTravelBody } from "@/lib/share-import/travel-body";
 import { buildYahooTravelImport, type YahooTravelImport } from "@/lib/yahoo-transit-import";
 import { getTimeZone, importSharedTravel } from "@/services/travel/plans";
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     }
     travel = built.travel;
   }
-  const label = `${travel.origin} → ${travel.destination}`;
+  const label = travelTitle(travel);
   try {
     const { duplicate, result } = await importSharedTravel(auth.userId, travel);
     if (duplicate) {
