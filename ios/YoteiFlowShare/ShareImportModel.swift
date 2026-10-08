@@ -30,6 +30,8 @@ struct SharedImportItem: Decodable, Equatable {
     let notice: String?
     /// 所要時間の出どころ（YAHOO / AI / GOOGLE_MAPS）。旧サーバーの応答には無いため optional（issue #1160）
     let estimateSource: String?
+    /// 出発・到着の指定基準（depart / arrive）。旧サーバーの応答には無いため optional
+    let scheduleBasis: String?
     /// 経路候補が複数あるときの候補。利用者が1件選ぶまで確定しない（issue #1168）。旧サーバーの応答には無いため optional
     let candidates: [RouteCandidate]?
 

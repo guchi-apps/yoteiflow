@@ -155,6 +155,9 @@ struct ShareImportView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canProceed)
             }
+            .controlSize(.large)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
             if model.hasCandidateChoice && model.selectedCandidate == nil {
                 Button { model.onManual() } label: {
                     Text("手入力で続ける").frame(maxWidth: .infinity)
@@ -164,9 +167,6 @@ struct ShareImportView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
             }
-            .controlSize(.large)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
         }
         .background(.bar)
     }
