@@ -57,7 +57,7 @@ struct ShareImportView: View {
     private func summary(_ item: SharedImportItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if item.isRoute {
-                Text("\(item.origin ?? "") → \(item.destination ?? "")").font(.title3.bold())
+                Text(([item.origin ?? ""] + (item.via ?? []) + [item.destination ?? ""]).joined(separator: " → ")).font(.title3.bold())
                 let chosen = model.selectedCandidate
                 let startAt = chosen?.startAt ?? item.startAt
                 let endAt = chosen?.endAt ?? item.endAt

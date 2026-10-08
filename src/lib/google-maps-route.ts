@@ -11,9 +11,14 @@ import type { TravelMode } from "@/types/calendar";
 
 const GOOGLE_HOSTS = new Set(["google.com", "www.google.com", "maps.google.com", "maps.app.goo.gl"]);
 
+/** 経由地として読む上限。Googleマップの経路指定も複数地点は少数で、長い連なりは読まない */
+export const MAX_WAYPOINTS = 5;
+
 export type GoogleMapsRoute = {
   origin: string;
   destination: string;
+  /** 出発地と目的地の間の経由地（順番どおり）。無ければ空配列（issue #1197） */
+  waypoints: string[];
   mode: TravelMode;
   /** AIが共有経路の情報から補完した所要時間（分）。URL自身には無いため、補完できなければnull。 */
   minutes: number | null;
@@ -138,8 +143,19 @@ export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
 
   const segments = url.pathname.split("/").filter(Boolean);
   const dirIndex = segments.findIndex((segment) => segment === "dir");
-  const pathOrigin = dirIndex >= 0 ? place(segments[dirIndex + 1]) : null;
-  const pathDestination = dirIndex >= 0 ? place(segments[dirIndex + 2]) : null;
+  // `/dir/` の後ろは `出発地/(経由地/)*目的地/data=…`。`data=`・`@座標,ズーム`は地点ではない
+  const pathPlaces =
+    dirIndex >= 0
+      ? segments
+          .slice(dirIndex + 1)
+          .filter((segment) => !segment.startsWith("data=") && !segment.startsWith("@"))
+          .map((segment) => place(segment.replace(/\+/g, " ")))
+      : [];
+  const pathOrigin = pathPlaces[0] ?? null;
+  const pathDestination = pathPlaces.length >= 2 ? pathPlaces[pathPlaces.length - 1] : null;
+  // 読めない（null）地点が途中に混ざるときは順序を保証できないため、経由地ごと読まない
+  const pathVia = pathPlaces.length > 2 ? pathPlaces.slice(1, -1) : [];
+  const waypoints = pathVia.every((item): item is string => item !== null) ? (pathVia as string[]).slice(0, MAX_WAYPOINTS) : [];
   // 座標だけの出発地（`saddr=34.84,135.61`）も名称が無いまま文字列で保持する
   const origin = place(url.searchParams.get("origin")) ?? place(url.searchParams.get("saddr")) ?? pathOrigin;
   const destination = place(url.searchParams.get("destination")) ?? place(url.searchParams.get("daddr")) ?? pathDestination;
@@ -149,6 +165,7 @@ export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
   return {
     origin,
     destination,
+    waypoints: url.searchParams.has("origin") || url.searchParams.has("saddr") ? [] : waypoints,
     mode: dataMode(data) ?? dirflgMode(url.searchParams.get("dirflg")) ?? routeMode(url.searchParams.get("travelmode")),
     // URL自身には所要時間が無いため、APIルートでAI解析後に入れる。
     minutes: null,

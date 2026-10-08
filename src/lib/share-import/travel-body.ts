@@ -1,3 +1,4 @@
+import { normalizeVia } from "@/lib/travel-via";
 import { isTravelMode, type TravelMode } from "@/types/calendar";
 
 const MAX_TEXT = 500;
@@ -6,6 +7,7 @@ const MAX_NOTE = 20_000;
 export type SharedTravelBody = {
   origin: string;
   destination: string;
+  via: string[];
   mode: TravelMode;
   departAt: string;
   arriveAt: string;
@@ -40,6 +42,7 @@ export function parseSharedTravelBody(value: unknown): SharedTravelBody | null {
   return {
     origin,
     destination,
+    via: normalizeVia(raw.via),
     mode: raw.mode,
     departAt,
     arriveAt,

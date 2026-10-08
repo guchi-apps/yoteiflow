@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     const result = await createTravel(userId, {
       origin: body.origin!,
       destination: body.destination!,
+      via: body.via ?? null,
       mode: body.mode!,
       departAt: body.departAt!,
       arriveAt: body.arriveAt!,

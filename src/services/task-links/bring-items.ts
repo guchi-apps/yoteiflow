@@ -1,7 +1,7 @@
 import type { TaskBringItem } from "@prisma/client";
 
 import { db } from "@/lib/db";
-import { placeDisplayName } from "@/lib/place-text";
+import { travelTitle } from "@/lib/travel-title";
 import { travelRelation, TRAVEL_RELATION_LABELS, type RelationEvent, type TravelRelation } from "@/lib/travel-relation";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
@@ -287,7 +287,7 @@ export async function loadBringItemsForEvent(
     const relation = travelRelation({ start, end }, event);
     return {
       id: travel.id,
-      title: `${placeDisplayName(travel.origin)} → ${placeDisplayName(travel.destination)}`,
+      title: travelTitle(travel),
       start,
       end,
       relation,

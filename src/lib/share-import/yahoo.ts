@@ -27,6 +27,7 @@ export function resolveYahooShare(text: string, timeZone: string): ShareImportRe
       title: `${travel.origin} → ${travel.destination}`,
       origin: travel.origin,
       destination: travel.destination,
+      via: [],
       address: null,
       coordinates: null,
       startAt: travel.departAt,

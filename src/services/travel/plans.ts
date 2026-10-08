@@ -1,7 +1,8 @@
 import type { TravelPlan } from "@prisma/client";
 
 import { db } from "@/lib/db";
-import { placeDisplayName } from "@/lib/place-text";
+import { travelTitle } from "@/lib/travel-title";
+import { parseVia, serializeVia } from "@/lib/travel-via";
 import {
   isTravelEstimateSource,
   isTravelMode,
@@ -30,6 +31,8 @@ import { resolveTravelCalendarId } from "./settings";
 export type TravelWriteInput = {
   origin: string;
   destination: string;
+  /** 出発地と目的地の間の経由地（順番どおり）。省略・空なら経由なし（issue #1197） */
+  via?: string[] | null;
   mode: TravelMode;
   /** ISO 8601 */
   departAt: string;
@@ -84,7 +87,8 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
     id: plan.id,
     // カレンダー上では場所名だけを出す。住所付きの生の値は origin/destination に残す
     // （編集フォームの初期値・地点解決に要るため。issue #587）。
-    title: `${placeDisplayName(plan.origin)} → ${placeDisplayName(plan.destination)}`,
+    title: travelTitle(plan),
+    via: parseVia(plan.via),
     origin: plan.origin,
     destination: plan.destination,
     mode: plan.mode,
@@ -166,6 +170,7 @@ export async function importSharedTravel(
       userId,
       origin: input.origin,
       destination: input.destination,
+      via: serializeVia(input.via),
       departAt: new Date(input.departAt),
       arriveAt: new Date(input.arriveAt),
     },
@@ -277,6 +282,7 @@ function toWriteData(input: TravelWriteInput) {
   return {
     origin: input.origin.trim(),
     destination: input.destination.trim(),
+    via: serializeVia(input.via),
     mode: input.mode,
     departAt,
     arriveAt,
