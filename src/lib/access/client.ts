@@ -60,12 +60,11 @@ function client() {
 
 /**
  * Supabase が検証したユーザーから、判定APIへ送る主体を作る。
- * メールが確認済みかは Supabase の確認時刻・Googleの email_verified から決める
- * （ブラウザの申告ではなく、サーバーが検証したセッションの値だけを使う）。
+ * メールが確認済みかは Supabase が確かめた確認時刻（email_confirmed_at）だけから決める。
+ * user_metadata は利用者が updateUser で書き換えられるため根拠にしない（issue #1183）。
  */
-export function toAccessSubject(user: Pick<User, "id" | "email" | "email_confirmed_at" | "user_metadata">): AccessSubject {
-  const verified = user.user_metadata?.email_verified === true || Boolean(user.email_confirmed_at);
-  return { sub: user.id, email: user.email ?? "", emailVerified: verified };
+export function toAccessSubject(user: Pick<User, "id" | "email" | "email_confirmed_at">): AccessSubject {
+  return { sub: user.id, email: user.email ?? "", emailVerified: Boolean(user.email_confirmed_at) };
 }
 
 export async function decideAccess(subject: AccessSubject): Promise<AccessDecision> {

@@ -281,10 +281,24 @@ struct ScheduleWidgetView: View {
     private func scheduleRow(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> some View {
         HStack(spacing: 6) {
             Text(whenText(item, payload)).monospacedDigit().foregroundStyle(.secondary)
-            Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
+            if item.kind == "travel", let origin = item.origin, let destination = item.destination {
+                Image(systemName: travelSymbol(item.mode)).foregroundStyle(.tint)
+                Text("\(origin)→\(destination)").lineLimit(1)
+            } else {
+                Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
+            }
         }
         .font(.caption)
         .opacity(item.past || item.outcome != nil ? 0.5 : 1)
+    }
+
+    private func travelSymbol(_ mode: String?) -> String {
+        switch mode {
+        case "CAR": return "car.fill"
+        case "PUBLIC_TRANSIT": return "tram.fill"
+        case "WALK": return "figure.walk"
+        default: return "arrow.triangle.turn.up.right.diamond"
+        }
     }
 
     private func whenText(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> String {

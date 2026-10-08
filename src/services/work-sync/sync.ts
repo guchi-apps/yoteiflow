@@ -1,6 +1,13 @@
 import type { WorkGenerated } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import {
+  createWithReservation,
+  isReservation,
+  STALE_RESERVATION_MS,
+  type ReserveOutcome,
+  type ReserveStore,
+} from "@/lib/work-sync/reserve";
 import { decide, type Snapshot } from "@/lib/work-sync/decide";
 import {
   planWorkItems,
@@ -182,9 +189,15 @@ async function reconcile(
   };
 
   for (const key of keys) {
-    const row = rowByKey.get(key) ?? null;
+    let row = rowByKey.get(key) ?? null;
     const item = expectedByKey.get(key) ?? null;
     try {
+      if (row && isReservation(row)) {
+        // 別の同期が外部へ書いている最中。触らない（残骸になった確保だけ片付けて作り直す）。
+        if (Date.now() - row.createdAt.getTime() < STALE_RESERVATION_MS) continue;
+        await db.workGenerated.deleteMany({ where: { id: row.id } });
+        row = null;
+      }
       const current = row && row.status === "ACTIVE" ? await readCurrent(userId, row) : null;
       const expected = item ? expectedSnapshot(item) : null;
       const decision = decide(
@@ -214,24 +227,55 @@ async function reconcile(
             seq: item!.seq,
             snapshot: expected as object,
           };
+          // 先に枠（WorkGenerated）を確保し、確保できた側だけが外部へ書く（issue #1180）。
+          const store: ReserveStore<WorkGenerated> = {
+            reserve: async () => {
+              try {
+                return await db.workGenerated.create({ data });
+              } catch (error) {
+                if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
+                  return null;
+                }
+                throw error;
+              }
+            },
+            release: async (id) => {
+              await db.workGenerated.delete({ where: { id } });
+            },
+          };
+          let outcome: ReserveOutcome;
           if (item!.kind === "WORK") {
             const { calendarId: calId, target } = await workTarget();
             if (!target.ok) throw new Error("勤務予定の保存先カレンダーに書き込めません。");
-            const created = await createEvent(
-              target.account,
-              calId,
-              eventInput(item!, timeZone, workRecordId),
+            outcome = await createWithReservation(
+              store,
+              async () => createEvent(target.account, calId, eventInput(item!, timeZone, workRecordId)),
+              async (id, created) => {
+                await db.workGenerated.update({
+                  where: { id },
+                  data: { googleCalendarId: calId, googleEventId: created.id },
+                });
+              },
+              async (created) => {
+                await deleteEvent(target.account, calId, created.id);
+              },
             );
-            await db.workGenerated.create({
-              data: { ...data, googleCalendarId: calId, googleEventId: created.id },
-            });
           } else {
-            const saved = await createTravel(userId, travelInput(item!));
-            await db.workGenerated.create({
-              data: { ...data, travelPlanId: saved.travels[0].id },
-            });
+            outcome = await createWithReservation(
+              store,
+              async () => createTravel(userId, travelInput(item!)),
+              async (id, saved) => {
+                await db.workGenerated.update({
+                  where: { id },
+                  data: { travelPlanId: saved.travels[0].id },
+                });
+              },
+              async (saved) => {
+                await deleteTravel(userId, saved.travels[0].id);
+              },
+            );
           }
-          result.created += 1;
+          if (outcome === "created") result.created += 1;
           break;
         }
         case "update": {
