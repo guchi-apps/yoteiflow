@@ -14,6 +14,8 @@ struct SharedImportItem: Decodable, Equatable {
     let title: String
     let origin: String?
     let destination: String?
+    /// 経由地（順番どおり・issue #1197）。旧サーバーの応答には無いため optional
+    let via: [String]?
     let address: String?
     let coordinates: Coordinates?
     let startAt: String?

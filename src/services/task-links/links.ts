@@ -1,7 +1,7 @@
 import type { GoogleAccount, TaskEventLink } from "@prisma/client";
 
 import { db } from "@/lib/db";
-import { placeDisplayName } from "@/lib/place-text";
+import { travelTitle } from "@/lib/travel-title";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { getEvent, toCalendarItems } from "@/services/google-calendar/events";
 import { createNotionClient } from "@/services/notion/client";
@@ -293,11 +293,6 @@ async function writeResolvedDate(
   }
 }
 
-/** 移動の表示名。toTravelItem() と同じく、住所を除いた場所名で組み立てる。 */
-function travelTitle(plan: { origin: string; destination: string }): string {
-  return `${placeDisplayName(plan.origin)} → ${placeDisplayName(plan.destination)}`;
-}
-
 /**
  * 紐づけ先の移動を1件取得する（issue #914）。移動の本体はDaySpanのDBにあり、外部APIの往復は無い。
  * 段階の起点は出発（start）と到着（end）。移動は必ず時刻を持つため終日にはならない。
@@ -508,7 +503,7 @@ export async function dropLinksForEvent(
 export async function syncLinksForTravel(
   userId: string,
   travelId: string,
-  travel: { departAt: Date; arriveAt: Date; origin: string; destination: string },
+  travel: { departAt: Date; arriveAt: Date; origin: string; destination: string; via?: string | null },
 ): Promise<{ synced: number; failed: number }> {
   const links = await db.taskEventLink.findMany({ where: { userId, travelId } });
   if (links.length === 0) return { synced: 0, failed: 0 };

@@ -11,6 +11,9 @@ import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-
 import { cn } from "@/lib/utils";
 import { candidateFormTimes } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
+import { placeDisplayName } from "@/lib/place-text";
+import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
+import { travelTitle } from "@/lib/travel-title";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -34,6 +37,8 @@ export type TravelDraft = {
   travel?: TravelItem;
   origin: string;
   destination: string;
+  /** 経由地（順番どおり・issue #1197）。無ければ経由なし */
+  via?: string[];
   mode: TravelMode;
   /** 入力欄の形式（YYYY-MM-DDTHH:mm）。 */
   departAt: string;
@@ -82,6 +87,7 @@ export function TravelForm({
 
   const [origin, setOrigin] = useState(draft.origin);
   const [destination, setDestination] = useState(draft.destination);
+  const [via, setVia] = useState<string[]>(draft.via ?? []);
   const [mode, setMode] = useState<TravelMode>(draft.mode);
   const [departAt, setDepartAt] = useState(draft.departAt);
   const [arriveAt, setArriveAt] = useState(draft.arriveAt);
@@ -209,8 +215,11 @@ export function TravelForm({
    * 日時・所要時間はGoogleを再取得した代表時間で、取れなかった項目は触らず手で入れてもらう（issue #1142・#1160・#1168）。
    */
   const applyGoogleMapsRoute = (item: SharedImport, sourceUrl: string | null) => {
-    if (item.origin) setOrigin(item.origin);
-    if (item.destination) setDestination(item.destination);
+    // 座標だけの地点（Googleの保存地点「自宅」など）は、近くの登録済みの場所の名前へ直す（issue #1197）
+    const named = (value: string) => placeTextForCoordinates(value, placeCatalog.places) ?? value;
+    if (item.origin) setOrigin(named(item.origin));
+    if (item.destination) setDestination(named(item.destination));
+    setVia(item.via.map(named));
     if (item.mode) setMode(item.mode);
 
     setRouteCandidates(item.candidates);
@@ -323,6 +332,7 @@ export function TravelForm({
       const payload = {
         origin: origin.trim(),
         destination: destination.trim(),
+        via,
         mode,
         departAt: departIso,
         arriveAt: arriveIso,
@@ -423,6 +433,26 @@ export function TravelForm({
           eventTitle={destination}
           placeDatabaseReady={placeCatalog.ready}
         />
+
+        {via.length > 0 && (
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="type-label-small px-1 text-on-surface-variant">経由地</span>
+            <ul className="flex flex-wrap gap-2">
+              {via.map((item, index) => (
+                <li key={`${index}-${item}`}>
+                  <button
+                    type="button"
+                    className="type-label-medium max-w-full truncate rounded-full border border-outline-variant px-3 py-1 text-on-surface"
+                    aria-label={`経由地「${placeDisplayName(item)}」を外す`}
+                    onClick={() => setVia((current) => current.filter((_, i) => i !== index))}
+                  >
+                    {placeDisplayName(item)} ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <LocationInput
           id="travel-destination"
@@ -595,7 +625,7 @@ export function TravelForm({
 
         {editingNotification && (
           <EventNotificationDialog
-            title={origin && destination ? `${origin} → ${destination}` : "この移動"}
+            title={origin && destination ? travelTitle({ origin, via, destination }) : "この移動"}
             initial={notification}
             onCancel={() => setEditingNotification(false)}
             onSaved={(next) => {
@@ -645,6 +675,7 @@ export function toTravelDraft(travel: TravelItem, timeZone: string): TravelDraft
     travel,
     origin: travel.origin,
     destination: travel.destination,
+    via: travel.via,
     mode: travel.mode,
     departAt: isoToLocalInput(travel.start, timeZone),
     arriveAt: isoToLocalInput(travel.end, timeZone),

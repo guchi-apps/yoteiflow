@@ -19,6 +19,8 @@ export type SharedImport = {
   title: string;
   origin: string | null;
   destination: string | null;
+  /** 出発地と目的地の間の経由地（Googleマップ経路のみ・issue #1197）。無ければ空配列 */
+  via: string[];
   address: string | null;
   coordinates: { lat: number; lng: number } | null;
   /** ISO 8601。日時が取れなかったとき（Googleマップの日時未指定など）は null */

@@ -1,5 +1,5 @@
 import { eventLeadAnnouncement, resolveEventLeadMinutes } from "@/lib/event-notification";
-import { placeDisplayName } from "@/lib/place-text";
+import { travelTitle } from "@/lib/travel-title";
 import type { EventNotificationOverride } from "@/types/calendar";
 
 /**
@@ -12,6 +12,7 @@ export type TravelDraftSource = {
   id: string;
   origin: string;
   destination: string;
+  via?: string | null;
   departAt: Date;
   arriveAt: Date;
 };
@@ -42,7 +43,7 @@ export function planTravelDrafts(
     if (leadList.length === 0) continue;
     if (travel.departAt > windowEnd) continue;
 
-    const name = `${placeDisplayName(travel.origin)} → ${placeDisplayName(travel.destination)}`;
+    const name = travelTitle(travel);
     const departIso = travel.departAt.toISOString();
     const timeRange = `${format.formatTime(departIso)}〜${format.formatTime(travel.arriveAt.toISOString())}`;
 

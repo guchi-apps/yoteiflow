@@ -381,6 +381,7 @@ export function CalendarShell({
           travel: {
             origin: handoff.origin,
             destination: handoff.destination,
+            via: handoff.via,
             mode: handoff.mode,
             departAt,
             arriveAt: arrive,
@@ -407,6 +408,7 @@ export function CalendarShell({
         travel: {
           origin: handoff.origin,
           destination: handoff.destination,
+          via: handoff.via,
           mode: handoff.mode,
           departAt,
           arriveAt: arrive,
