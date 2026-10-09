@@ -38,6 +38,10 @@ final class ShareViewController: UIViewController {
             if let item = self?.model.item { self?.handOffToApp(item, link: true) }
         }
 
+        model.onEdit = { [weak self] in
+            if let item = self?.model.item { self?.handOffToApp(item) }
+        }
+
         model.onManual = { [weak self] in
             if let item = self?.model.item { self?.handOffToApp(item, manual: true) }
         }

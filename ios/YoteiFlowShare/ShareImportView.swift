@@ -144,6 +144,15 @@ struct ShareImportView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             }
+            if model.canEditInApp {
+                Button { model.onEdit() } label: {
+                    Text("編集して追加").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            }
             HStack(spacing: 12) {
                 Button(role: .cancel) { model.onCancel() } label: {
                     Text("キャンセル").frame(maxWidth: .infinity)
