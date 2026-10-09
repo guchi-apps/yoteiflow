@@ -99,6 +99,14 @@ final class ShareImportViewModel: ObservableObject {
     var onLink: () -> Void = {}
     /// 経路を選ばずに本体アプリの移動入力で続ける（複数候補の未選択時の逃げ道）
     var onManual: () -> Void = {}
+    /// Googleマップ経路を、登録せずに本体アプリの移動入力で日時・発着地を直してから追加する（issue #1203）
+    var onEdit: () -> Void = {}
+
+    /// 「編集して追加」を出すか。直接登録・予定への紐づけは変えず、Googleマップの経路だけ併設する
+    var canEditInApp: Bool {
+        guard let item else { return false }
+        return item.source == "google_maps" && item.isRoute && canProceed
+    }
 
     /// 直接登録できる経路（日時が揃った経路）だけ、既存の予定へ紐づけて追加する入口を出す（issue #1128）
     var canLinkToEvent: Bool {
