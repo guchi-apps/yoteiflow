@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.17.2",
+    date: "2026-10-10",
+    changes: [
+      "Googleマップから移動を取り込むとき、徒歩・自転車・公共交通でも、Googleマップに表示されている所要時間をそのまま読み取れるようになりました。また、共有画面でAIの目安が出ていた場合に「編集して追加」で入力画面を開いても、所要時間が変わってしまわないよう直しました。",
+    ],
+  },
+  {
     version: "4.17.1",
     date: "2026-10-10",
     changes: [
