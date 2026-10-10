@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
-import { candidateFormTimes } from "@/lib/share-import/candidate-times";
+import { candidateFormTimes, deriveOtherSide, type TimeBasis } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
@@ -92,6 +92,15 @@ export function TravelForm({
   const [departAt, setDepartAt] = useState(draft.departAt);
   const [arriveAt, setArriveAt] = useState(draft.arriveAt);
   const [note, setNote] = useState(draft.note ?? "");
+  // 時刻の基準（利用者が固定する側）。出発基準は到着＝出発＋所要時間、到着基準は出発＝到着−所要時間（issue #1203）
+  const [basis, setBasis] = useState<TimeBasis>("depart");
+  // Googleマップの経路（選んだ候補）の代表時間（分）。未取得・手入力で時間帯を決めたときは null
+  const [routeMinutes, setRouteMinutes] = useState<number | null>(null);
+  // 利用者が直した項目。あとから届く解析結果で無断で上書きしない
+  const touchedRef = useRef(new Set<"origin" | "destination" | "via" | "mode" | "times" | "basis">());
+  const touch = (field: "origin" | "destination" | "via" | "mode" | "times" | "basis") => {
+    touchedRef.current.add(field);
+  };
   // 所要時間の出どころ。手で入れた値・AIの目安・経路検索の結果を保存先にも残す。
   const [estimateSource, setEstimateSource] = useState<TravelEstimateSource>(
     editing?.estimateSource ?? draft.estimateSource ?? "MANUAL",
@@ -135,14 +144,37 @@ export function TravelForm({
    * 候補を押したときは applyEstimate が直接 setDepartAt / setArriveAt を呼ぶため、
    * この経路は通らない（出どころが押した候補のまま残る）。
    */
-  const editDepartAt = (value: string) => {
-    setDepartAt(value);
+  const editTime = (side: TimeBasis, value: string) => {
+    touch("times");
+    if (side === "depart") setDepartAt(value);
+    else setArriveAt(value);
+    if (side === basis && routeMinutes !== null) {
+      // 基準側を直したときは、取得済みの代表時間で反対側を求め直す（出どころはGoogleのまま）
+      const other = deriveOtherSide(basis, value, routeMinutes);
+      if (other) {
+        if (basis === "depart") setArriveAt(other);
+        else setDepartAt(other);
+        return;
+      }
+    }
+    // 反対側を直した・代表時間が無いときは手入力の時間帯。Google由来の所要時間と混同しない
+    setRouteMinutes(null);
     setEstimateSource("MANUAL");
   };
+  const editDepartAt = (value: string) => editTime("depart", value);
+  const editArriveAt = (value: string) => editTime("arrive", value);
 
-  const editArriveAt = (value: string) => {
-    setArriveAt(value);
-    setEstimateSource("MANUAL");
+  const editOrigin = (value: string) => {
+    touch("origin");
+    setOrigin(value);
+  };
+  const editDestination = (value: string) => {
+    touch("destination");
+    setDestination(value);
+  };
+  const editMode = (value: TravelMode) => {
+    touch("mode");
+    setMode(value);
   };
 
   /**
@@ -171,7 +203,9 @@ export function TravelForm({
       setArriveAt(arrive);
       setDepartAt(format(new Date(`${arrive}:00Z`).getTime() - durationMs));
     } else if (times.minutes !== null) {
-      setArriveAt(format(new Date(`${departAt}:00Z`).getTime() + times.minutes * 60_000));
+      // 指定日時が無い共有: 利用者が選んでいる基準側（既定は出発＝入力開始時の現在時刻）を保つ
+      if (basis === "arrive" && arriveAt) setDepartAt(format(new Date(`${arriveAt}:00Z`).getTime() - times.minutes * 60_000));
+      else setArriveAt(format(new Date(`${departAt}:00Z`).getTime() + times.minutes * 60_000));
     } else {
       return false;
     }
@@ -202,9 +236,11 @@ export function TravelForm({
       { departAt, arriveAt },
       (iso) => isoToLocalInput(iso, timeZone),
       draft.linkedEvent ? { departAt, arriveAt } : null,
+      basis,
     );
     setDepartAt(times.departAt);
     setArriveAt(times.arriveAt);
+    setRouteMinutes(candidate.minutes);
     setSelectedRoute(index);
     setEstimateSource(candidate.minutes !== null ? "GOOGLE_MAPS" : "MANUAL");
     setRouteNote(candidate);
@@ -217,10 +253,15 @@ export function TravelForm({
   const applyGoogleMapsRoute = (item: SharedImport, sourceUrl: string | null) => {
     // 座標だけの地点（Googleの保存地点「自宅」など）は、近くの登録済みの場所の名前へ直す（issue #1197）
     const named = (value: string) => placeTextForCoordinates(value, placeCatalog.places) ?? value;
-    if (item.origin) setOrigin(named(item.origin));
-    if (item.destination) setDestination(named(item.destination));
-    setVia(item.via.map(named));
-    if (item.mode) setMode(item.mode);
+    // 解析中に利用者が直した項目は上書きしない（issue #1203）
+    const touched = touchedRef.current;
+    if (item.origin && !touched.has("origin")) setOrigin(named(item.origin));
+    if (item.destination && !touched.has("destination")) setDestination(named(item.destination));
+    if (!touched.has("via")) setVia(item.via.map(named));
+    if (item.mode && !touched.has("mode")) setMode(item.mode);
+    // 日時指定ありの共有は、共有された基準（出発指定／到着指定）を採る
+    if (item.scheduleBasis && !touched.has("basis")) setBasis(item.scheduleBasis);
+    const keepTimes = touched.has("times");
 
     setRouteCandidates(item.candidates);
     setSelectedRoute(null);
@@ -231,7 +272,9 @@ export function TravelForm({
       const index = preselect
         ? item.candidates.findIndex((candidate) => candidate.name === preselect.name && candidate.distanceText === preselect.distance)
         : -1;
-      if (index >= 0) {
+      if (keepTimes) {
+        applied = true;
+      } else if (index >= 0) {
         selectRouteCandidate(item.candidates, index);
         applied = true;
       } else {
@@ -247,9 +290,14 @@ export function TravelForm({
         }
         applied = false;
       }
+    } else if (keepTimes) {
+      applied = true;
     } else {
       applied = applyTimes({ startAt: item.startAt, endAt: item.endAt, minutes: item.durationMinutes });
-      if (applied) setEstimateSource(item.estimateSource ?? "MANUAL");
+      if (applied) {
+        setEstimateSource(item.estimateSource ?? "MANUAL");
+        setRouteMinutes(item.estimateSource === "GOOGLE_MAPS" ? item.durationMinutes : null);
+      }
     }
     // 元の共有URL・予測の幅・距離をメモへ残し、登録後にも参照できるようにする
     const detail = item.detail ?? sourceUrl;
@@ -257,6 +305,11 @@ export function TravelForm({
     setError(null);
     return applied;
   };
+
+  const applyRouteRef = useRef(applyGoogleMapsRoute);
+  useEffect(() => {
+    applyRouteRef.current = applyGoogleMapsRoute;
+  });
 
   const importGoogleMapsRoute = async (value: string) => {
     const requestId = googleRouteRequestRef.current + 1;
@@ -279,7 +332,8 @@ export function TravelForm({
       }
       const { item } = (await response.json()) as { item: SharedImport };
       if (!isCurrentRequest()) return;
-      const applied = applyGoogleMapsRoute(item, item.sourceUrl ?? value);
+      // 非同期の完了時点の最新の入力値で反映する（古い描画の値で上書きしない）
+      const applied = applyRouteRef.current(item, item.sourceUrl ?? value);
       const modeLabel = item.mode ? TRAVEL_MODE_LABELS[item.mode] : "";
       setGoogleRouteStatus({
         kind: "success",
@@ -428,7 +482,7 @@ export function TravelForm({
           id="travel-origin"
           label="出発地"
           value={origin}
-          onChange={setOrigin}
+          onChange={editOrigin}
           places={placeCatalog.places}
           eventTitle={destination}
           placeDatabaseReady={placeCatalog.ready}
@@ -444,7 +498,10 @@ export function TravelForm({
                     type="button"
                     className="type-label-medium max-w-full truncate rounded-full border border-outline-variant px-3 py-1 text-on-surface"
                     aria-label={`経由地「${placeDisplayName(item)}」を外す`}
-                    onClick={() => setVia((current) => current.filter((_, i) => i !== index))}
+                    onClick={() => {
+                      touch("via");
+                      setVia((current) => current.filter((_, i) => i !== index));
+                    }}
                   >
                     {placeDisplayName(item)} ✕
                   </button>
@@ -458,7 +515,7 @@ export function TravelForm({
           id="travel-destination"
           label="目的地"
           value={destination}
-          onChange={setDestination}
+          onChange={editDestination}
           places={placeCatalog.places}
           eventTitle={destination}
           placeDatabaseReady={placeCatalog.ready}
@@ -477,12 +534,40 @@ export function TravelForm({
                   "rounded-full",
                   option === mode && "bg-travel-container text-on-travel-container",
                 )}
-                onClick={() => setMode(option)}
+                onClick={() => editMode(option)}
               >
                 {TRAVEL_MODE_LABELS[option]}
               </Button>
             ))}
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2" role="radiogroup" aria-label="時刻の基準">
+          <span className="type-label-small px-1 text-on-surface-variant">時刻の基準</span>
+          <div className="flex flex-wrap gap-2">
+            {(["depart", "arrive"] as const).map((option) => (
+              <Button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={option === basis}
+                variant={option === basis ? "secondary" : "outline"}
+                size="sm"
+                className="rounded-full"
+                onClick={() => {
+                  touch("basis");
+                  setBasis(option);
+                }}
+              >
+                {option === "depart" ? "出発日時を指定" : "到着日時を指定"}
+              </Button>
+            ))}
+          </div>
+          <p className="type-label-small px-1 text-on-surface-variant">
+            {routeMinutes !== null
+              ? `Googleマップの代表時間（${routeMinutes}分）から${basis === "depart" ? "到着" : "出発"}を求めます。反対側を直すと手入力の時間帯になります。`
+              : "所要時間を取得できていないときは、出発・到着の両方を入力してください。"}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">

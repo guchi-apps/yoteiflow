@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { candidateFormTimes } from "@/lib/share-import/candidate-times";
+import { candidateFormTimes, deriveOtherSide, nowLocalInput } from "@/lib/share-import/candidate-times";
 
 const toLocal = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 16);
 const current = { departAt: "2026-10-10T09:00", arriveAt: "2026-10-10T09:30" };
@@ -27,4 +27,31 @@ test("日時指定が無い共有: 出発は保持し、代表時間があると
 test("予定に紐づく移動は予定の日を動かさない", () => {
   const linked = { departAt: "2026-11-01T09:00", arriveAt: "2026-11-01T10:00" };
   assert.deepEqual(candidateFormTimes(a, linked, toLocal, linked), { departAt: "2026-11-01T10:40", arriveAt: "2026-11-01T12:30" });
+});
+
+const bare = { startAt: null, endAt: null, minutes: 30 };
+
+test("日時なし: 現在10:00・代表30分なら10:00〜10:30（現在は閲覧日に依らず利用者のタイムゾーン）", () => {
+  const now = nowLocalInput(new Date("2026-10-10T01:00:00.000Z"), toLocal);
+  assert.equal(now, "2026-10-10T10:00");
+  assert.deepEqual(candidateFormTimes(bare, { departAt: now, arriveAt: "" }, toLocal), { departAt: "2026-10-10T10:00", arriveAt: "2026-10-10T10:30" });
+});
+
+test("出発11:00なら11:00〜11:30、到着12:00なら11:30〜12:00で、候補を変えても基準側を保つ", () => {
+  assert.equal(deriveOtherSide("depart", "2026-10-10T11:00", 30), "2026-10-10T11:30");
+  assert.equal(deriveOtherSide("arrive", "2026-10-10T12:00", 30), "2026-10-10T11:30");
+  const arrive = { departAt: "2026-10-10T11:30", arriveAt: "2026-10-10T12:00" };
+  assert.deepEqual(candidateFormTimes({ ...bare, minutes: 45 }, arrive, toLocal, null, "arrive"), { departAt: "2026-10-10T11:15", arriveAt: "2026-10-10T12:00" });
+  assert.deepEqual(candidateFormTimes({ ...bare, minutes: 45 }, { departAt: "2026-10-10T11:00", arriveAt: "2026-10-10T11:30" }, toLocal), { departAt: "2026-10-10T11:00", arriveAt: "2026-10-10T11:45" });
+});
+
+test("所要時間が未取得なら反対側は空（0分扱いにしない）。出発初期値・到着基準の出発は保持する", () => {
+  assert.equal(deriveOtherSide("depart", "2026-10-10T11:00", null), "");
+  assert.deepEqual(candidateFormTimes({ ...bare, minutes: null }, { departAt: "2026-10-10T10:00", arriveAt: "2026-10-10T10:30" }, toLocal), { departAt: "2026-10-10T10:00", arriveAt: "" });
+  assert.deepEqual(candidateFormTimes({ ...bare, minutes: null }, { departAt: "2026-10-10T10:00", arriveAt: "2026-10-10T12:00" }, toLocal, null, "arrive"), { departAt: "2026-10-10T10:00", arriveAt: "2026-10-10T12:00" });
+});
+
+test("日付またぎ", () => {
+  assert.equal(deriveOtherSide("depart", "2026-10-10T23:50", 30), "2026-10-11T00:20");
+  assert.equal(deriveOtherSide("arrive", "2026-10-11T00:10", 30), "2026-10-10T23:40");
 });

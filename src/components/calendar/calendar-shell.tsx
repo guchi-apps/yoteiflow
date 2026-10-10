@@ -47,6 +47,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
+import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
@@ -370,8 +371,8 @@ export function CalendarShell({
       setSharedLink({ origin: handoff.origin, destination: handoff.destination, mode: handoff.mode, ...handoff.link });
       return;
     }
-    const start = toQuickEventDraft(date, DEFAULT_START_MINUTES);
-    const departAt = `${start.date}T${start.startTime}`;
+    // 日時の無い共有の出発は「いま」（利用者のタイムゾーン）。閲覧中の日付には引かれず、入力開始時に1回だけ決める（issue #1203）
+    const departAt = nowLocalInput(new Date(), (iso) => isoToLocalInput(iso, timeZone));
     if (handoff.resolve && handoff.url) {
       // Googleマップの日時・予測所要時間は移動の入力で再取得する。取れるまでの時刻は仮の値（issue #1160）
       const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + 30 * 60_000).toISOString().slice(0, 16);
@@ -397,7 +398,7 @@ export function CalendarShell({
     const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
     // 共有に無かった値は仮の値で埋めているため、確定した情報のように見せず案内を添える（issue #1142）
     const notice = [
-      "日時は共有に含まれていないため、仮の時刻を入れています。出発・到着時刻を確かめてください。",
+      "日時は共有に含まれていないため、出発は現在時刻にしています。出発・到着時刻を確かめてください。",
       handoff.minutes === null ? "所要時間は取得できませんでした。" : handoff.estimated ? "所要時間はAIによる目安です。" : null,
     ]
       .filter(Boolean)
@@ -420,6 +421,7 @@ export function CalendarShell({
     });
       }, 0);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- マウント時に1回だけ読む（timeZoneの変化で再実行しない）
   }, [utils]);
 
   /** 紐づけ先の予定を選んだら、予定の日へ寄せた発着時刻で移動の入力を開く（issue #1128）。 */
