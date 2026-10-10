@@ -47,6 +47,23 @@ function toMinutes(seconds: number): number {
   return Math.max(1, Math.ceil(seconds / 60));
 }
 
+/**
+ * 表示文字列（「1 時間 1 分」「16 分」「1 時間」）の分数。Googleの画面に出る値と揃えるため、
+ * 秒からの切り上げより優先する（秒の982を切り上げると17分だが、Googleは「16 分」と出す・issue #1213）。読めなければ null。
+ */
+export function parseDurationText(text: string): number | null {
+  const match = /^\s*(?:(\d+)\s*日\s*)?(?:(\d+)\s*時間\s*)?(?:(\d+)\s*分\s*)?$/.exec(text);
+  if (!match || (!match[1] && !match[2] && !match[3])) return null;
+  const minutes = Number(match[1] ?? 0) * 1440 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  return minutes > 0 ? minutes : null;
+}
+
+/** 代表時間の `[秒,"表示"]` を分にする。表示が読めればそれを、読めなければ秒を切り上げる */
+function pairMinutes(pair: [number, string]): number | null {
+  if (pair[0] <= 0) return null;
+  return parseDurationText(pair[1]) ?? toMinutes(pair[0]);
+}
+
 /** 時間ブロック `[[代表秒,"50 分"],null,x,[通常秒,"35 分"],[最小秒,最大秒,"35 分～1 時間 20 分"],[..],null,[epoch,tz,"15:28",offset,epoch]…]` を読む。 */
 function readTimeBlock(block: unknown): Omit<DirectionsCandidate, "name" | "distanceMeters" | "distanceText"> | null {
   if (!Array.isArray(block) || !isTimePair(block[0])) return null;
@@ -71,7 +88,7 @@ function readTimeBlock(block: unknown): Omit<DirectionsCandidate, "name" | "dist
   return {
     rangeMinutes,
     rangeText: rangeMinutes && Array.isArray(range) && typeof range[2] === "string" ? range[2] : null,
-    representativeMinutes: block[0][0] > 0 ? toMinutes(block[0][0]) : null,
+    representativeMinutes: pairMinutes(block[0]),
     representativeText: block[0][1] || null,
     otherEndEpoch,
     timeZone,
@@ -100,6 +117,54 @@ function readCandidate(node: unknown[]): DirectionsCandidate | null {
   };
 }
 
+/** 公共交通の候補の路線名（「山手線 → 銀座線」）。`[5,["山手線",1,色,色]]` の並びから取る。無ければ空文字 */
+function transitLineNames(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  const names = value
+    .map((part) => (Array.isArray(part) && part[0] === 5 && Array.isArray(part[1]) && typeof part[1][0] === "string" ? part[1][0] : null))
+    .filter((name): name is string => Boolean(name));
+  return names.join(" → ");
+}
+
+/**
+ * 時間ブロック（渋滞予測）を持たない移動手段の候補1件を読む（issue #1213）。
+ * 徒歩・自転車・公共交通の応答は `[手段(1〜3),"名前",[距離m,"6.9 km",0],[秒,"1 時間 40 分"],…]` の形で、
+ * 車の時間ブロックが無い。所要時間は `[3]` をGoogleの代表時間として使う。
+ * 公共交通の `[1]` は経路名ではなく運行間隔（「4 分間隔」）なので、路線名（`[14]`）で置き換える。
+ */
+function readPlainCandidate(node: unknown): DirectionsCandidate | null {
+  if (!Array.isArray(node)) return null;
+  const mode = node[0];
+  if ((mode !== 1 && mode !== 2 && mode !== 3) || typeof node[1] !== "string" || !Array.isArray(node[2]) || !isTimePair(node[3])) return null;
+  if (node[1].includes("<") || node[3][0] <= 0) return null;
+  const distance = node[2];
+  const stamps = node[5];
+  const firstStamp = Array.isArray(stamps) && Array.isArray(stamps[0]) ? stamps[0] : null;
+  return {
+    name: mode === 3 ? transitLineNames(node[14]) : node[1],
+    distanceMeters: typeof distance[0] === "number" ? distance[0] : null,
+    distanceText: typeof distance[1] === "string" ? distance[1] : null,
+    rangeMinutes: null,
+    rangeText: null,
+    representativeMinutes: pairMinutes(node[3]),
+    representativeText: node[3][1] || null,
+    otherEndEpoch: null,
+    timeZone: firstStamp && typeof firstStamp[1] === "string" ? firstStamp[1] : null,
+  };
+}
+
+/**
+ * 時間ブロックを持たない候補は、経路の一覧（`root[0][1][i][0]`）の位置からだけ読む。
+ * 中の手順（曲がる指示）も同じ形をしているため、木全体を探すと手順を候補として取り違える。
+ */
+function readPlainCandidates(root: unknown): DirectionsCandidate[] {
+  const list = Array.isArray(root) && Array.isArray(root[0]) ? root[0][1] : null;
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((route) => (Array.isArray(route) ? readPlainCandidate(route[0]) : null))
+    .filter((candidate): candidate is DirectionsCandidate => candidate !== null);
+}
+
 /** 応答本文（`)]}'` で始まるJSON）から候補経路を取り出す。形が違えば空配列。 */
 export function parseDirectionsResponse(text: string): DirectionsCandidate[] {
   const body = text.replace(/^\)\]\}'\s*/, "");
@@ -126,7 +191,8 @@ export function parseDirectionsResponse(text: string): DirectionsCandidate[] {
       if (Array.isArray(node[index])) stack.push(node[index]);
     }
   }
-  return found;
+  // 車（時間ブロックあり）が取れなければ、徒歩・自転車・公共交通の形として読む（issue #1213）
+  return found.length > 0 ? found : readPlainCandidates(root);
 }
 
 /**
