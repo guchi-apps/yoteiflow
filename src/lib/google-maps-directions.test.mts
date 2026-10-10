@@ -6,6 +6,7 @@ import {
   extractDirectionsUrl,
   fetchGoogleMapsDirections,
   parseDirectionsResponse,
+  parseDurationText,
   scheduleCandidate,
   type DirectionsCandidate,
 } from "@/lib/google-maps-directions";
@@ -215,4 +216,80 @@ test("取得失敗: 発着地を保ち、日時・所要時間は未取得と明
   assert.equal(result.item.startAt, "2026-10-07T05:08:00.000Z"); // 固定側（指定の出発日時）だけ
   assert.equal(result.item.endAt, null);
   assert.match(result.item.notice ?? "", /所要時間/);
+});
+
+// 徒歩・自転車・公共交通の応答（issue #1213）。車の時間ブロックが無く、経路の一覧は root[0][1][i][0]。
+// 中の手順も `[手段,"",[距離],[秒,"表示"]]` の同じ形をしているが、候補にしない。
+const plainStep = (mode: number) => [mode, "", [15, "15 m", 0], [12, "12 秒"]];
+const plainResponse = (...routes: unknown[][]) =>
+  `)]}'\n${JSON.stringify([[null, routes.map((route) => [route, [[null, [[null, [plainStep(route[0] as number)]]]]]])]])}`;
+
+test("表示文字列から分を読む（Googleの画面と同じ値）", () => {
+  assert.equal(parseDurationText("1 時間 1 分"), 61);
+  assert.equal(parseDurationText("16 分"), 16);
+  assert.equal(parseDurationText("2 時間"), 120);
+  assert.equal(parseDurationText("56 秒"), null);
+  assert.equal(parseDurationText(""), null);
+});
+
+test("車の代表時間は秒の切り上げではなく表示の分を採る（982秒＝「16 分」を17分にしない）", () => {
+  const [first] = parseDirectionsResponse(wrap(candidate({ name: "首都高", meters: 9293, distance: "9.3 km", rep: [982, "16 分"] })));
+  assert.equal(first.representativeMinutes, 16);
+});
+
+test("徒歩の候補を読み、手順は候補にしない", () => {
+  const candidates = parseDirectionsResponse(
+    plainResponse(
+      [2, "六本木通り", [6924, "6.9 km", 0], [3660, "1 時間 1 分"], null, null, null, []],
+      [2, "日比谷通り", [6948, "6.9 km", 0], [3700, "1 時間 2 分"], null, null, null, []],
+    ),
+  );
+  assert.deepEqual(candidates.map((item) => [item.name, item.representativeMinutes, item.distanceText]), [
+    ["六本木通り", 61, "6.9 km"],
+    ["日比谷通り", 62, "6.9 km"],
+  ]);
+  assert.equal(candidates[0].rangeMinutes, null);
+});
+
+test("公共交通は運行間隔ではなく路線名を経路名にする", () => {
+  const stamp = (epoch: number) => [epoch, "Asia/Tokyo", "13:10", 32400, epoch];
+  const lines = [[5, null, [3, "x.png", null, "地下鉄"]], [5, ["丸ノ内線", 1, "#f22d35", "#ffffff"]], [9], [5, ["銀座線", 1, "#f28e00", "#000000"]]];
+  const [first] = parseDirectionsResponse(
+    plainResponse([3, "4 分間隔", [7944, "7.9 km", 0], [1200, "20 分", 1200], null, [stamp(1791605400), stamp(1791606600)], null, [], null, null, null, null, null, null, lines]),
+  );
+  assert.equal(first.name, "丸ノ内線 → 銀座線");
+  assert.equal(first.representativeMinutes, 20);
+  assert.equal(first.timeZone, "Asia/Tokyo");
+});
+
+test("徒歩の経路でもGoogleの代表時間を使い、AIへ聞かない", async () => {
+  const result = await resolveGoogleMapsShare("https://maps.app.goo.gl/walk", {
+    expand: async (url, accept) => {
+      const value = accept("https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e2");
+      return value ? { result: value, url: "https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e2" } : null;
+    },
+    directions: async () => ({
+      ok: true,
+      candidates: parseDirectionsResponse(plainResponse([2, "六本木通り", [6924, "6.9 km", 0], [3660, "1 時間 1 分"], null, null, null, []])),
+    }),
+    analyze: async () => assert.fail("Googleから取れたときはAIを呼ばない"),
+  });
+  assert.ok(result.ok);
+  assert.equal(result.item.durationMinutes, 61);
+  assert.equal(result.item.estimateSource, "GOOGLE_MAPS");
+});
+
+test("確認画面で出したAIの目安を渡されたら、AIへ聞き直さずその値を使う", async () => {
+  const result = await resolveGoogleMapsShare("https://maps.app.goo.gl/walk", {
+    expand: async (url, accept) => {
+      const value = accept("https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e0");
+      return value ? { result: value, url: "https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e0" } : null;
+    },
+    directions: async () => ({ ok: false, reason: "unreadable" }),
+    analyze: async () => assert.fail("引き継いだ目安があるときはAIを呼ばない"),
+    knownAiMinutes: 50,
+  });
+  assert.ok(result.ok);
+  assert.equal(result.item.durationMinutes, 50);
+  assert.equal(result.item.estimateSource, "AI");
 });

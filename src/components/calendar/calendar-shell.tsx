@@ -388,6 +388,7 @@ export function CalendarShell({
             arriveAt: arrive,
             resolveUrl: handoff.url,
             preselectRoute: handoff.route ?? undefined,
+            sharedAiMinutes: handoff.estimated && handoff.minutes !== null ? handoff.minutes : undefined,
             notice: "Googleマップから日時・所要時間を取得しています。取得できなかった項目は手入力してください。",
           },
         },

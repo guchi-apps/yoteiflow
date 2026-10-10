@@ -5,7 +5,9 @@ import { validGoogleMapsUrl } from "@/lib/google-maps-expand";
 import { resolveGoogleMapsShare } from "@/lib/share-import/google-maps";
 import { getTimeZone } from "@/services/travel/plans";
 
-type RouteBody = { url?: unknown };
+type RouteBody = { url?: unknown; aiMinutes?: unknown };
+
+const MAX_AI_MINUTES = 24 * 60;
 
 /**
  * 移動の入力へ貼り付けたGoogleマップの経路URLを読む。HTML本文は読まず、許可したGoogleホストへのリダイレクトだけを追う。
@@ -28,7 +30,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを貼り付けてください。" }, { status: 400 });
   }
 
-  const result = await resolveGoogleMapsShare(value, {}, await getTimeZone(userId));
+  // 共有拡張の確認画面で出したAIの目安を引き継ぐ。Googleから取れないときAIへ聞き直さない（issue #1213）
+  const aiMinutes =
+    typeof body.aiMinutes === "number" && Number.isInteger(body.aiMinutes) && body.aiMinutes >= 1 && body.aiMinutes <= MAX_AI_MINUTES
+      ? body.aiMinutes
+      : null;
+  const result = await resolveGoogleMapsShare(value, { knownAiMinutes: aiMinutes }, await getTimeZone(userId));
   if (!result.ok) {
     return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
   }
