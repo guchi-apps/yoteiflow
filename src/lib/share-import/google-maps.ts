@@ -18,6 +18,11 @@ export type GoogleMapsShareDeps = {
   /** 経路ページからの予測所要時間・発着時刻の取得（テストで差し替える・issue #1160） */
   directions?: (expandedUrl: string) => Promise<DirectionsFetchResult>;
   analyze?: (route: GoogleMapsRoute & { url: string }) => Promise<Pick<GoogleMapsRoute, "origin" | "destination" | "mode" | "minutes"> | null>;
+  /**
+   * 共有拡張の確認画面ですでに出したAIの目安（分）。渡されたときはAIへ聞き直さずこの値を使う（issue #1213）。
+   * 「編集して追加」で本体が同じURLを再取得するたびにAIの答えが変わり、確認画面と入力画面で所要時間が食い違ったため。
+   */
+  knownAiMinutes?: number | null;
 };
 
 /** 共有された文字列から最初のGoogleマップのURLを取り出す（「場所名\nhttps://…」の形がある） */
@@ -124,7 +129,9 @@ export async function resolveGoogleMapsShare(
   // 取れた候補が割れている（共有時の選択を特定できない）ときは、AIで1つに決めない
   let aiMinutes: number | null = null;
   let aiFailed = false;
-  if (!chosen && !ambiguous && scheduled.length === 0) {
+  if (!chosen && !ambiguous && scheduled.length === 0 && deps.knownAiMinutes) {
+    aiMinutes = deps.knownAiMinutes;
+  } else if (!chosen && !ambiguous && scheduled.length === 0) {
     try {
       aiMinutes = (await analyze({ ...route, url: expandedUrl }))?.minutes ?? null;
     } catch (error) {
