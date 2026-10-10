@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.17.3",
+    date: "2026-10-10",
+    changes: [
+      "Googleマップから共有した経路の取り込みを改善しました。古い形式のリンクでも経路を読み取れるようになり、徒歩・公共交通の移動手段が正しく判別されます。",
+    ],
+  },
+  {
     version: "4.17.2",
     date: "2026-10-10",
     changes: [

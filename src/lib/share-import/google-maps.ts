@@ -118,7 +118,7 @@ export async function resolveGoogleMapsShare(
   }
 
   const { route } = result;
-  const directions = await (deps.directions ?? fetchGoogleMapsDirections)(expandedUrl);
+  const directions = await (deps.directions ?? fetchGoogleMapsDirections)(directionsPageUrl(expandedUrl, route));
   const candidates = directions.ok ? directions.candidates.slice(0, MAX_CANDIDATES) : [];
   const scheduled = candidates.map((candidate) => ({ candidate, times: scheduleCandidate(candidate, route.schedule, timeZone) }));
   // 候補が複数あるときは自動で確定せず、利用者が選ぶ（issue #1168）。1件ならその候補を採用する
@@ -194,6 +194,34 @@ export async function resolveGoogleMapsShare(
 }
 
 const MAX_CANDIDATES = 5;
+
+const TRAVEL_MODE_PARAM: Record<GoogleMapsRoute["mode"], string> = {
+  CAR: "driving",
+  PUBLIC_TRANSIT: "transit",
+  WALK: "walking",
+  OTHER: "bicycling",
+};
+
+/**
+ * 経路データの取得元にできる `/maps/dir/` のページURL。iOS共有の短縮URLは旧形式（`maps.google.com/?saddr=…`）へ
+ * 展開されページとして読めず、徒歩・自転車・公共交通がAIの目安へ落ちていた（issue #1217）。
+ * その形のときは読み取った発着地・経由地・移動手段から Google Maps URLs の経路ページを組み立てる。
+ */
+function directionsPageUrl(expandedUrl: string, route: GoogleMapsRoute): string {
+  try {
+    const url = new URL(expandedUrl);
+    if (url.hostname === "www.google.com" && url.pathname.startsWith("/maps/dir/")) return expandedUrl;
+  } catch {
+    return expandedUrl;
+  }
+  const built = new URL("https://www.google.com/maps/dir/");
+  built.searchParams.set("api", "1");
+  built.searchParams.set("origin", route.origin);
+  built.searchParams.set("destination", route.destination);
+  built.searchParams.set("travelmode", TRAVEL_MODE_PARAM[route.mode]);
+  if (route.waypoints.length > 0) built.searchParams.set("waypoints", route.waypoints.join("|"));
+  return built.toString();
+}
 
 type Scheduled = { candidate: DirectionsCandidate; times: ScheduledTimes };
 
