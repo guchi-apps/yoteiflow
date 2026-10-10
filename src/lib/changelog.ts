@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.17.4",
+    date: "2026-10-10",
+    changes: [
+      "Googleマップから共有した経路の所要時間を、Googleが示す時間だけで取り込むようにしました。取得できないときはAIの目安で補わず、「Googleマップの所要時間を取得できませんでした」と表示して手入力に進めます。",
+    ],
+  },
+  {
     version: "4.17.3",
     date: "2026-10-10",
     changes: [
