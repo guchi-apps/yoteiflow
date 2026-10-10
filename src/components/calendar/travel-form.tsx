@@ -127,9 +127,24 @@ export function TravelForm({
 
   const offline = useOffline();
 
+  // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
+  const [lengthMinutes, setLengthMinutes] = useState<number | null>(null);
+  const knownMinutes = routeMinutes ?? lengthMinutes;
+  // 片側だけでも、所要時間が分かれば保存時に反対側を求められる
+  const resolvedTimes = (() => {
+    if (departAt && arriveAt) return { departAt, arriveAt };
+    if (departAt) return { departAt, arriveAt: deriveOtherSide("depart", departAt, knownMinutes) };
+    if (arriveAt) return { departAt: deriveOtherSide("arrive", arriveAt, knownMinutes), arriveAt };
+    return { departAt: "", arriveAt: "" };
+  })();
+
   const rangeError = (() => {
-    if (!departAt || !arriveAt) return "出発時刻と到着時刻を入力してください。";
-    return arriveAt <= departAt ? "到着時刻が出発時刻より後になるようにしてください。" : null;
+    if (!resolvedTimes.departAt || !resolvedTimes.arriveAt) {
+      return departAt || arriveAt
+        ? "所要時間が分からないため、出発時刻と到着時刻の両方を入力してください。"
+        : "出発時刻と到着時刻を入力してください。";
+    }
+    return resolvedTimes.arriveAt <= resolvedTimes.departAt ? "到着時刻が出発時刻より後になるようにしてください。" : null;
   })();
 
   const inputError =
@@ -146,20 +161,27 @@ export function TravelForm({
    */
   const editTime = (side: TimeBasis, value: string) => {
     touch("times");
+    // 直す前に両側が入っていれば、その長さを覚える（計算ボタンで使う）。反対側は自動では動かさない（手入力の所要時間を妨げない）
+    if (routeMinutes === null && departAt && arriveAt) {
+      const gap = (new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime()) / 60_000;
+      if (Number.isFinite(gap) && gap > 0) setLengthMinutes(gap);
+    }
     if (side === "depart") setDepartAt(value);
     else setArriveAt(value);
-    if (side === basis && routeMinutes !== null) {
-      // 基準側を直したときは、取得済みの代表時間で反対側を求め直す（出どころはGoogleのまま）
-      const other = deriveOtherSide(basis, value, routeMinutes);
-      if (other) {
-        if (basis === "depart") setArriveAt(other);
-        else setDepartAt(other);
-        return;
-      }
-    }
-    // 反対側を直した・代表時間が無いときは手入力の時間帯。Google由来の所要時間と混同しない
-    setRouteMinutes(null);
+    // 手で直した時刻はGoogle由来の所要時間と混同しない。計算ボタンで求め直すと戻る
     setEstimateSource("MANUAL");
+  };
+  /** 「出発日時から計算」「到着日時から計算」。押した側を固定し、反対側を所要時間から求める */
+  const calculateFrom = (side: TimeBasis) => {
+    touch("times");
+    touch("basis");
+    setBasis(side);
+    const fixed = side === "depart" ? departAt : arriveAt;
+    const other = deriveOtherSide(side, fixed, knownMinutes);
+    if (!other) return;
+    if (side === "depart") setArriveAt(other);
+    else setDepartAt(other);
+    if (routeMinutes !== null) setEstimateSource("GOOGLE_MAPS");
   };
   const editDepartAt = (value: string) => editTime("depart", value);
   const editArriveAt = (value: string) => editTime("arrive", value);
@@ -380,8 +402,8 @@ export function TravelForm({
     setBusy(true);
     setError(null);
     try {
-      const departIso = localInputToIso(departAt, timeZone);
-      const arriveIso = localInputToIso(arriveAt, timeZone);
+      const departIso = localInputToIso(resolvedTimes.departAt, timeZone);
+      const arriveIso = localInputToIso(resolvedTimes.arriveAt, timeZone);
 
       const payload = {
         origin: origin.trim(),
@@ -542,34 +564,6 @@ export function TravelForm({
           </div>
         </div>
 
-        <div className="flex flex-col gap-2" role="radiogroup" aria-label="時刻の基準">
-          <span className="type-label-small px-1 text-on-surface-variant">時刻の基準</span>
-          <div className="flex flex-wrap gap-2">
-            {(["depart", "arrive"] as const).map((option) => (
-              <Button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={option === basis}
-                variant={option === basis ? "secondary" : "outline"}
-                size="sm"
-                className="rounded-full"
-                onClick={() => {
-                  touch("basis");
-                  setBasis(option);
-                }}
-              >
-                {option === "depart" ? "出発日時を指定" : "到着日時を指定"}
-              </Button>
-            ))}
-          </div>
-          <p className="type-label-small px-1 text-on-surface-variant">
-            {routeMinutes !== null
-              ? `Googleマップの代表時間（${routeMinutes}分）から${basis === "depart" ? "到着" : "出発"}を求めます。反対側を直すと手入力の時間帯になります。`
-              : "所要時間を取得できていないときは、出発・到着の両方を入力してください。"}
-          </p>
-        </div>
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
           <DateTimeInput
             id="travel-depart"
@@ -585,6 +579,35 @@ export function TravelForm({
             value={arriveAt}
             onChange={editArriveAt}
           />
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={!departAt || knownMinutes === null}
+              onClick={() => calculateFrom("depart")}
+            >
+              出発日時から計算
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={!arriveAt || knownMinutes === null}
+              onClick={() => calculateFrom("arrive")}
+            >
+              到着日時から計算
+            </Button>
+          </div>
+          <p className="type-label-small px-1 text-on-surface-variant">
+            {knownMinutes !== null
+              ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
+              : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
+          </p>
         </div>
 
         {/* Googleマップの共有URLは、現在選んでいる交通手段によらず貼り付けられる。
