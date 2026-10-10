@@ -143,7 +143,6 @@ const share = (url: string, response: string) =>
   resolveGoogleMapsShare(url, {
     expand: async (value, parse) => ({ result: parse(value)!, url: value }),
     directions: async () => ({ ok: true, candidates: parseDirectionsResponse(response) }),
-    analyze: async () => assert.fail("Googleの予測が取れたときはAIを使わない"),
   }, TZ);
 
 test("共有（出発指定）: 候補が複数なら自動で確定せず、指定の出発日時だけ保持する。選んだ候補は14:08＋代表50分＝14:58", async () => {
@@ -169,7 +168,6 @@ test("共有（1候補）: その候補を採用し、14:08〜14:58・GOOGLE_MAP
   const result = await resolveGoogleMapsShare(dirUrl(0, 1791382080), {
     expand: async (value, parse) => ({ result: parse(value)!, url: value }),
     directions: async () => ({ ok: true, candidates: [only] }),
-    analyze: async () => assert.fail("Googleの予測が取れたときはAIを使わない"),
   }, TZ);
   assert.ok(result.ok);
   const { item } = result;
@@ -206,7 +204,6 @@ test("取得失敗: 発着地を保ち、日時・所要時間は未取得と明
   const result = await resolveGoogleMapsShare(dirUrl(0, 1791382080), {
     expand: async (value, parse) => ({ result: parse(value)!, url: value }),
     directions: async () => ({ ok: false, reason: "request_failed" }),
-    analyze: async () => null,
   }, TZ);
   assert.ok(result.ok);
   assert.equal(result.item.origin, "34.84,135.61");
@@ -272,24 +269,71 @@ test("徒歩の経路でもGoogleの代表時間を使い、AIへ聞かない", 
       ok: true,
       candidates: parseDirectionsResponse(plainResponse([2, "六本木通り", [6924, "6.9 km", 0], [3660, "1 時間 1 分"], null, null, null, []])),
     }),
-    analyze: async () => assert.fail("Googleから取れたときはAIを呼ばない"),
   });
   assert.ok(result.ok);
   assert.equal(result.item.durationMinutes, 61);
   assert.equal(result.item.estimateSource, "GOOGLE_MAPS");
 });
 
-test("確認画面で出したAIの目安を渡されたら、AIへ聞き直さずその値を使う", async () => {
-  const result = await resolveGoogleMapsShare("https://maps.app.goo.gl/walk", {
-    expand: async (url, accept) => {
-      const value = accept("https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e0");
-      return value ? { result: value, url: "https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e0" } : null;
-    },
-    directions: async () => ({ ok: false, reason: "unreadable" }),
-    analyze: async () => assert.fail("引き継いだ目安があるときはAIを呼ばない"),
-    knownAiMinutes: 50,
-  });
+test("Googleの代表時間53分を採用し、出発指定は出発＋53分・到着指定は到着−53分（日付またぎを含む・issue #1221）", async () => {
+  const walk = plainResponse([2, "御堂筋", [3900, "3.9 km", 0], [3180, "53 分"], null, null, null, []]);
+  const resolve = (url: string) =>
+    resolveGoogleMapsShare(url, {
+      expand: async (value, parse) => ({ result: parse(value)!, url: value }),
+      directions: async () => ({ ok: true, candidates: parseDirectionsResponse(walk) }),
+    }, TZ);
+  // 出発 2026-10-07 23:30（現地）→ 到着 翌0:23
+  const depart = await resolve("https://www.google.com/maps/dir/A/B/data=!4m1!2m4!6e0!7e2!8j1791415800!11b1!3e2");
+  assert.ok(depart.ok);
+  assert.equal(depart.item.durationMinutes, 53);
+  assert.equal(depart.item.estimateSource, "GOOGLE_MAPS");
+  assert.equal(depart.item.startAt, "2026-10-07T14:30:00.000Z");
+  assert.equal(depart.item.endAt, "2026-10-07T15:23:00.000Z");
+  assert.equal(depart.item.registrable, true);
+  // 到着 2026-10-08 00:20（現地）→ 出発 前日23:27
+  const arrive = await resolve("https://www.google.com/maps/dir/A/B/data=!4m1!2m4!6e1!7e2!8j1791418800!11b1!3e2");
+  assert.ok(arrive.ok);
+  assert.equal(arrive.item.durationMinutes, 53);
+  assert.equal(arrive.item.startAt, "2026-10-07T14:27:00.000Z");
+  assert.equal(arrive.item.endAt, "2026-10-07T15:20:00.000Z");
+});
+
+test("経路が無い応答（自転車の長距離など）は no_route として返し、別手段の時間を採用しない", async () => {
+  // root[0][1] が null で、root[0][20] に手段別のサマリー（車54分・公共交通29分・自転車は利用不可）だけがある
+  const root: unknown[] = [];
+  root[1] = null;
+  root[20] = [[[0], 0, [3255, "54 分"]], [[3], 0, [1740, "29 分"]], [[1], 1]];
+  const noRoute = `)]}'\n${JSON.stringify([root])}`;
+  assert.deepEqual(parseDirectionsResponse(noRoute), []);
+  let calls = 0;
+  const fetchStub = (async () => {
+    calls += 1;
+    return calls === 1
+      ? new Response('<a href="/maps/preview/directions?pb=x">', { status: 200 })
+      : new Response(noRoute, { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.deepEqual(await fetchGoogleMapsDirections("https://www.google.com/maps/dir/a/b", { fetch: fetchStub }), { ok: false, reason: "no_route" });
+
+  const result = await resolveGoogleMapsShare("https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e1", {
+    expand: async (value, parse) => ({ result: parse(value)!, url: value }),
+    directions: async () => ({ ok: false, reason: "no_route" }),
+  }, TZ);
   assert.ok(result.ok);
-  assert.equal(result.item.durationMinutes, 50);
-  assert.equal(result.item.estimateSource, "AI");
+  assert.equal(result.item.durationMinutes, null);
+  assert.equal(result.item.estimateSource, null);
+  assert.match(result.item.notice ?? "", /この移動手段の経路がありません/);
+});
+
+test("旧形式の共有URLから経路ページを組み立てたときは、いまの条件で再取得したと断る", async () => {
+  const walk = plainResponse([2, "御堂筋", [3900, "3.9 km", 0], [3180, "53 分"], null, null, null, []]);
+  const result = await resolveGoogleMapsShare("https://maps.google.com/?saddr=A&daddr=B&dirflg=w", {
+    expand: async (value, parse) => ({ result: parse(value)!, url: value }),
+    directions: async (url) => {
+      assert.match(url, /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1/);
+      return { ok: true, candidates: parseDirectionsResponse(walk) };
+    },
+  }, TZ);
+  assert.ok(result.ok);
+  assert.equal(result.item.durationMinutes, 53);
+  assert.match(result.item.notice ?? "", /検索条件が含まれていないため/);
 });

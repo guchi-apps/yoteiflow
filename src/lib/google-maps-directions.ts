@@ -37,7 +37,14 @@ export type DirectionsCandidate = {
 
 export type DirectionsFetchResult =
   | { ok: true; candidates: DirectionsCandidate[] }
-  | { ok: false; reason: "not_directions_page" | "request_failed" | "unreadable" };
+  | { ok: false; reason: DirectionsFailureReason };
+
+/**
+ * 取得できなかった理由。`no_route` は応答は正常に読めたが、Googleにその移動手段の経路が無かったとき
+ * （例: 長距離の自転車。応答の経路一覧 `root[0][1]` が null で、手段別のサマリー `root[0][20]` の別手段の時間だけがある）。
+ * 別手段の時間は採用しない（issue #1221）。
+ */
+export type DirectionsFailureReason = "not_directions_page" | "request_failed" | "unreadable" | "no_route";
 
 function isTimePair(value: unknown): value is [number, string] {
   return Array.isArray(value) && typeof value[0] === "number" && typeof value[1] === "string";
@@ -165,15 +172,29 @@ function readPlainCandidates(root: unknown): DirectionsCandidate[] {
     .filter((candidate): candidate is DirectionsCandidate => candidate !== null);
 }
 
+/** 応答本文（`)]}'` で始まるJSON）を読む。JSONとして読めなければ undefined。 */
+function parseDirectionsJson(text: string): unknown {
+  try {
+    return JSON.parse(text.replace(/^\)\]\}'\s*/, ""));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 経路が無いと答えた応答か。経路の一覧（`root[0][1]`）が null で、手段別のサマリー（`root[0][20]`）を持つ形（issue #1221）。
+ * 形が違うだけの応答（Google側の変更）とは分け、利用者へ「この移動手段の経路が無い」と伝える。
+ */
+export function isNoRouteResponse(text: string): boolean {
+  const root = parseDirectionsJson(text);
+  if (!Array.isArray(root) || !Array.isArray(root[0])) return false;
+  return root[0][1] === null && Array.isArray(root[0][20]);
+}
+
 /** 応答本文（`)]}'` で始まるJSON）から候補経路を取り出す。形が違えば空配列。 */
 export function parseDirectionsResponse(text: string): DirectionsCandidate[] {
-  const body = text.replace(/^\)\]\}'\s*/, "");
-  let root: unknown;
-  try {
-    root = JSON.parse(body);
-  } catch {
-    return [];
-  }
+  const root = parseDirectionsJson(text);
+  if (root === undefined) return [];
 
   const found: DirectionsCandidate[] = [];
   const stack: unknown[] = [root];
@@ -294,8 +315,10 @@ export async function fetchGoogleMapsDirections(expandedUrl: string, deps: Direc
       signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
     });
     if (!dataResponse.ok) return { ok: false, reason: "request_failed" };
-    const candidates = parseDirectionsResponse(await readLimitedText(dataResponse));
-    return candidates.length > 0 ? { ok: true, candidates } : { ok: false, reason: "unreadable" };
+    const text = await readLimitedText(dataResponse);
+    const candidates = parseDirectionsResponse(text);
+    if (candidates.length > 0) return { ok: true, candidates };
+    return { ok: false, reason: isNoRouteResponse(text) ? "no_route" : "unreadable" };
   } catch (error) {
     console.error("[dayspan] Google Maps directions fetch failed:", error instanceof Error ? error.message : error);
     return { ok: false, reason: "request_failed" };

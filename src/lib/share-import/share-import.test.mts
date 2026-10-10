@@ -5,7 +5,7 @@ import { resolveSharedImport } from "@/lib/share-import/resolve";
 import { yahooFare } from "@/lib/share-import/yahoo";
 import { parseSharedTravelBody } from "@/lib/share-import/travel-body";
 
-/** 経路ページの取得は実通信しない（既存のAI経路のテスト用） */
+/** 経路ページの取得は実通信しない（Googleから所要時間が取れなかった場合のテスト用） */
 const noDirections = async () => ({ ok: false as const, reason: "unreadable" as const });
 
 const placeUrl = "https://www.google.com/maps/place/Tower/@34.1,135.1,17z/data=!3d34.1!4d135.1";
@@ -23,61 +23,37 @@ test("Googleマップの場所はテキスト中のURLからも判別し、直�
   assert.equal(result.item.registrable, false);
 });
 
-test("Googleマップ経路は日時が無ければ直接登録できず、AI解析は1回", async () => {
-  let calls = 0;
-  const result = await resolveSharedImport(
-    { url: "https://www.google.com/maps/dir/A駅/B駅/data=!3e3" },
-    "Asia/Tokyo",
-    {
-      expand: async (value, parse) => ({ result: parse(value)!, url: value }),
-      directions: noDirections,
-      analyze: async () => {
-        calls += 1;
-        return { origin: "A駅", destination: "B駅", mode: "WALK", minutes: 12 };
-      },
-    },
-  );
-  assert.ok(result.ok);
-  assert.equal(calls, 1);
-  assert.equal(result.item.registrable, false);
-  assert.equal(result.item.estimated, true);
-  assert.equal(result.item.durationMinutes, 12);
-});
-
-test("出発日時があれば到着を作って登録可能にする", async () => {
+test("Googleから取れないとき、指定の出発日時だけ保ち到着・所要時間は未取得にする（AIで補わない・issue #1221）", async () => {
   const result = await resolveSharedImport(
     { url: "https://www.google.com/maps/dir/A/B/data=!8j1791103500!3e0" },
     "Asia/Tokyo",
-    {
-      expand: async (value, parse) => ({ result: parse(value)!, url: value }),
-      directions: noDirections,
-      analyze: async () => ({ origin: "A", destination: "B", mode: "CAR", minutes: 30 }),
-    },
+    { expand: async (value, parse) => ({ result: parse(value)!, url: value }), directions: noDirections },
   );
   assert.ok(result.ok);
-  assert.equal(result.item.registrable, true);
-  // !8j は現地の壁時計: 08:45（Asia/Tokyo）＋30分（9時間ずれない・issue #1160）
+  assert.equal(result.item.registrable, false);
+  // !8j は現地の壁時計: 08:45（Asia/Tokyo）。9時間ずれない（issue #1160）
   assert.equal(result.item.startAt, "2026-10-03T23:45:00.000Z");
-  assert.equal(result.item.endAt, "2026-10-04T00:15:00.000Z");
+  assert.equal(result.item.endAt, null);
+  assert.equal(result.item.durationMinutes, null);
+  assert.equal(result.item.estimateSource, null);
 });
 
-test("AI未設定・失敗でも読めた経路を残し、所要時間は未取得として移動の入力へ引き継ぐ", async () => {
-  for (const analyze of [async () => null, async () => { throw new Error("boom"); }]) {
-    const result = await resolveSharedImport({ url: "https://www.google.com/maps/dir/A/B/data=!3e3" }, "Asia/Tokyo", {
-      expand: async (value, parse) => ({ result: parse(value)!, url: value }),
-      directions: noDirections,
-      analyze,
-    });
-    assert.ok(result.ok);
-    assert.equal(result.item.type, "route");
-    assert.equal(result.item.origin, "A");
-    assert.equal(result.item.destination, "B");
-    assert.equal(result.item.mode, "PUBLIC_TRANSIT");
-    assert.equal(result.item.durationMinutes, null);
-    assert.equal(result.item.estimated, false);
-    assert.equal(result.item.registrable, false);
-    assert.match(result.item.notice ?? "", /日時・所要時間/);
-  }
+test("Googleから取れなくても読めた経路を残し、所要時間は未取得として移動の入力へ引き継ぐ", async () => {
+  const result = await resolveSharedImport({ url: "https://www.google.com/maps/dir/A/B/data=!3e3" }, "Asia/Tokyo", {
+    expand: async (value, parse) => ({ result: parse(value)!, url: value }),
+    directions: noDirections,
+  });
+  assert.ok(result.ok);
+  assert.equal(result.item.type, "route");
+  assert.equal(result.item.origin, "A");
+  assert.equal(result.item.destination, "B");
+  assert.equal(result.item.mode, "PUBLIC_TRANSIT");
+  assert.equal(result.item.durationMinutes, null);
+  assert.equal(result.item.estimated, false);
+  assert.equal(result.item.estimateSource, null);
+  assert.equal(result.item.registrable, false);
+  assert.match(result.item.notice ?? "", /^Googleマップの所要時間を取得できませんでした。/);
+  assert.match(result.item.notice ?? "", /日時は共有に含まれていない/);
 });
 
 test("空の共有は422", async () => {
@@ -95,16 +71,15 @@ test("短縮URLが saddr・daddr 形式へ展開される経路共有を移動�
       const parsed = parse(expanded);
       return parsed ? { result: parsed, url: expanded } : null;
     },
-    analyze: async () => ({ origin: "x", destination: "y", mode: "WALK", minutes: 25 }),
   });
   assert.ok(result.ok);
   assert.equal(result.item.type, "route");
-  // 発着地・移動手段はURLの値を使い、AIの返した値で置き換えない
+  // 発着地・移動手段はURLの値を使う
   assert.equal(result.item.origin, "35.6812360,139.7671250");
   assert.equal(result.item.destination, "東京都千代田区");
   assert.equal(result.item.mode, "CAR");
-  assert.equal(result.item.durationMinutes, 25);
-  assert.equal(result.item.estimated, true);
+  assert.equal(result.item.durationMinutes, null);
+  assert.equal(result.item.estimated, false);
   assert.equal(result.item.registrable, false);
   assert.equal(result.item.sourceUrl, shortUrl);
 });
@@ -116,7 +91,6 @@ test("出発地の無い経路は場所として誤登録せず、読み取り�
       const parsed = parse(value);
       return parsed ? { result: parsed, url: value } : null;
     },
-    analyze: async () => assert.fail("経路が読めないときはAIを呼ばない"),
   });
   assert.ok(!result.ok);
   assert.equal(result.error, "incomplete_route");
@@ -133,4 +107,7 @@ test("登録本文の検証", () => {
   assert.equal(parseSharedTravelBody({ ...ok, arriveAt: ok.departAt }), null);
   assert.equal(parseSharedTravelBody({ ...ok, mode: "ROCKET" }), null);
   assert.equal(parseSharedTravelBody({ ...ok, origin: "" }), null);
+  // 配布済みの共有拡張が選んだ経路に付ける "AI" は、Googleの代表時間として保存する（issue #1221）
+  assert.equal(parseSharedTravelBody({ ...ok, estimateSource: "AI" })?.estimateSource, "GOOGLE_MAPS");
+  assert.equal(parseSharedTravelBody({ ...ok, estimateSource: "GOOGLE_MAPS" })?.estimateSource, "GOOGLE_MAPS");
 });

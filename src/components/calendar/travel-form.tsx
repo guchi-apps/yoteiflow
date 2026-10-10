@@ -57,8 +57,6 @@ export type TravelDraft = {
   resolveUrl?: string;
   /** 共有拡張の確認画面で選んだ経路。再取得した候補のうち名前・距離が一致するものを選択済みにする（issue #1168）。 */
   preselectRoute?: { name: string; distance: string | null };
-  /** 共有拡張の確認画面で出したAIの目安（分）。`resolveUrl` の再取得でAIへ聞き直さずこの値を使う（issue #1213）。 */
-  sharedAiMinutes?: number;
 };
 
 type GoogleRouteStatus =
@@ -347,8 +345,8 @@ export function TravelForm({
       const response = await fetch("/api/travels/google-maps-route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 共有拡張から渡されたURLの再取得に限り、確認画面のAIの目安を引き継ぐ（貼り付け直したURLには使わない）
-        body: JSON.stringify({ url: value, aiMinutes: value === draft.resolveUrl ? draft.sharedAiMinutes : undefined }),
+        // 所要時間はGoogleの代表時間だけ。共有確認画面のAIの目安は引き継がない（issue #1221）
+        body: JSON.stringify({ url: value }),
       });
       if (!response.ok) {
         const message = await readErrorMessage(response, "Googleマップの経路URLを読み取れませんでした。");
