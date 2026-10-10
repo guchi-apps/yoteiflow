@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { Bell, BellOff, CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
@@ -11,6 +11,7 @@ import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-
 import { cn } from "@/lib/utils";
 import { candidateFormTimes, deriveOtherSide, type TimeBasis } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
+import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
 import { travelTitle } from "@/lib/travel-title";
@@ -126,6 +127,10 @@ export function TravelForm({
   const googleRouteRequestRef = useRef(0);
 
   const offline = useOffline();
+  // オフライン中は地図もGoogleマップのアプリも通信が要るため出さない（予定の場所リンクと同じ扱い）
+  const mapsLink = offline
+    ? null
+    : googleMapsDirectionsLink({ origin, destination, via, mode, places: placeCatalog.places });
 
   // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
   const [lengthMinutes, setLengthMinutes] = useState<number | null>(null);
@@ -543,6 +548,20 @@ export function TravelForm({
           eventTitle={destination}
           placeDatabaseReady={placeCatalog.ready}
         />
+
+        {/* 素の <a> にするのは、iOSがGoogleマップのアプリを開けるようにするため（issue #1225）。
+            出発地・目的地・交通手段は入力欄の現在値から組み立てる。 */}
+        {mapsLink && (
+          <a
+            href={mapsLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="type-label-large inline-flex items-center gap-1.5 self-start rounded-full border border-outline-variant px-3 py-1.5 text-on-surface"
+          >
+            <ExternalLink className="size-4" aria-hidden />
+            Googleマップで経路を開く
+          </a>
+        )}
 
         <div className="flex flex-col gap-2">
           <span className="type-label-small px-1 text-on-surface-variant">交通手段</span>
