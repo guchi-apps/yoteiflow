@@ -63,7 +63,7 @@ test("出発日時があれば到着を作って登録可能にする", async ()
 
 test("AI未設定・失敗でも読めた経路を残し、所要時間は未取得として移動の入力へ引き継ぐ", async () => {
   for (const analyze of [async () => null, async () => { throw new Error("boom"); }]) {
-    const result = await resolveSharedImport({ url: "https://www.google.com/maps/dir/A/B/data=!3e2" }, "Asia/Tokyo", {
+    const result = await resolveSharedImport({ url: "https://www.google.com/maps/dir/A/B/data=!3e3" }, "Asia/Tokyo", {
       expand: async (value, parse) => ({ result: parse(value)!, url: value }),
       directions: noDirections,
       analyze,

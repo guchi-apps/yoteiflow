@@ -93,3 +93,9 @@ test("経由地が複数あっても順番どおりに読み、上限を超え�
 test("2地点の経路は経由地なし", () => {
   assert.deepEqual(parseGoogleMapsRouteUrl("https://www.google.com/maps/dir/A/B/data=!3e0")?.waypoints, []);
 });
+
+test("data の !3e は 1=自転車・2=徒歩・3=公共交通（実際の経路データで確認・issue #1217）", () => {
+  const modeOf = (code: number) => parseGoogleMapsRouteUrl(`https://www.google.com/maps/dir/A/B/data=!4m2!4m1!3e${code}`)?.mode;
+  assert.equal(modeOf(2), "WALK");
+  assert.equal(modeOf(3), "PUBLIC_TRANSIT");
+});

@@ -74,9 +74,9 @@ function dataMode(data: string): TravelMode | null {
     case "1":
       return "OTHER";
     case "2":
-      return "PUBLIC_TRANSIT";
-    case "3":
       return "WALK";
+    case "3":
+      return "PUBLIC_TRANSIT";
     default:
       return null;
   }
