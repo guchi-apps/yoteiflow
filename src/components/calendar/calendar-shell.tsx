@@ -388,19 +388,20 @@ export function CalendarShell({
             arriveAt: arrive,
             resolveUrl: handoff.url,
             preselectRoute: handoff.route ?? undefined,
-            sharedAiMinutes: handoff.estimated && handoff.minutes !== null ? handoff.minutes : undefined,
             notice: "Googleマップから日時・所要時間を取得しています。取得できなかった項目は手入力してください。",
           },
         },
       });
       return;
     }
-    const minutes = handoff.minutes ?? 30;
+    // AIの目安として渡された所要時間（配布済みの共有拡張が送る `estimated=1`）は採用しない（issue #1221）
+    const sharedMinutes = handoff.estimated ? null : handoff.minutes;
+    const minutes = sharedMinutes ?? 30;
     const arrive = new Date(new Date(`${departAt}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
     // 共有に無かった値は仮の値で埋めているため、確定した情報のように見せず案内を添える（issue #1142）
     const notice = [
       "日時は共有に含まれていないため、出発は現在時刻にしています。出発・到着時刻を確かめてください。",
-      handoff.minutes === null ? "所要時間は取得できませんでした。" : handoff.estimated ? "所要時間はAIによる目安です。" : null,
+      sharedMinutes === null ? "所要時間は取得できなかったため、到着時刻は仮の値です。" : null,
     ]
       .filter(Boolean)
       .join("");
@@ -415,7 +416,6 @@ export function CalendarShell({
           departAt,
           arriveAt: arrive,
           note: handoff.url ?? undefined,
-          estimateSource: handoff.estimated ? "AI" : undefined,
           notice,
         },
       },

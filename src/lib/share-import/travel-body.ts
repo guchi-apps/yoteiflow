@@ -12,7 +12,7 @@ export type SharedTravelBody = {
   departAt: string;
   arriveAt: string;
   note: string;
-  estimateSource: "YAHOO" | "AI" | "GOOGLE_MAPS";
+  estimateSource: "YAHOO" | "GOOGLE_MAPS";
 };
 
 function text(value: unknown, max: number): string | null {
@@ -47,6 +47,8 @@ export function parseSharedTravelBody(value: unknown): SharedTravelBody | null {
     departAt,
     arriveAt,
     note,
-    estimateSource: raw.estimateSource === "AI" || raw.estimateSource === "GOOGLE_MAPS" ? raw.estimateSource : "YAHOO",
+    // 配布済みの共有拡張は、複数候補から選んだ経路（Googleの代表時間）にも "AI" を付けて送る。
+    // サーバーはGoogleマップの所要時間をAIで補わなくなったため、届いた "AI" はGoogleの値として扱う（issue #1221）
+    estimateSource: raw.estimateSource === "AI" || raw.estimateSource === "GOOGLE_MAPS" ? "GOOGLE_MAPS" : "YAHOO",
   };
 }

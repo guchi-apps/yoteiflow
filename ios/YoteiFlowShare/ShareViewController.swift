@@ -115,7 +115,7 @@ final class ShareViewController: UIViewController {
             body["travel"] = [
                 "origin": origin, "destination": destination, "via": item.via ?? [], "mode": mode,
                 "departAt": startAt, "arriveAt": endAt,
-                "note": note, "estimateSource": item.estimateSource ?? "AI",
+                "note": note, "estimateSource": item.estimateSource ?? "GOOGLE_MAPS",
             ]
         }
         guard let data = await postJSON("api/shortcuts/travel/import", body: body, token: token) else {

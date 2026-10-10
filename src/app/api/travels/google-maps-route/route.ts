@@ -5,16 +5,15 @@ import { validGoogleMapsUrl } from "@/lib/google-maps-expand";
 import { resolveGoogleMapsShare } from "@/lib/share-import/google-maps";
 import { getTimeZone } from "@/services/travel/plans";
 
-type RouteBody = { url?: unknown; aiMinutes?: unknown };
-
-const MAX_AI_MINUTES = 24 * 60;
+type RouteBody = { url?: unknown };
 
 /**
  * 移動の入力へ貼り付けたGoogleマップの経路URLを読む。HTML本文は読まず、許可したGoogleホストへのリダイレクトだけを追う。
  * ブラウザからはCORSで最終URLを読めないため、利用者が貼り付けた明示操作に限ってサーバーで行う。
  *
  * iOS共有拡張の preview と同じ `resolveGoogleMapsShare` を通し、URL形式の扱い（`saddr`/`daddr` など）・
- * AI未設定や失敗時の扱いを揃える（issue #1142）。AIで所要時間を補えなくても、読めた発着地・移動手段は返す。
+ * 所要時間が取れないときの扱いを揃える（issue #1142）。所要時間はGoogleの代表時間だけで、AIの推定は使わない。
+ * 古い画面・アプリが送る `aiMinutes`（共有確認画面のAIの目安）は読まない（issue #1221）。
  */
 export async function POST(request: Request) {
   const userId = await requireUserId();
@@ -30,12 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", message: "Googleマップの経路URLを貼り付けてください。" }, { status: 400 });
   }
 
-  // 共有拡張の確認画面で出したAIの目安を引き継ぐ。Googleから取れないときAIへ聞き直さない（issue #1213）
-  const aiMinutes =
-    typeof body.aiMinutes === "number" && Number.isInteger(body.aiMinutes) && body.aiMinutes >= 1 && body.aiMinutes <= MAX_AI_MINUTES
-      ? body.aiMinutes
-      : null;
-  const result = await resolveGoogleMapsShare(value, { knownAiMinutes: aiMinutes }, await getTimeZone(userId));
+  const result = await resolveGoogleMapsShare(value, {}, await getTimeZone(userId));
   if (!result.ok) {
     return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
   }

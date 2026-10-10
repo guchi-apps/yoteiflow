@@ -1,8 +1,8 @@
-import { analyzeGoogleMapsRoute } from "@/lib/ai-google-maps-route";
 import {
   fetchGoogleMapsDirections,
   scheduleCandidate,
   type DirectionsCandidate,
+  type DirectionsFailureReason,
   type DirectionsFetchResult,
   type ScheduledTimes,
 } from "@/lib/google-maps-directions";
@@ -14,15 +14,8 @@ import { SHARE_IMPORT_HEADINGS, type ShareImportResult, type ShareRouteCandidate
 export type GoogleMapsShareDeps = {
   /** 短縮URLの展開（テストで差し替える） */
   expand?: typeof expandGoogleMapsUrl;
-  /** 経路の所要時間などの補完（AI）。トークン未設定なら null を返す */
   /** 経路ページからの予測所要時間・発着時刻の取得（テストで差し替える・issue #1160） */
   directions?: (expandedUrl: string) => Promise<DirectionsFetchResult>;
-  analyze?: (route: GoogleMapsRoute & { url: string }) => Promise<Pick<GoogleMapsRoute, "origin" | "destination" | "mode" | "minutes"> | null>;
-  /**
-   * 共有拡張の確認画面ですでに出したAIの目安（分）。渡されたときはAIへ聞き直さずこの値を使う（issue #1213）。
-   * 「編集して追加」で本体が同じURLを再取得するたびにAIの答えが変わり、確認画面と入力画面で所要時間が食い違ったため。
-   */
-  knownAiMinutes?: number | null;
 };
 
 /** 共有された文字列から最初のGoogleマップのURLを取り出す（「場所名\nhttps://…」の形がある） */
@@ -33,14 +26,10 @@ export function extractGoogleMapsUrl(input: string): string | null {
   return null;
 }
 
-async function defaultAnalyze(route: GoogleMapsRoute & { url: string }) {
-  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  return token ? analyzeGoogleMapsRoute(token, route) : null;
-}
-
 /**
  * Googleマップの共有URL（短縮URLを含む）を共通モデルへ変換する。
- * 経路のAI解析はここで1回だけ行い、登録側は再解析しない（利用枠と結果のずれを避ける）。
+ * 所要時間はGoogleの経路データの代表時間だけを使い、取れなければ未取得として手入力へ進める。
+ * AIの推定は所要時間・発着日時のどちらにも使わない（issue #1221）。
  */
 export async function resolveGoogleMapsShare(
   value: string,
@@ -52,7 +41,6 @@ export async function resolveGoogleMapsShare(
     return { ok: false, status: 422, error: "unreadable", message: "Googleマップの共有URLを読み取れませんでした。" };
   }
   const expand = deps.expand ?? expandGoogleMapsUrl;
-  const analyze = deps.analyze ?? defaultAnalyze;
 
   type Found =
     | { kind: "route"; route: GoogleMapsRoute }
@@ -118,47 +106,35 @@ export async function resolveGoogleMapsShare(
   }
 
   const { route } = result;
-  const directions = await (deps.directions ?? fetchGoogleMapsDirections)(directionsPageUrl(expandedUrl, route));
+  const pageUrl = directionsPageUrl(expandedUrl, route);
+  // 旧形式の共有URLから経路ページを組み立てたとき。日時などの検索条件はURLに残っていない（issue #1217・#1221）
+  const rebuilt = pageUrl !== expandedUrl;
+  const directions = await (deps.directions ?? fetchGoogleMapsDirections)(pageUrl);
   const candidates = directions.ok ? directions.candidates.slice(0, MAX_CANDIDATES) : [];
   const scheduled = candidates.map((candidate) => ({ candidate, times: scheduleCandidate(candidate, route.schedule, timeZone) }));
   // 候補が複数あるときは自動で確定せず、利用者が選ぶ（issue #1168）。1件ならその候補を採用する
   const ambiguous = scheduled.length > 1;
   const chosen = scheduled.length === 1 ? scheduled[0] : null;
 
-  // Googleから予測時間が取れなかったときだけ、AIの目安を試す（確定値としては扱わず「（目安）」と断る）。
-  // 取れた候補が割れている（共有時の選択を特定できない）ときは、AIで1つに決めない
-  let aiMinutes: number | null = null;
-  let aiFailed = false;
-  if (!chosen && !ambiguous && scheduled.length === 0 && deps.knownAiMinutes) {
-    aiMinutes = deps.knownAiMinutes;
-  } else if (!chosen && !ambiguous && scheduled.length === 0) {
-    try {
-      aiMinutes = (await analyze({ ...route, url: expandedUrl }))?.minutes ?? null;
-    } catch (error) {
-      aiFailed = true;
-      console.error("[dayspan] Google Maps share analyze failed:", error instanceof Error ? error.message : error);
-    }
-  }
-
-  let times: ScheduledTimes;
-  if (chosen) times = chosen.times;
-  else if (ambiguous) times = scheduleMinutes(null, route.schedule, scheduled[0]?.candidate.timeZone ?? timeZone); // 固定側の指定日時だけ保持
-  else times = scheduleMinutes(aiMinutes, route.schedule, timeZone);
+  // Googleから取れなかったときは、指定日時（固定側）だけを保ち、所要時間と反対側の時刻は未取得のままにする。
+  // AIの推定では補わない（Googleの表示と違う値が確定値のように入るため・issue #1221）
+  const times: ScheduledTimes = chosen
+    ? chosen.times
+    : scheduleMinutes(null, route.schedule, scheduled[0]?.candidate.timeZone ?? timeZone);
   const minutes = ambiguous ? null : times.minutes;
-  const estimateSource: "GOOGLE_MAPS" | "AI" | null = chosen && minutes !== null ? "GOOGLE_MAPS" : aiMinutes !== null ? "AI" : null;
+  const estimateSource: "GOOGLE_MAPS" | null = chosen && minutes !== null ? "GOOGLE_MAPS" : null;
+  const unavailable = !ambiguous && minutes === null;
 
-  const unreached = directions.ok ? null : directionsFailureNotice(directions.reason);
-  const missing = [
-    route.schedule || times.startAt || times.endAt ? null : "日時",
-    minutes === null && !ambiguous ? "所要時間" : null,
-  ].filter(Boolean);
   const notice = [
+    unavailable
+      ? `${GOOGLE_DURATION_UNAVAILABLE}${directions.ok ? "" : directionsFailureNotice(directions.reason)}移動の入力で所要時間（出発・到着時刻）を入力してください。`
+      : null,
     ambiguous ? "経路候補が複数あります。使う経路を1つ選んでください（取得した結果は共有時の画面と一致しないことがあります）。" : null,
-    missing.length > 0 ? `${missing.join("・")}を取得できなかったため、移動の入力で補ってください。` : null,
-    unreached,
-    minutes === null && aiFailed ? "所要時間の推定（AI）に失敗しました。" : null,
+    route.schedule || times.startAt || times.endAt ? null : "日時は共有に含まれていないため、移動の入力で補ってください。",
     estimateSource === "GOOGLE_MAPS" ? "所要時間はGoogleマップを再取得した経路の代表時間です（予測幅は参考）。共有時の画面と異なることがあります。" : null,
-    estimateSource === "AI" ? "所要時間はAIによる目安です。" : null,
+    rebuilt && (chosen || ambiguous)
+      ? "共有URLに日時などの検索条件が含まれていないため、いまの条件で再取得しています。"
+      : null,
   ]
     .filter(Boolean)
     .join("");
@@ -225,7 +201,7 @@ function directionsPageUrl(expandedUrl: string, route: GoogleMapsRoute): string 
 
 type Scheduled = { candidate: DirectionsCandidate; times: ScheduledTimes };
 
-/** 経路の候補を持たない分数だけの候補（AIの目安・固定側のみの算出に使う） */
+/** 経路の候補を持たない分数だけの候補（固定側のみの算出に使う） */
 function bareCandidate(minutes: number | null): DirectionsCandidate {
   return {
     name: "", distanceMeters: null, distanceText: null, rangeMinutes: null, rangeText: null,
@@ -250,10 +226,13 @@ function toShareCandidate({ candidate, times }: Scheduled): ShareRouteCandidate 
   };
 }
 
-function directionsFailureNotice(reason: "not_directions_page" | "request_failed" | "unreadable"): string {
-  return reason === "request_failed"
-    ? "Googleマップの予測所要時間を取得できませんでした。"
-    : "Googleマップの予測所要時間を読み取れませんでした（形式が変わった可能性があります）。";
+/** 所要時間が取れなかったときの案内の先頭。Webの入力画面・iOSの確認画面で同じ文言を出す（issue #1221） */
+export const GOOGLE_DURATION_UNAVAILABLE = "Googleマップの所要時間を取得できませんでした。";
+
+function directionsFailureNotice(reason: DirectionsFailureReason): string {
+  if (reason === "request_failed") return "（Googleマップへの接続に失敗しました）";
+  if (reason === "no_route") return "（Googleマップにこの移動手段の経路がありません）";
+  return "（Googleマップの経路データを読み取れませんでした）";
 }
 
 /** 移動のメモ／詳細。元URL・予測の幅・距離を残す。再取得した結果であり共有時の画面とは限らない。 */
