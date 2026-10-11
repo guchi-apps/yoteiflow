@@ -70,6 +70,7 @@ kurashio の `remote-install.sh` と同じ形で、subpc から Tailscale 越し
 ```bash
 node ios/scripts/sync-version.mjs          # 版番号の確認（通常はリリースで同期済みで差分は出ない）
 ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、TestFlight へ上げる（手動。自動配信は下の「自動配信」）
+ios/scripts/remote-build-check.sh         # 署名なしでMacへ送り、コミット前にビルドが通るか確かめる
 ```
 
 - Mac 側の前提: チェックアウトが `$HOME/apps/yoteiflow` にある（別の場所なら `MAC_REPO_DIR='$HOME/x'`。チルダ付きで渡さない）・Xcode・1Password CLI（`op`）にサインイン済み・ログインキーチェーンが開いている（codesign が失敗したら Mac で `security unlock-keychain ~/Library/Keychains/login.keychain-db` を一度）
