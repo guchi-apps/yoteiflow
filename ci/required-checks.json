@@ -1,0 +1,49 @@
+{
+  "$comment": "バックアップCIの必須検査の定義（#4308。ci.ymlのジョブから生成）。グループ名はci.ymlのジョブ名と一致させること（共通チェックの照合規則）。検査を足すときはここへ足し、ワークフロー側と食い違わせない。",
+  "schemaVersion": 1,
+  "runtime": {
+    "node": "24",
+    "packageManager": "pnpm"
+  },
+  "excludedJobs": [
+    "secrets-check"
+  ],
+  "groups": {
+    "lint-and-build": {
+      "needsDependencies": true,
+      "checks": [
+        {
+          "id": "lint",
+          "name": "Lint",
+          "run": "pnpm lint"
+        },
+        {
+          "id": "typecheck",
+          "name": "Typecheck",
+          "run": "pnpm typecheck"
+        },
+        {
+          "id": "test",
+          "name": "Test",
+          "run": "pnpm test:unit"
+        },
+        {
+          "id": "ios",
+          "name": "iOS配信スクリプトのテスト",
+          "run": "node --test ios/scripts/*.test.mjs"
+        },
+        {
+          "id": "build",
+          "name": "Build",
+          "run": "pnpm build:ci",
+          "env": {
+            "NODE_ENV": "production",
+            "DATABASE_URL": "mysql://placeholder:placeholder@127.0.0.1:3306/app_dayspan",
+            "NEXT_PUBLIC_SUPABASE_URL": "https://ci-placeholder.supabase.co",
+            "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "ci-placeholder"
+          }
+        }
+      ]
+    }
+  }
+}
