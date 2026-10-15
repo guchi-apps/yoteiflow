@@ -73,8 +73,17 @@ export function usePendingWrites(): WriteOp[] {
   return useSyncExternalStore(subscribe, readWriteQueue, () => EMPTY);
 }
 
-type SyncState = { flushing: boolean; authRequired: boolean };
-let syncState: SyncState = { flushing: false, authRequired: false };
+type SyncState = { flushing: boolean; authRequired: boolean; notices: string[] };
+let syncState: SyncState = { flushing: false, authRequired: false, notices: [] };
+
+/** 他の端末の新しい変更で破棄した操作などを、利用者が閉じるまで画面に出す（issue #1242）。 */
+export function addWriteNotice(message: string): void {
+  setWriteSyncState({ notices: [...syncState.notices, message] });
+}
+
+export function dismissWriteNotices(): void {
+  setWriteSyncState({ notices: [] });
+}
 
 export function setWriteSyncState(next: Partial<SyncState>): void {
   syncState = { ...syncState, ...next };

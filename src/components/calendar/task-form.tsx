@@ -5,6 +5,9 @@ import { useRef, useState } from "react";
 
 import { ExternalLink } from "lucide-react";
 
+import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
+import { isPendingTaskId } from "@/lib/offline-queue/ops";
+import type { TaskWriteInput } from "@/services/notion/tasks";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -264,10 +267,46 @@ export function TaskForm({
     return result.date ?? null;
   };
 
+  /** 端末にためる保存。送信は通信が戻ったあと（`flushWriteQueue`）。 */
+  const saveToQueue = () => {
+    const nextDue = linkedDue ? undefined : buildDate(dueMode, due);
+    const nextPlanned = linkedPlanned ? undefined : buildDate(plannedMode, planned);
+    const patch: TaskWriteInput = {
+      title,
+      ...(nextDue === undefined ? {} : { due: nextDue }),
+      ...(nextPlanned === undefined ? {} : { planned: nextPlanned }),
+      done,
+      ...(editing?.skipped && !done ? { outcome: null } : {}),
+      priority: priority === NO_VALUE ? null : priority,
+      ...(progressAvailable ? { progress: progress[0] ?? null } : {}),
+      memo: memo.trim() || null,
+      tags,
+      recurrence,
+    };
+    if (editing) {
+      submitWrite({
+        kind: "taskEdit",
+        taskId: editing.id,
+        patch,
+        baseEditedAt: editing.lastEditedTime ?? null,
+        editedAt: new Date().toISOString(),
+      });
+    } else {
+      submitWrite({ kind: "taskCreate", clientId: crypto.randomUUID(), input: { ...patch, title: title.trim() } });
+    }
+    onSaved(editing ? taskRanges(editing) : null);
+  };
+
   const save = async () => {
-    // 開いている最中に通信が落ちることもある。押せない状態にするだけでなく、ここでも断つ。
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
+    // オフライン中・先にためた操作があるとき・まだ届いていない仮タスクの編集は、端末にためて
+    // 通信が戻ったときに同期する（issue #1242）。予定との紐づけは保存したタスクのIDが要るため、
+    // ためられない。
+    if (shouldQueueWrite(offline) || (editing && isPendingTaskId(editing.id))) {
+      if (draft.linkTo || pending.DUE || pending.PLANNED) {
+        setError(OFFLINE_WRITE_MESSAGE);
+        return;
+      }
+      saveToQueue();
       return;
     }
 
@@ -622,7 +661,7 @@ export function TaskForm({
 
       <ItemFormActions
         saveDisabled={
-          busy || offline || !title.trim() || dueError !== null || plannedError !== null
+          busy || !title.trim() || dueError !== null || plannedError !== null
         }
         onSave={save}
         onDelete={editing ? () => setConfirmingDelete(true) : undefined}

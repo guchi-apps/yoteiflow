@@ -39,6 +39,7 @@ export function TaskDetailDialog({
   progressOptions = null,
   timeZone,
   readOnly = false,
+  offlineEditable = false,
   onClose,
   onEdit,
   onDeleted,
@@ -53,6 +54,8 @@ export function TaskDetailDialog({
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
+  /** オフライン中でも編集・完了切り替えを受ける（端末にためて同期する画面だけ。issue #1242）。 */
+  offlineEditable?: boolean;
   onClose: () => void;
   onEdit: () => void;
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
@@ -251,7 +254,7 @@ export function TaskDetailDialog({
             variant="ghost"
             size="icon-sm"
             aria-label="編集"
-            disabled={readOnly}
+            disabled={readOnly && !offlineEditable}
             onClick={edit}
           >
             <Pencil className="size-4" />
@@ -269,7 +272,7 @@ export function TaskDetailDialog({
             <label className="flex min-h-11 items-center gap-3">
               <Checkbox
                 checked={done && !skipped}
-                disabled={busy || readOnly}
+                disabled={busy || (readOnly && !offlineEditable)}
                 onCheckedChange={(v) => toggleDone(v === true)}
               />
               完了

@@ -157,6 +157,11 @@ export type TaskItem = {
    * 通常のタスクとして扱う。
    */
   bring?: TaskBringInfo | null;
+  /**
+   * Notionの最終更新時刻（ISO）。オフライン中にためた編集が、他の端末の新しい変更を
+   * 上書きしないかの判定に使う（issue #1242）。古い保存済みの応答には無い。
+   */
+  lastEditedTime?: string | null;
   url: string | null;
 };
 

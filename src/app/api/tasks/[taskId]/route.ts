@@ -10,12 +10,19 @@ import {
   deleteTask,
   skipTask,
   TaskNotEditableError,
+  TaskStaleError,
   updateTask,
   type TaskWriteInput,
 } from "@/services/notion/tasks";
 import { unlinkOverriddenTaskDateLinks, unlinkTaskByTaskId } from "@/services/task-links/links";
 
-type Body = TaskWriteInput & { completeAction?: boolean; skipped?: boolean };
+type Body = TaskWriteInput & {
+  completeAction?: boolean;
+  skipped?: boolean;
+  /** オフライン中にためた編集の競合判定用（issue #1242）。 */
+  baseEditedAt?: string | null;
+  editedAt?: string;
+};
 
 /**
  * タスクDB以外のページ（ゴミの日・勤務記録など）への書き込みは、経路によらず断る。
@@ -42,7 +49,8 @@ export async function PATCH(
   }
 
   const { taskId } = await params;
-  const body = (await request.json()) as Body;
+  const { baseEditedAt, editedAt, ...body } = (await request.json()) as Body;
+  const guard = editedAt ? { baseEditedAt: baseEditedAt ?? null, editedAt } : undefined;
   const notion = createNotionClient(connection);
 
   try {
@@ -59,11 +67,14 @@ export async function PATCH(
       return NextResponse.json({ ok: true, nextTaskId: result.nextTaskId });
     }
 
-    await updateTask(notion, connection, taskId, body);
+    await updateTask(notion, connection, taskId, body, guard);
     await unlinkOverriddenTaskDateLinks(userId, taskId, body);
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof TaskNotEditableError) return notEditable();
+    if (error instanceof TaskStaleError) {
+      return NextResponse.json({ error: "stale", message: error.message }, { status: 409 });
+    }
     return externalApiError("notion", "タスクの更新", error);
   }
 }

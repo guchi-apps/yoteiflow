@@ -8,7 +8,7 @@ import {
   type SendOutcome,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
-import { readWriteQueue, setWriteSyncState, writeWriteQueue } from "@/lib/offline-queue/store";
+import { addWriteNotice, readWriteQueue, setWriteSyncState, writeWriteQueue } from "@/lib/offline-queue/store";
 import { isOfflineNow } from "@/components/offline/offline-state";
 import { coversDate, type WorkRecordItem } from "@/types/work";
 
@@ -17,7 +17,11 @@ export const WRITE_SYNCED_EVENT = "dayspan:write-queue-synced";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 async function outcomeOf(response: Response): Promise<SendOutcome> {
-  const body = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+    error?: string;
+    reconciliationRequired?: boolean;
+  } | null;
   return classifyWriteResponse(response.status, body);
 }
 
@@ -81,6 +85,22 @@ async function sendOp(op: WriteOp): Promise<SendOutcome> {
       );
     case "workToday":
       return sendWorkToday(op);
+    case "taskCreate":
+      return outcomeOf(
+        await fetch("/api/tasks", {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ ...op.input, clientId: op.clientId }),
+        }),
+      );
+    case "taskEdit":
+      return outcomeOf(
+        await fetch(`/api/tasks/${encodeURIComponent(op.taskId)}`, {
+          method: "PATCH",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ ...op.patch, baseEditedAt: op.baseEditedAt, editedAt: op.editedAt }),
+        }),
+      );
   }
 }
 
@@ -126,6 +146,8 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
           );
           break;
         }
+
+        if (outcome.type === "discard") addWriteNotice(outcome.message);
 
         writeWriteQueue(readWriteQueue().filter((o) => o.id !== op.id));
         changed = true;
