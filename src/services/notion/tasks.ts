@@ -1,3 +1,4 @@
+import { shouldApplyEdit } from "@/lib/offline-queue/conflict";
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
@@ -99,6 +100,7 @@ export function normalizeTask(page: NotionTaskPage, propertyMap: PropertyMap): T
     // 予定への紐づけはDaySpanのDBにある（docs/spec.md §31）。Notionの応答からは分からないため、
     // ここでは空にしておき、読み込み側（services/task-links/links.ts）で埋める。
     links: [],
+    lastEditedTime: page.last_edited_time ?? null,
     url: page.url ?? null,
   };
 }
@@ -418,13 +420,28 @@ async function writeTaskProperties(
   });
 }
 
+/** オフライン中にためた編集が、他の端末の新しい変更に負けた（issue #1242）。書き込みはしていない。 */
+export class TaskStaleError extends Error {
+  constructor() {
+    super("他の端末の新しい変更があったため、このタスクの編集は反映しませんでした。");
+  }
+}
+
 export async function updateTask(
   notion: Client,
   connection: NotionConnection,
   taskId: string,
   input: TaskWriteInput,
+  /** 指定があれば、最終更新が新しい方を採る（端末の操作がNotionの現状より古ければ断る）。 */
+  guard?: { baseEditedAt: string | null; editedAt: string },
 ): Promise<void> {
-  await assertTaskPage(notion, connection, taskId);
+  const page = await assertTaskPage(notion, connection, taskId);
+  if (
+    guard &&
+    !shouldApplyEdit({ ...guard, serverLastEditedTime: page.last_edited_time })
+  ) {
+    throw new TaskStaleError();
+  }
   await writeTaskProperties(notion, connection, taskId, input);
 }
 

@@ -6,6 +6,9 @@ import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
 import { createTask, listAllTasks, type TaskWriteInput } from "@/services/notion/tasks";
+import { operationStore, requestHash, taskGateway } from "@/services/internal/tasks";
+import { InternalTaskConflictError } from "@/services/internal/task-contract";
+import { runCreateOperation } from "@/services/internal/task-operations";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 
 /**
@@ -50,18 +53,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "not_connected" }, { status: 404 });
   }
 
-  const body = (await request.json()) as TaskWriteInput;
+  const { clientId, ...rest } = (await request.json()) as TaskWriteInput & { clientId?: string };
+  const body: TaskWriteInput = rest;
   if (!body.title?.trim()) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
+  const input = { ...body, title: body.title.trim() };
 
   try {
-    const created = await createTask(createNotionClient(connection), connection, {
-      ...body,
-      title: body.title.trim(),
-    });
+    const notion = createNotionClient(connection);
+
+    // オフライン中にためた作成の再送（issue #1242）。端末が決めた `clientId` を冪等キーにして、
+    // 応答が届かなかった再送で同じタスクを二重に作らない。内部APIと同じ確保→作成→ID記録の流れを使う。
+    if (clientId) {
+      if (!/^[\x21-\x7e]{1,150}$/.test(clientId)) {
+        return NextResponse.json({ error: "invalid_client_id" }, { status: 400 });
+      }
+      const outcome = await runCreateOperation(
+        { store: operationStore, gateway: taskGateway(notion, connection), now: () => new Date() },
+        { userId, idempotencyKey: `client-create ${clientId}`, requestHash: requestHash(input) },
+        input,
+      );
+      switch (outcome.kind) {
+        case "succeeded":
+          return NextResponse.json({ id: outcome.result.task.id });
+        case "in_progress":
+          return NextResponse.json({ error: "operation_in_progress" }, { status: 409 });
+        case "reconciliation_required":
+          // 作成されたか分からない。自動で作り直さず、端末側で利用者に確認させる。
+          return NextResponse.json(
+            { error: "result_unknown", reconciliationRequired: true, message: "タスクが作成済みか確認できませんでした。" },
+            { status: 502 },
+          );
+        case "unknown":
+          return NextResponse.json({ error: "result_unknown", message: "タスクの作成結果を確認できませんでした。" }, { status: 502 });
+        case "not_executed":
+          return externalApiError("notion", "タスクの作成", outcome.error);
+      }
+    }
+
+    const created = await createTask(notion, connection, input);
     return NextResponse.json({ id: created.id });
   } catch (error) {
+    if (error instanceof InternalTaskConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return externalApiError("notion", "タスクの作成", error);
   }
 }
