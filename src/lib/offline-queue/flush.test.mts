@@ -10,6 +10,22 @@ g.localStorage = {
   removeItem: (key: string) => void storage.delete(key),
 };
 g.window = { dispatchEvent() {}, addEventListener() {}, removeEventListener() {} };
+// ブラウザ・Node 24 と同じく、flush を1本に絞るロック（ifAvailable）を置く。Node の版で結果を変えない。
+let lockHeld = false;
+Object.defineProperty(globalThis.navigator, "locks", {
+  configurable: true,
+  value: {
+    request: async (_name: string, _options: unknown, task: (lock: unknown) => Promise<unknown>) => {
+      if (lockHeld) return task(null);
+      lockHeld = true;
+      try {
+        return await task({});
+      } finally {
+        lockHeld = false;
+      }
+    },
+  },
+});
 
 const { flushWriteQueue, submitWrite } = await import("@/lib/offline-queue/flush");
 const { discardWriteOp, enqueue, pendingTaskId } = await import("@/lib/offline-queue/ops");
@@ -123,9 +139,10 @@ test("作成が届いたあとに仮タスクの画面から保存すると、�
   rememberCreatedTask("x", "real");
   const calls = mockFetch([]);
   submitWrite({ kind: "taskEdit", taskId: pendingTaskId("x"), patch: { title: "B" }, baseEditedAt: at, editedAt: at });
-  await flushWriteQueue();
-  assert.ok(calls.length > 0);
-  assert.ok(calls.every((c) => c.url === "/api/tasks/real"));
+  // submitWrite が始めた送信の終わりを待つ（実行中はロックが取れず、別に呼んだ flush はすぐ戻る）
+  for (let i = 0; i < 100 && readWriteQueue().length > 0; i++) await new Promise((r) => setTimeout(r, 1));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/tasks/real");
   assert.equal(calls[0].body.baseEditedAt, null);
   assert.deepEqual(readWriteQueue(), []);
 });
