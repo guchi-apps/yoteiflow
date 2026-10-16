@@ -4,6 +4,8 @@ import {
   classifyWriteResponse,
   enqueue,
   nextSendable,
+  rebaseAfterOwnEdit,
+  rebindPendingTask,
   planWorkToday,
   type SendOutcome,
   type WriteOp,
@@ -65,6 +67,22 @@ async function sendWorkToday(op: Extract<WriteOp, { kind: "workToday" }>): Promi
   }
 }
 
+/** 作成の応答から実IDを読む。flushが後続操作を実IDへ付け替えるために使う。 */
+async function sendCreate(op: Extract<WriteOp, { kind: "taskCreate" }>): Promise<{ outcome: SendOutcome; id?: string }> {
+  const response = await fetch("/api/tasks", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ ...op.input, clientId: op.clientId }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    id?: string;
+    message?: string;
+    error?: string;
+    reconciliationRequired?: boolean;
+  } | null;
+  return { outcome: classifyWriteResponse(response.status, body), id: body?.id };
+}
+
 async function sendOp(op: WriteOp): Promise<SendOutcome> {
   switch (op.kind) {
     case "shoppingBought":
@@ -86,13 +104,7 @@ async function sendOp(op: WriteOp): Promise<SendOutcome> {
     case "workToday":
       return sendWorkToday(op);
     case "taskCreate":
-      return outcomeOf(
-        await fetch("/api/tasks", {
-          method: "POST",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ ...op.input, clientId: op.clientId }),
-        }),
-      );
+      return (await sendCreate(op)).outcome;
     case "taskEdit":
       return outcomeOf(
         await fetch(`/api/tasks/${encodeURIComponent(op.taskId)}`, {
@@ -127,12 +139,28 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
         const op = nextSendable(readWriteQueue());
         if (!op) break;
 
+        // 送信中の印を付ける。送信中の操作は後続の編集で書き換えられない（issue #1247）。
+        const markSending = (on: boolean) =>
+          writeWriteQueue(
+            readWriteQueue().map((o) => (o.id === op.id ? { ...o, sending: on || undefined } : o)),
+          );
+        markSending(true);
+
         let outcome: SendOutcome;
+        let createdId: string | undefined;
         try {
-          outcome = await sendOp(op);
+          if (op.kind === "taskCreate") {
+            const sent = await sendCreate(op);
+            outcome = sent.outcome;
+            createdId = sent.id;
+          } else {
+            outcome = await sendOp(op);
+          }
         } catch {
+          markSending(false);
           break; // 通信が戻っていない。残して次の機会に再試行する。
         }
+        markSending(false);
 
         if (outcome.type === "retry") {
           setWriteSyncState({ authRequired: Boolean(outcome.authRequired) });
@@ -149,7 +177,14 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
 
         if (outcome.type === "discard") addWriteNotice(outcome.message);
 
-        writeWriteQueue(readWriteQueue().filter((o) => o.id !== op.id));
+        let rest = readWriteQueue().filter((o) => o.id !== op.id);
+        const at = new Date().toISOString();
+        if (op.kind === "taskCreate" && outcome.type === "done" && createdId) {
+          rest = rebindPendingTask(rest, op.clientId, createdId, at);
+        } else if ((op.kind === "taskEdit" || op.kind === "taskDone") && outcome.type === "done") {
+          rest = rebaseAfterOwnEdit(rest, op.taskId, at);
+        }
+        writeWriteQueue(rest);
         changed = true;
       }
     } finally {

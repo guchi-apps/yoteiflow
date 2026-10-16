@@ -7,6 +7,8 @@ import {
   classifyWriteResponse,
   enqueue,
   pendingTaskId,
+  rebaseAfterOwnEdit,
+  rebindPendingTask,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
 
@@ -85,4 +87,31 @@ test("stale・作成の確認待ち・実行中の応答の分類", () => {
   assert.equal(classifyWriteResponse(409, { error: "operation_in_progress" }).type, "retry");
   assert.equal(classifyWriteResponse(502, { error: "result_unknown", reconciliationRequired: true }).type, "hold");
   assert.equal(classifyWriteResponse(502, { error: "result_unknown" }).type, "retry");
+});
+
+test("送信中の編集は後続の編集で書き換えず、別の操作として積む（issue #1247）", () => {
+  const sending = { ...edit("a", "t", { title: "A" }), sending: true } as WriteOp;
+  const ops = enqueue([sending], edit("b", "t", { memo: "m" }));
+  assert.equal(ops.length, 2);
+  assert.equal(ops[0].id, "a");
+  assert.deepEqual(ops[0].kind === "taskEdit" && ops[0].patch, { title: "A" });
+  assert.equal(ops[1].kind === "taskEdit" && ops[1].patch.memo, "m");
+});
+
+test("送信中の作成へ後続の編集は畳まず、作成成功後に実IDへ付け替える", () => {
+  const sending = { ...create("x", { title: "新規" }), sending: true } as WriteOp;
+  let ops = enqueue([sending], edit("e", pendingTaskId("x"), { title: "直した" }));
+  assert.equal(ops.length, 2);
+  assert.deepEqual(ops[0].kind === "taskCreate" && ops[0].input, { title: "新規" });
+  ops = rebindPendingTask(ops.filter((o) => o.id !== sending.id), "x", "real", "2026-02-01T00:00:00Z");
+  const op = ops[0];
+  assert.equal(op.kind === "taskEdit" && op.taskId, "real");
+  assert.equal(op.kind === "taskEdit" && op.baseEditedAt, null);
+});
+
+test("自分の編集が届いたあとの後続編集は基準を外し、操作時刻を届いた時刻以降にする", () => {
+  const ops = rebaseAfterOwnEdit([edit("b", "t", { memo: "m" })], "t", "2026-02-01T00:00:00Z");
+  const op = ops[0];
+  assert.equal(op.kind === "taskEdit" && op.baseEditedAt, null);
+  assert.equal(op.kind === "taskEdit" && op.editedAt, "2026-02-01T00:00:00Z");
 });
