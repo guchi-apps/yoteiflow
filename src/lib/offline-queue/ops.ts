@@ -22,7 +22,11 @@ export function isPendingTaskId(id: string): boolean {
   return id.startsWith(PENDING_TASK_PREFIX);
 }
 
-type Base = { id: string; queuedAt: string; heldReason?: string };
+/**
+ * `sending` は送信中の印。送信中の操作は後続の `enqueue` で書き換えず、後続の変更は別の操作として
+ * 積む（送信したスナップショットだけを完了扱いにするため・issue #1247）。
+ */
+type Base = { id: string; queuedAt: string; heldReason?: string; sending?: boolean };
 
 export type WriteOp = Base &
   (
@@ -73,7 +77,7 @@ export function enqueue(ops: WriteOp[], op: WriteOp): WriteOp[] {
   const folded = foldTaskOp(ops, op);
   if (folded) return folded;
   const key = opKey(op);
-  return [...ops.filter((o) => opKey(o) !== key), op];
+  return [...ops.filter((o) => o.sending || opKey(o) !== key), op];
 }
 
 /**
@@ -92,17 +96,18 @@ function foldTaskOp(ops: WriteOp[], op: WriteOp): WriteOp[] | null {
     const clientId = taskId.slice(PENDING_TASK_PREFIX.length);
     let found = false;
     const next = ops.map((o) => {
-      if (o.kind === "taskCreate" && o.clientId === clientId) {
+      if (o.kind === "taskCreate" && o.clientId === clientId && !o.sending) {
         found = true;
         return { ...o, input: { ...o.input, ...patch } };
       }
       return o;
     });
+    // 作成が送信中なら畳めない。後続の編集は仮IDのまま別に積み、作成成功後に実IDへ付け替える。
     return found ? next : null;
   }
 
   const sameTask = (o: WriteOp) =>
-    (o.kind === "taskEdit" || o.kind === "taskDone") && o.taskId === taskId;
+    (o.kind === "taskEdit" || o.kind === "taskDone") && o.taskId === taskId && !o.sending;
   const prior = ops.filter(sameTask);
   if (prior.length === 0) return null;
 
@@ -168,6 +173,29 @@ export function classifyWriteResponse(
   if (status === 409 && body?.error === "operation_in_progress") return { type: "retry" };
   if (status >= 500) return { type: "retry" };
   return { type: "hold", message: body?.message ?? body?.error ?? "同期できませんでした。" };
+}
+
+/**
+ * 作成が届いたあと、同じ仮IDを指す後続の操作を実IDへ付け替える（issue #1247）。
+ * 付け替えた編集は、作成を送った時点より後の操作として送る（自分の作成でNotionの最終更新が
+ * 進んでいるため、基準は持たず、操作時刻は届いた時刻以降にする）。
+ */
+export function rebindPendingTask(ops: WriteOp[], clientId: string, realId: string, at: string): WriteOp[] {
+  const pending = pendingTaskId(clientId);
+  return ops.map((o) => {
+    if (o.kind === "taskEdit" && o.taskId === pending) {
+      return { ...o, taskId: realId, baseEditedAt: null, editedAt: at };
+    }
+    if (o.kind === "taskDone" && o.taskId === pending) return { ...o, taskId: realId };
+    return o;
+  });
+}
+
+/** 自分の編集が届いたあと、同じタスクの後続の編集は基準を持たず、操作時刻を届いた時刻以降にする。 */
+export function rebaseAfterOwnEdit(ops: WriteOp[], taskId: string, at: string): WriteOp[] {
+  return ops.map((o) =>
+    o.kind === "taskEdit" && o.taskId === taskId ? { ...o, baseEditedAt: null, editedAt: at } : o,
+  );
 }
 
 /** 先頭から送れる操作。保留中の操作があればそこで止まる（順序を守る）。 */
@@ -263,7 +291,9 @@ export function taskFromCreate(clientId: string, input: TaskWriteInput): TaskIte
  */
 export function applyTaskWrites(tasks: TaskItem[], ops: WriteOp[]): TaskItem[] {
   const patches = new Map<string, TaskWriteInput>();
-  for (const op of ops) if (op.kind === "taskEdit") patches.set(op.taskId, op.patch);
+  for (const op of ops) {
+    if (op.kind === "taskEdit") patches.set(op.taskId, { ...patches.get(op.taskId), ...op.patch });
+  }
   const edited =
     patches.size === 0
       ? applyTaskOps(tasks, ops)
