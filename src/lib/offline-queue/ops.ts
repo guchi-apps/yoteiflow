@@ -22,6 +22,16 @@ export function isPendingTaskId(id: string): boolean {
   return id.startsWith(PENDING_TASK_PREFIX);
 }
 
+/** 次回分を作る完了操作はtaskEdit/taskCreateの再送では扱えない（#1250）。 */
+export function isQueuedRecurringCompletion(
+  current: Pick<TaskItem, "done" | "recurrence"> | undefined,
+  done: boolean,
+  recurrence: string | null,
+): boolean {
+  const repeats = (value: string | null | undefined) => Boolean(value && value !== "なし");
+  return done && !current?.done && (repeats(current?.recurrence) || repeats(recurrence));
+}
+
 /**
  * `sending` は送信中の印。送信中の操作は後続の `enqueue` で書き換えず、後続の変更は別の操作として
  * 積む（送信したスナップショットだけを完了扱いにするため・issue #1247）。
