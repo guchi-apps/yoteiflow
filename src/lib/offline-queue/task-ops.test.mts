@@ -5,10 +5,12 @@ import { shouldApplyEdit } from "@/lib/offline-queue/conflict";
 import {
   applyTaskWrites,
   classifyWriteResponse,
+  discardWriteOp,
   enqueue,
   pendingTaskId,
   rebaseAfterOwnEdit,
   rebindPendingTask,
+  resolvePendingOp,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
 
@@ -114,4 +116,73 @@ test("自分の編集が届いたあとの後続編集は基準を外し、操�
   const op = ops[0];
   assert.equal(op.kind === "taskEdit" && op.baseEditedAt, null);
   assert.equal(op.kind === "taskEdit" && op.editedAt, "2026-02-01T00:00:00Z");
+});
+
+test("作成の送信が失敗したあとの再編集で、古い編集が新しい編集を上書きしない（issue #1247 B1）", () => {
+  const sending = { ...create("x", { title: "A" }), sending: true } as WriteOp;
+  let ops = enqueue([sending], edit("e1", pendingTaskId("x"), { title: "B", memo: "m" }));
+  assert.equal(ops.length, 2);
+  // 送信が失敗して印が外れたあと（送った印は残る）、もう一度編集する
+  ops = ops.map((o) => ({ ...o, sending: undefined, ...(o.kind === "taskCreate" ? { attempted: true } : {}) }));
+  ops = enqueue(ops, edit("e2", pendingTaskId("x"), { title: "C" }));
+  assert.equal(ops.length, 2);
+  assert.deepEqual(ops[0].kind === "taskCreate" && ops[0].input, { title: "A" });
+  assert.deepEqual(ops[1].kind === "taskEdit" && ops[1].patch, { title: "C", memo: "m" });
+  // 一度も送っていない作成なら、残っている仮IDの編集ごと作成へ畳む
+  const unsent = enqueue(
+    [create("y", { title: "A" }), edit("f1", pendingTaskId("y"), { title: "B", memo: "m" })],
+    edit("f2", pendingTaskId("y"), { title: "C" }),
+  );
+  assert.equal(unsent.length, 1);
+  assert.deepEqual(unsent[0].kind === "taskCreate" && unsent[0].input, { title: "C", memo: "m" });
+});
+
+test("一度送った作成へは畳まず、送った中身のまま再送する（再送の冪等照合を壊さない）", () => {
+  const attempted = { ...create("x", { title: "A" }), attempted: true } as WriteOp;
+  const ops = enqueue([attempted], edit("e", pendingTaskId("x"), { title: "C" }));
+  assert.equal(ops.length, 2);
+  assert.deepEqual(ops[0].kind === "taskCreate" && ops[0].input, { title: "A" });
+  assert.equal(ops[1].kind === "taskEdit" && ops[1].taskId, pendingTaskId("x"));
+});
+
+test("作成の送信中に積んだ同じ仮タスクの編集どうしは1つに畳む", () => {
+  const sending = { ...create("x", { title: "A" }), sending: true } as WriteOp;
+  let ops = enqueue([sending], edit("e1", pendingTaskId("x"), { title: "B" }, null));
+  ops = enqueue(ops, edit("e2", pendingTaskId("x"), { memo: "m" }, null));
+  assert.equal(ops.length, 2);
+  assert.deepEqual(ops[1].kind === "taskEdit" && ops[1].patch, { title: "B", memo: "m" });
+});
+
+test("作成を破棄すると、同じ仮タスクへの編集・完了も捨てる（issue #1247 B2）", () => {
+  const ops: WriteOp[] = [
+    create("x", { title: "A" }),
+    edit("e", pendingTaskId("x"), { title: "B" }),
+    done("d", pendingTaskId("x"), true),
+    edit("o", "other", { title: "O" }),
+  ];
+  assert.deepEqual(discardWriteOp(ops, "c-x").map((o) => o.id), ["o"]);
+  assert.deepEqual(discardWriteOp(ops, "o").map((o) => o.id), ["c-x", "e", "d"]);
+});
+
+test("届いた作成の仮IDを指す操作は実IDへ直し、分からなければそのまま返す", () => {
+  const known = (c: string) => (c === "x" ? "real" : undefined);
+  const op = resolvePendingOp(edit("e", pendingTaskId("x"), { title: "B" }), known, "2026-03-01T00:00:00Z");
+  assert.equal(op.kind === "taskEdit" && op.taskId, "real");
+  assert.equal(op.kind === "taskEdit" && op.baseEditedAt, null);
+  assert.equal(op.kind === "taskEdit" && op.editedAt, "2026-03-01T00:00:00Z");
+  const unknown = edit("u", pendingTaskId("y"), { title: "B" });
+  assert.equal(resolvePendingOp(unknown, known, "2026-03-01T00:00:00Z"), unknown);
+  const real = edit("r", "t", { title: "B" });
+  assert.equal(resolvePendingOp(real, known, "2026-03-01T00:00:00Z"), real);
+});
+
+test("作成の送信中に積んだ仮タスクの編集・完了も、仮タスクの表示へ重ねる", () => {
+  const ops: WriteOp[] = [
+    { ...create("x", { title: "A" }), sending: true } as WriteOp,
+    edit("e", pendingTaskId("x"), { title: "B" }),
+    done("d", pendingTaskId("x"), true),
+  ];
+  const [task] = applyTaskWrites([], ops);
+  assert.equal(task.title, "B");
+  assert.equal(task.done, true);
 });

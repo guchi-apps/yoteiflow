@@ -3,14 +3,23 @@
 import {
   classifyWriteResponse,
   enqueue,
+  isPendingTaskId,
   nextSendable,
+  resolvePendingOp,
   rebaseAfterOwnEdit,
   rebindPendingTask,
   planWorkToday,
   type SendOutcome,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
-import { addWriteNotice, readWriteQueue, setWriteSyncState, writeWriteQueue } from "@/lib/offline-queue/store";
+import {
+  addWriteNotice,
+  createdTaskId,
+  readWriteQueue,
+  rememberCreatedTask,
+  setWriteSyncState,
+  writeWriteQueue,
+} from "@/lib/offline-queue/store";
 import { isOfflineNow } from "@/components/offline/offline-state";
 import { coversDate, type WorkRecordItem } from "@/types/work";
 
@@ -136,13 +145,37 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
     setWriteSyncState({ flushing: true });
     try {
       for (;;) {
-        const op = nextSendable(readWriteQueue());
-        if (!op) break;
+        const head = nextSendable(readWriteQueue());
+        if (!head) break;
+
+        // 仮タスク（まだ作成が届いていない）を指す操作は、そのままでは送る先が無い。作成がキューの前に
+        // あれば先に送られて付け替わるため、ここへ来るのは作成が届いたあとに積まれたものか、作成を破棄・
+        // 失ったもの。実IDが分かれば付け替え、分からなければ送らずに捨てる（送ると5xxで再試行され続け、
+        // キュー全体が止まる・issue #1247 B2）。
+        if ((head.kind === "taskEdit" || head.kind === "taskDone") && isPendingTaskId(head.taskId)) {
+          const resolved = resolvePendingOp(head, createdTaskId, new Date().toISOString());
+          if (resolved === head) {
+            addWriteNotice("作成できなかったタスクへの操作のため、反映しませんでした。");
+            writeWriteQueue(readWriteQueue().filter((o) => o.id !== head.id));
+          } else {
+            writeWriteQueue(readWriteQueue().map((o) => (o.id === head.id ? resolved : o)));
+          }
+          changed = true;
+          continue;
+        }
+        const op = head;
 
         // 送信中の印を付ける。送信中の操作は後続の編集で書き換えられない（issue #1247）。
+        // 作成には送った印（attempted）も残す。応答を失ったあとも、送った中身のまま再送するため。
         const markSending = (on: boolean) =>
           writeWriteQueue(
-            readWriteQueue().map((o) => (o.id === op.id ? { ...o, sending: on || undefined } : o)),
+            readWriteQueue().map((o) =>
+              o.id !== op.id
+                ? o
+                : o.kind === "taskCreate"
+                  ? { ...o, sending: on || undefined, attempted: true }
+                  : { ...o, sending: on || undefined },
+            ),
           );
         markSending(true);
 
@@ -180,6 +213,7 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
         let rest = readWriteQueue().filter((o) => o.id !== op.id);
         const at = new Date().toISOString();
         if (op.kind === "taskCreate" && outcome.type === "done" && createdId) {
+          rememberCreatedTask(op.clientId, createdId);
           rest = rebindPendingTask(rest, op.clientId, createdId, at);
         } else if ((op.kind === "taskEdit" || op.kind === "taskDone") && outcome.type === "done") {
           rest = rebaseAfterOwnEdit(rest, op.taskId, at);
@@ -215,7 +249,9 @@ export function shouldQueueWrite(offline: boolean): boolean {
 }
 
 export function submitWrite(input: DistributiveOmit<WriteOp, "id" | "queuedAt" | "heldReason">): void {
-  const op = { ...input, id: newId(), queuedAt: new Date().toISOString() } as WriteOp;
+  const queuedAt = new Date().toISOString();
+  // 作成が届いたあとに仮タスクの画面から積まれた操作は、積む時点で実IDへ直す（issue #1247 B2）。
+  const op = resolvePendingOp({ ...input, id: newId(), queuedAt } as WriteOp, createdTaskId, queuedAt);
   writeWriteQueue(enqueue(readWriteQueue(), op));
   void flushWriteQueue();
 }
