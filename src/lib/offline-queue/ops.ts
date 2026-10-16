@@ -32,8 +32,12 @@ export type WriteOp = Base &
   (
     | { kind: "shoppingBought"; itemId: string; bought: boolean }
     | { kind: "taskDone"; taskId: string; done: boolean }
-    /** タスクの新規作成。`clientId` はサーバーでの二重作成防止の鍵（issue #1242）。 */
-    | { kind: "taskCreate"; clientId: string; input: TaskWriteInput }
+    /**
+     * タスクの新規作成。`clientId` はサーバーでの二重作成防止の鍵（issue #1242）。
+     * `attempted` は一度でもサーバーへ送った印。サーバーは同じ鍵の再送を中身で照合し、違えば
+     * `idempotency_key_reused` で断るため、送った作成の入力は以後書き換えない（issue #1247）。
+     */
+    | { kind: "taskCreate"; clientId: string; input: TaskWriteInput; attempted?: boolean }
     /**
      * タスクの編集。同じタスクの完了切り替えもここへ畳み込む。`baseEditedAt` は編集を始めた時点で
      * 見えていたNotionの最終更新、`editedAt` は端末で操作した時刻（issue #1242）。
@@ -94,16 +98,25 @@ function foldTaskOp(ops: WriteOp[], op: WriteOp): WriteOp[] | null {
 
   if (isPendingTaskId(taskId)) {
     const clientId = taskId.slice(PENDING_TASK_PREFIX.length);
-    let found = false;
-    const next = ops.map((o) => {
-      if (o.kind === "taskCreate" && o.clientId === clientId && !o.sending) {
-        found = true;
-        return { ...o, input: { ...o.input, ...patch } };
+    // 送信中・一度送った作成へは畳まない（送った中身と変わると再送が断られる）。
+    const target = ops.find(
+      (o) => o.kind === "taskCreate" && o.clientId === clientId && !o.sending && !o.attempted,
+    );
+    if (target) {
+      // 作成の送信中に別に積んだ編集・完了が残っていれば、積んだ順に作成の入力へ畳んでから今回の指定を重ねる。
+      // 作成だけへ畳むと、残った古い編集が作成後に付け替わって新しい指定を上書きする（issue #1247 B1）。
+      const pendingOps = (o: WriteOp) =>
+        (o.kind === "taskEdit" || o.kind === "taskDone") && o.taskId === taskId && !o.sending;
+      let input: TaskWriteInput = target.kind === "taskCreate" ? target.input : {};
+      for (const o of ops) {
+        if (!pendingOps(o)) continue;
+        input = { ...input, ...(o.kind === "taskDone" ? { done: o.done } : o.kind === "taskEdit" ? o.patch : {}) };
       }
-      return o;
-    });
-    // 作成が送信中なら畳めない。後続の編集は仮IDのまま別に積み、作成成功後に実IDへ付け替える。
-    return found ? next : null;
+      input = { ...input, ...patch };
+      return ops.filter((o) => !pendingOps(o)).map((o) => (o === target ? { ...o, input } : o));
+    }
+    // 作成が送信中・送信済みなら畳めない。後続の編集は仮IDのまま別に積み（下で同じ仮IDの編集どうしは
+    // 畳む）、作成成功後に実IDへ付け替える。
   }
 
   const sameTask = (o: WriteOp) =>
@@ -196,6 +209,30 @@ export function rebaseAfterOwnEdit(ops: WriteOp[], taskId: string, at: string): 
   return ops.map((o) =>
     o.kind === "taskEdit" && o.taskId === taskId ? { ...o, baseEditedAt: null, editedAt: at } : o,
   );
+}
+
+/**
+ * 利用者が保留中の操作を破棄する。作成を破棄したときは、同じ仮タスクへの編集・完了も捨てる。
+ * 残すと送る先のIDが無いまま先頭に来て、キュー全体が進まなくなる（issue #1247 B2）。
+ */
+export function discardWriteOp(ops: WriteOp[], id: string): WriteOp[] {
+  const target = ops.find((o) => o.id === id);
+  if (!target) return ops;
+  const pending = target.kind === "taskCreate" ? pendingTaskId(target.clientId) : null;
+  return ops.filter(
+    (o) => o.id !== id && !(pending && (o.kind === "taskEdit" || o.kind === "taskDone") && o.taskId === pending),
+  );
+}
+
+/**
+ * 作成済みの仮IDを指す操作を実IDへ直す（作成が届いたあとに仮タスクの画面から積まれた操作など）。
+ * 実IDが分からなければそのまま返す。
+ */
+export function resolvePendingOp(op: WriteOp, realIdOf: (clientId: string) => string | undefined, at: string): WriteOp {
+  if ((op.kind !== "taskEdit" && op.kind !== "taskDone") || !isPendingTaskId(op.taskId)) return op;
+  const realId = realIdOf(op.taskId.slice(PENDING_TASK_PREFIX.length));
+  if (!realId) return op;
+  return op.kind === "taskEdit" ? { ...op, taskId: realId, baseEditedAt: null, editedAt: op.editedAt > at ? op.editedAt : at } : { ...op, taskId: realId };
 }
 
 /** 先頭から送れる操作。保留中の操作があればそこで止まる（順序を守る）。 */
@@ -302,7 +339,13 @@ export function applyTaskWrites(tasks: TaskItem[], ops: WriteOp[]): TaskItem[] {
           return patch ? applyPatchToTask(task, patch) : task;
         });
   const created = ops.flatMap((op) => (op.kind === "taskCreate" ? [taskFromCreate(op.clientId, op.input)] : []));
-  return created.length === 0 ? edited : [...created, ...edited];
+  if (created.length === 0) return edited;
+  // 作成の送信中に別に積んだ仮タスクへの編集・完了も、仮タスクの表示へ重ねる。
+  const createdEdited = applyTaskOps(created, ops).map((task) => {
+    const patch = patches.get(task.id);
+    return patch ? applyPatchToTask(task, patch) : task;
+  });
+  return [...createdEdited, ...edited];
 }
 
 /** 勤務の送信時の分岐。その日の記録（あれば）と意図から、次にする書き込みを決める。 */

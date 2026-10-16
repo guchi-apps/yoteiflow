@@ -8,6 +8,7 @@ import { CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { flushActivityQueue } from "@/lib/activity-queue/flush";
 import { flushWriteQueue } from "@/lib/offline-queue/flush";
+import { discardWriteOp } from "@/lib/offline-queue/ops";
 import {
   readWriteQueue,
   dismissWriteNotices,
@@ -144,7 +145,7 @@ export function WriteQueueNotice() {
   };
   const discardHeld = () => {
     if (!held) return;
-    writeWriteQueue(readWriteQueue().filter((op) => op.id !== held.id));
+    writeWriteQueue(discardWriteOp(readWriteQueue(), held.id));
   };
 
   return (
