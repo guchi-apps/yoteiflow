@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
-import { isPendingTaskId } from "@/lib/offline-queue/ops";
+import { isPendingTaskId, isQueuedRecurringCompletion } from "@/lib/offline-queue/ops";
 import type { TaskWriteInput } from "@/services/notion/tasks";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
@@ -302,6 +302,10 @@ export function TaskForm({
     // 通信が戻ったときに同期する（issue #1242）。予定との紐づけは保存したタスクのIDが要るため、
     // ためられない。
     if (shouldQueueWrite(offline) || (editing && isPendingTaskId(editing.id))) {
+      if (isQueuedRecurringCompletion(editing, done, recurrence)) {
+        setError("繰り返しタスクの完了は、通信が戻り未送信の変更が同期されてから行ってください。");
+        return;
+      }
       if (draft.linkTo || pending.DUE || pending.PLANNED) {
         setError(OFFLINE_WRITE_MESSAGE);
         return;
