@@ -8,8 +8,10 @@ import { CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { flushActivityQueue } from "@/lib/activity-queue/flush";
 import { flushWriteQueue } from "@/lib/offline-queue/flush";
+import { discardWriteOp } from "@/lib/offline-queue/ops";
 import {
   readWriteQueue,
+  dismissWriteNotices,
   useWriteSyncState,
   usePendingWrites,
   writeWriteQueue,
@@ -117,9 +119,24 @@ export function ActivityQueueNotice() {
 /** ためている買い物・タスク・勤務の操作の件数と、同期できなかった理由。何も無ければ出さない。 */
 export function WriteQueueNotice() {
   const ops = usePendingWrites();
-  const { flushing, authRequired } = useWriteSyncState();
+  const { flushing, authRequired, notices } = useWriteSyncState();
 
-  if (ops.length === 0) return null;
+  // 他の端末の新しい変更で反映しなかった操作は、キューが空になっても閉じるまで残す（issue #1242）。
+  if (ops.length === 0) {
+    if (notices.length === 0) return null;
+    return (
+      <div
+        role="status"
+        className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-secondary-container px-3 py-2 text-xs text-on-secondary-container"
+      >
+        <CloudUpload className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1">{notices.join(" ")}</span>
+        <Button size="sm" variant="ghost" onClick={dismissWriteNotices}>
+          閉じる
+        </Button>
+      </div>
+    );
+  }
 
   const held = ops.find((op) => op.heldReason);
   const retry = () => {
@@ -128,7 +145,7 @@ export function WriteQueueNotice() {
   };
   const discardHeld = () => {
     if (!held) return;
-    writeWriteQueue(readWriteQueue().filter((op) => op.id !== held.id));
+    writeWriteQueue(discardWriteOp(readWriteQueue(), held.id));
   };
 
   return (

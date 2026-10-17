@@ -6,12 +6,30 @@ import {
   applyTaskOps,
   classifyWriteResponse,
   enqueue,
+  isQueuedRecurringCompletion,
   nextSendable,
   planWorkToday,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
 
 const base = { id: "1", queuedAt: "2026-01-01T00:00:00Z" };
+
+test("繰り返しの完了は編集・仮タスク・作成のキューへ入れない", () => {
+  assert.equal(isQueuedRecurringCompletion({ done: false, recurrence: "毎日" }, true, "毎日"), true);
+  assert.equal(isQueuedRecurringCompletion({ done: false, recurrence: "毎日" }, true, "なし"), true);
+  assert.equal(isQueuedRecurringCompletion({ done: false, recurrence: null }, true, "毎週"), true);
+  assert.equal(isQueuedRecurringCompletion(undefined, true, "毎月"), true);
+});
+
+test("通常タスクの完了・完了済みの編集・未完了への戻しは保つ", () => {
+  for (const recurrence of [null, "", "なし"]) {
+    assert.equal(isQueuedRecurringCompletion({ done: false, recurrence }, true, recurrence), false);
+  }
+  assert.equal(isQueuedRecurringCompletion({ done: true, recurrence: "毎日" }, true, "毎日"), false);
+  assert.equal(isQueuedRecurringCompletion({ done: true, recurrence: "毎日" }, false, "毎日"), false);
+  assert.equal(isQueuedRecurringCompletion({ done: false, recurrence: "毎日" }, false, "毎日"), false);
+  assert.equal(isQueuedRecurringCompletion(undefined, false, "毎日"), false);
+});
 const bought = (id: string, itemId: string, b: boolean): WriteOp => ({ ...base, id, kind: "shoppingBought", itemId, bought: b });
 
 test("同じ対象の操作は後に積んだものだけが残る", () => {

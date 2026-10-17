@@ -1,7 +1,7 @@
 "use client";
 
 import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
-import { applyTaskOps } from "@/lib/offline-queue/ops";
+import { applyTaskWrites, isPendingTaskId } from "@/lib/offline-queue/ops";
 import { usePendingWrites } from "@/lib/offline-queue/store";
 import { useWriteSynced } from "@/lib/offline-queue/use-write-synced";
 import { useMemo, useState, type ReactNode } from "react";
@@ -122,7 +122,7 @@ export function TaskList({
   // まだ届いていない完了・未完了の操作を重ねて描く（issue #1135）。
   const queuedWrites = usePendingWrites();
   const fetchedTasks = data?.tasks ?? EMPTY_TASKS;
-  const tasks = useMemo(() => applyTaskOps(fetchedTasks, queuedWrites), [fetchedTasks, queuedWrites]);
+  const tasks = useMemo(() => applyTaskWrites(fetchedTasks, queuedWrites), [fetchedTasks, queuedWrites]);
   const tagCatalog = data?.tagCatalog ?? EMPTY_TAG_CATALOG;
   const placeCatalog = data?.placeCatalog ?? EMPTY_PLACE_CATALOG;
   const calendars = data?.calendars ?? EMPTY_CALENDARS;
@@ -241,7 +241,6 @@ export function TaskList({
   };
 
   const editTask = (task: TaskItem) => {
-    if (offline) return;
     setViewingTask(null);
     setItemDialog({ task: toTaskDraft(task, timeZone) });
   };
@@ -272,7 +271,7 @@ export function TaskList({
       progressOptions={tagCatalog.progress ?? null}
       utils={utils}
       todayKey={todayKey}
-      disabled={busyId === task.id || offline}
+      disabled={busyId === task.id}
       onToggleDone={(done) => toggleDone(task, done)}
       onOpen={() => setViewingTask(task)}
     />
@@ -403,7 +402,7 @@ export function TaskList({
                 progressOptions={null}
                 utils={utils}
                 todayKey={todayKey}
-                disabled={busyId === task.id || offline}
+                disabled={busyId === task.id}
                 onToggleDone={(done) => toggleDone(task, done)}
                 onOpen={() => setViewingTask(task)}
               />
@@ -424,7 +423,7 @@ export function TaskList({
                 progressOptions={null}
                 utils={utils}
                 todayKey={todayKey}
-                disabled={busyId === task.id || offline}
+                disabled={busyId === task.id}
                 onOpen={() => setViewingTask(task)}
               />
             )}
@@ -447,7 +446,6 @@ export function TaskList({
           fabBottomOffsetClass(runningActivity !== null),
         )}
         aria-label="タスクを追加"
-        disabled={offline}
         onClick={openAdd}
       >
         <Plus className="size-6" />
@@ -479,7 +477,8 @@ export function TaskList({
           tagOptions={tagCatalog.task ?? []}
           progressOptions={tagCatalog.progress ?? null}
           timeZone={timeZone}
-          readOnly={offline}
+          readOnly={offline || isPendingTaskId(viewingTask.id)}
+          offlineEditable
           onClose={() => setViewingTask(null)}
           onEdit={() => editTask(viewingTask)}
           onDeleted={() => {

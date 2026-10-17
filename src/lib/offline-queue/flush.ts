@@ -3,12 +3,23 @@
 import {
   classifyWriteResponse,
   enqueue,
+  isPendingTaskId,
   nextSendable,
+  resolvePendingOp,
+  rebaseAfterOwnEdit,
+  rebindPendingTask,
   planWorkToday,
   type SendOutcome,
   type WriteOp,
 } from "@/lib/offline-queue/ops";
-import { readWriteQueue, setWriteSyncState, writeWriteQueue } from "@/lib/offline-queue/store";
+import {
+  addWriteNotice,
+  createdTaskId,
+  readWriteQueue,
+  rememberCreatedTask,
+  setWriteSyncState,
+  writeWriteQueue,
+} from "@/lib/offline-queue/store";
 import { isOfflineNow } from "@/components/offline/offline-state";
 import { coversDate, type WorkRecordItem } from "@/types/work";
 
@@ -17,7 +28,11 @@ export const WRITE_SYNCED_EVENT = "dayspan:write-queue-synced";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 async function outcomeOf(response: Response): Promise<SendOutcome> {
-  const body = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+    error?: string;
+    reconciliationRequired?: boolean;
+  } | null;
   return classifyWriteResponse(response.status, body);
 }
 
@@ -61,6 +76,22 @@ async function sendWorkToday(op: Extract<WriteOp, { kind: "workToday" }>): Promi
   }
 }
 
+/** 作成の応答から実IDを読む。flushが後続操作を実IDへ付け替えるために使う。 */
+async function sendCreate(op: Extract<WriteOp, { kind: "taskCreate" }>): Promise<{ outcome: SendOutcome; id?: string }> {
+  const response = await fetch("/api/tasks", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ ...op.input, clientId: op.clientId }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    id?: string;
+    message?: string;
+    error?: string;
+    reconciliationRequired?: boolean;
+  } | null;
+  return { outcome: classifyWriteResponse(response.status, body), id: body?.id };
+}
+
 async function sendOp(op: WriteOp): Promise<SendOutcome> {
   switch (op.kind) {
     case "shoppingBought":
@@ -81,6 +112,16 @@ async function sendOp(op: WriteOp): Promise<SendOutcome> {
       );
     case "workToday":
       return sendWorkToday(op);
+    case "taskCreate":
+      return (await sendCreate(op)).outcome;
+    case "taskEdit":
+      return outcomeOf(
+        await fetch(`/api/tasks/${encodeURIComponent(op.taskId)}`, {
+          method: "PATCH",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ ...op.patch, baseEditedAt: op.baseEditedAt, editedAt: op.editedAt }),
+        }),
+      );
   }
 }
 
@@ -104,15 +145,55 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
     setWriteSyncState({ flushing: true });
     try {
       for (;;) {
-        const op = nextSendable(readWriteQueue());
-        if (!op) break;
+        const head = nextSendable(readWriteQueue());
+        if (!head) break;
+
+        // 仮タスク（まだ作成が届いていない）を指す操作は、そのままでは送る先が無い。作成がキューの前に
+        // あれば先に送られて付け替わるため、ここへ来るのは作成が届いたあとに積まれたものか、作成を破棄・
+        // 失ったもの。実IDが分かれば付け替え、分からなければ送らずに捨てる（送ると5xxで再試行され続け、
+        // キュー全体が止まる・issue #1247 B2）。
+        if ((head.kind === "taskEdit" || head.kind === "taskDone") && isPendingTaskId(head.taskId)) {
+          const resolved = resolvePendingOp(head, createdTaskId, new Date().toISOString());
+          if (resolved === head) {
+            addWriteNotice("作成できなかったタスクへの操作のため、反映しませんでした。");
+            writeWriteQueue(readWriteQueue().filter((o) => o.id !== head.id));
+          } else {
+            writeWriteQueue(readWriteQueue().map((o) => (o.id === head.id ? resolved : o)));
+          }
+          changed = true;
+          continue;
+        }
+        const op = head;
+
+        // 送信中の印を付ける。送信中の操作は後続の編集で書き換えられない（issue #1247）。
+        // 作成には送った印（attempted）も残す。応答を失ったあとも、送った中身のまま再送するため。
+        const markSending = (on: boolean) =>
+          writeWriteQueue(
+            readWriteQueue().map((o) =>
+              o.id !== op.id
+                ? o
+                : o.kind === "taskCreate"
+                  ? { ...o, sending: on || undefined, attempted: true }
+                  : { ...o, sending: on || undefined },
+            ),
+          );
+        markSending(true);
 
         let outcome: SendOutcome;
+        let createdId: string | undefined;
         try {
-          outcome = await sendOp(op);
+          if (op.kind === "taskCreate") {
+            const sent = await sendCreate(op);
+            outcome = sent.outcome;
+            createdId = sent.id;
+          } else {
+            outcome = await sendOp(op);
+          }
         } catch {
+          markSending(false);
           break; // 通信が戻っていない。残して次の機会に再試行する。
         }
+        markSending(false);
 
         if (outcome.type === "retry") {
           setWriteSyncState({ authRequired: Boolean(outcome.authRequired) });
@@ -127,7 +208,17 @@ export async function flushWriteQueue(): Promise<{ changed: boolean }> {
           break;
         }
 
-        writeWriteQueue(readWriteQueue().filter((o) => o.id !== op.id));
+        if (outcome.type === "discard") addWriteNotice(outcome.message);
+
+        let rest = readWriteQueue().filter((o) => o.id !== op.id);
+        const at = new Date().toISOString();
+        if (op.kind === "taskCreate" && outcome.type === "done" && createdId) {
+          rememberCreatedTask(op.clientId, createdId);
+          rest = rebindPendingTask(rest, op.clientId, createdId, at);
+        } else if ((op.kind === "taskEdit" || op.kind === "taskDone") && outcome.type === "done") {
+          rest = rebaseAfterOwnEdit(rest, op.taskId, at);
+        }
+        writeWriteQueue(rest);
         changed = true;
       }
     } finally {
@@ -158,7 +249,9 @@ export function shouldQueueWrite(offline: boolean): boolean {
 }
 
 export function submitWrite(input: DistributiveOmit<WriteOp, "id" | "queuedAt" | "heldReason">): void {
-  const op = { ...input, id: newId(), queuedAt: new Date().toISOString() } as WriteOp;
+  const queuedAt = new Date().toISOString();
+  // 作成が届いたあとに仮タスクの画面から積まれた操作は、積む時点で実IDへ直す（issue #1247 B2）。
+  const op = resolvePendingOp({ ...input, id: newId(), queuedAt } as WriteOp, createdTaskId, queuedAt);
   writeWriteQueue(enqueue(readWriteQueue(), op));
   void flushWriteQueue();
 }

@@ -54,6 +54,42 @@ export function writeWriteQueue(ops: WriteOp[]): void {
 /** ログアウト・別アカウントへの切り替えで、前のユーザーの操作を残さない。 */
 export function clearWriteQueue(): void {
   writeWriteQueue([]);
+  try {
+    localStorage.removeItem(CREATED_KEY);
+  } catch {
+    // 保存できない環境では何も残っていない。
+  }
+}
+
+/**
+ * 届いた作成の仮ID（clientId）と実IDの対応。作成が届いたあとに仮タスクの画面から積まれた操作を、
+ * 実IDへ付け替えるために使う（issue #1247 B2）。古いものから捨て、直近の分だけ持つ。
+ */
+const CREATED_KEY = "dayspan:write-queue:created:v1";
+const CREATED_LIMIT = 50;
+
+function readCreatedIds(): [string, string][] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CREATED_KEY) ?? "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((e): e is [string, string] => Array.isArray(e) && typeof e[0] === "string" && typeof e[1] === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberCreatedTask(clientId: string, realId: string): void {
+  try {
+    const next = [...readCreatedIds().filter(([c]) => c !== clientId), [clientId, realId]].slice(-CREATED_LIMIT);
+    localStorage.setItem(CREATED_KEY, JSON.stringify(next));
+  } catch {
+    // 保存できない環境では付け替えられない（仮IDの操作は送らずに捨てる）。
+  }
+}
+
+export function createdTaskId(clientId: string): string | undefined {
+  return readCreatedIds().find(([c]) => c === clientId)?.[1];
 }
 
 function subscribe(listener: () => void): () => void {
@@ -73,8 +109,17 @@ export function usePendingWrites(): WriteOp[] {
   return useSyncExternalStore(subscribe, readWriteQueue, () => EMPTY);
 }
 
-type SyncState = { flushing: boolean; authRequired: boolean };
-let syncState: SyncState = { flushing: false, authRequired: false };
+type SyncState = { flushing: boolean; authRequired: boolean; notices: string[] };
+let syncState: SyncState = { flushing: false, authRequired: false, notices: [] };
+
+/** 他の端末の新しい変更で破棄した操作などを、利用者が閉じるまで画面に出す（issue #1242）。 */
+export function addWriteNotice(message: string): void {
+  setWriteSyncState({ notices: [...syncState.notices, message] });
+}
+
+export function dismissWriteNotices(): void {
+  setWriteSyncState({ notices: [] });
+}
 
 export function setWriteSyncState(next: Partial<SyncState>): void {
   syncState = { ...syncState, ...next };
