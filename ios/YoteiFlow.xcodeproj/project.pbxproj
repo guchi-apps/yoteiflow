@@ -442,7 +442,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -468,7 +468,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -626,7 +626,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -666,7 +666,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -695,7 +695,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -721,7 +721,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -747,7 +747,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -773,7 +773,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -790,7 +790,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6AA3WFTR94;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -806,7 +806,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6AA3WFTR94;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 4.19.0;
+				MARKETING_VERSION = 4.19.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
