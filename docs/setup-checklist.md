@@ -9,7 +9,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | フィールド | 値 |
 |---|---|
 | `target-dir` | VPS上の配置先（例: `/apps/dayspan`）。本番デプロイがapp-deploy-gateへ移ったため（#1257）使っていない |
-| （`yoteiflow` アイテムの `deploy-ssh-key`） | 本番デプロイ用の**アプリ専用**SSH鍵（ed25519の秘密鍵）。下の「7. VPS」の手順で発行する（#1257） |
+| （`dayspan-deploy` アイテム〔SSH鍵〕の `private_key`） | 本番デプロイ用の**アプリ専用**SSH鍵（ed25519の秘密鍵）。下の「7. VPS」の手順で発行する（#1257） |
 | `port` | `3113` |
 | `db-name` | `app_dayspan` |
 | `token-encryption-key` | `openssl rand -base64 32` で生成した32byte鍵 |
@@ -178,10 +178,15 @@ pm2の再起動・稼働版の照合（`/api/app-version` の `sha` と `APP_COM
    sudo readlink /proc/"$(sudo -u github-user pm2 pid dayspan)"/cwd   # → /home/github-user/apps/dayspan
    ```
 
-2. （サブPC）鍵を作り、秘密鍵を1Passwordの `op://apps/dayspan/deploy-ssh-key` へ入れる（秘密鍵はファイルに残さない）
+2. （サブPC）鍵を作り、1Passwordアプリで保管庫 `apps` に**SSH鍵アイテム** `dayspan-deploy` を作って秘密鍵をインポートする
+   （サブPCの `op` は読み取り専用のサービスアカウントのため書き込めない。通常の「パスワード」欄へ貼ると改行が空白に化けて鍵が壊れる）。
+   マニフェストは `op://apps/dayspan-deploy/private_key?ssh-format=openssh` で読む（欄のIDは `private_key`。`ssh-format=openssh` が無いとPKCS#8で返る）。
+   確かめるときは秘密鍵を画面に出さず、公開鍵だけを出す。インポートしたら手元のファイルは消す
 
    ```bash
-   ssh-keygen -t ed25519 -N "" -C "deploy-dayspan" -f "$(mktemp -u)"
+   KEY="$(mktemp -u)"; ssh-keygen -t ed25519 -N "" -C "deploy-dayspan" -f "$KEY"
+   # 1Passwordアプリで $KEY をインポートしたあと
+   T="$(mktemp)"; op read "op://apps/dayspan-deploy/private_key?ssh-format=openssh" > "$T"; chmod 600 "$T"; ssh-keygen -y -f "$T"; rm "$T"
    ```
 
 3. （VPS）公開鍵を登録する（`guchi-apps/vps` の `scripts/setup-app-keys.sh`。`sudo` を含むため代行できない）
