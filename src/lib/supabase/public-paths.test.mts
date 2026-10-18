@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isPublicPath } from "@/lib/supabase/public-paths";
+import { isPublicPath, isTokenAuthApiPath } from "@/lib/supabase/public-paths";
 
 test("iOSアプリの認証引き継ぎ（start・consume）は未ログインでも通す", () => {
   assert.equal(isPublicPath("/auth/native/start"), true);
@@ -20,4 +20,12 @@ test("従来の公開パスは変わらない", () => {
   }
   assert.equal(isPublicPath("/calendar"), false);
   assert.equal(isPublicPath("/api/google/connect"), false);
+});
+
+test("稼働版の照合（/api/app-version）は未ログインでも通す", () => {
+  assert.equal(isTokenAuthApiPath("/api/app-version"), true);
+  assert.equal(isTokenAuthApiPath("/api/app-version/x"), false);
+  assert.equal(isTokenAuthApiPath("/api/app-versions"), false);
+  assert.equal(isTokenAuthApiPath("/api/events"), false);
+  assert.equal(isTokenAuthApiPath("/api/widget/activity"), true);
 });
