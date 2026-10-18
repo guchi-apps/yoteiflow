@@ -118,7 +118,8 @@ enum WidgetTimeline {
     static func entryDates(now: Date, boundaries: [Date], timeZone: String?) -> [Date] {
         let limit = nextMidnight(after: now, timeZone: timeZone) ?? now.addingTimeInterval(24 * 60 * 60)
         let future = Set(boundaries.filter { $0 > now && $0 < limit }).sorted().prefix(maxExtraEntries)
-        return [now] + future
+        // prefix は ArraySlice を返すため、配列へ直してから並べる（RC-4 の全体レビューの指摘）
+        return [now] + Array(future)
     }
 
     private static func nextMidnight(after now: Date, timeZone: String?) -> Date? {
