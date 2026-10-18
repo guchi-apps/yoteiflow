@@ -2,7 +2,7 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import { listShoppingItems, shoppingDatabaseReady } from "@/services/notion/shopping-items";
-import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
+import { readWidgetCache, type WidgetFetchOptions, writeWidgetCache } from "@/services/widget/cache";
 import { sortShoppingItems, type ShoppingItem } from "@/types/shopping";
 import type { WidgetShoppingPayload } from "@/types/widget";
 
@@ -16,7 +16,10 @@ const MAX_ITEMS = 30;
  * 残りを数えるのに読み飛ばすことになる（買い物画面が購入済みを末尾へ送っているのと同じ理由）。
  * 並びは優先度順にする。枠に入るのは数行しかなく、そこへ出すなら先に買うべきものから。
  */
-export async function buildWidgetShopping(userId: string): Promise<WidgetShoppingPayload> {
+export async function buildWidgetShopping(
+  userId: string,
+  options: WidgetFetchOptions = {},
+): Promise<WidgetShoppingPayload> {
   const now = new Date();
 
   const uiSetting = await db.uiSetting.findUnique({
@@ -25,7 +28,7 @@ export async function buildWidgetShopping(userId: string): Promise<WidgetShoppin
   });
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
 
-  const source = await loadSource(userId, timeZone, createCalendarDateUtils(timeZone).todayKey(), now);
+  const source = await loadSource(userId, timeZone, createCalendarDateUtils(timeZone).todayKey(), now, options);
   if (!source.ok) {
     return {
       timeZone,
@@ -62,11 +65,12 @@ async function loadSource(
   timeZone: string,
   dateKey: string,
   now: Date,
+  options: WidgetFetchOptions,
 ): Promise<ShoppingSource> {
   // 買い物リストは日付を持たないが、鍵の形は他の面と揃える。日付・タイムゾーンが変われば
   // 取り直しになるだけで、正しさは変わらない。
   const cacheKey = { userId, view: "shopping" as const, dateKey, timeZone };
-  const cached = readWidgetCache<ShoppingItem[]>(cacheKey, now);
+  const cached = options.fresh ? null : readWidgetCache<ShoppingItem[]>(cacheKey, now);
   if (cached) return { ok: true, items: cached };
 
   const connection = await db.notionConnection.findUnique({ where: { userId } });

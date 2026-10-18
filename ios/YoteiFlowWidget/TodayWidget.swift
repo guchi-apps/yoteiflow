@@ -9,6 +9,8 @@ struct TodayEntry: TimelineEntry {
     let date: Date
     let schedule: WidgetState<SchedulePayload>
     let tasks: WidgetState<TasksPayload>
+    /// 保存してあった応答を出しているときの、古いほうの取得時刻（「H:mm時点」を添える・issue #1255）
+    var staleAt: Date? = nil
 }
 
 struct TodayProvider: TimelineProvider {
@@ -39,19 +41,45 @@ struct TodayProvider: TimelineProvider {
             completion(Self.sample)
             return
         }
-        Task { completion(await load()) }
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         Task {
-            completion(Timeline(entries: [await load()], policy: .after(.now.addingTimeInterval(15 * 60))))
+            let (schedule, tasks) = await load()
+            completion(entry(at: .now, schedule: schedule, tasks: tasks))
         }
     }
 
-    private func load() async -> TodayEntry {
+    /// 取り直しの間隔は面ごとのウィジェットと同じ（WidgetTimeline）。予定が終わるごとに、
+    /// 取り直さずに「次の予定」を切り替えるエントリも置く（issue #1255）
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
+        Task {
+            let (schedule, tasks) = await load()
+            let now = Date.now
+            let timeZone = schedule.state.payload?.timeZone ?? tasks.state.payload?.timeZone
+            let dates = WidgetTimeline.entryDates(
+                now: now,
+                boundaries: schedule.state.payload?.boundaries ?? [],
+                timeZone: timeZone
+            )
+            let reload = WidgetTimeline.reloadDate(now: now, failed: schedule.failed || tasks.failed, timeZone: timeZone)
+            completion(Timeline(
+                entries: dates.map { entry(at: $0, schedule: schedule, tasks: tasks) },
+                policy: .after(reload)
+            ))
+        }
+    }
+
+    private func load() async -> (WidgetFetchResult<SchedulePayload>, WidgetFetchResult<TasksPayload>) {
         async let schedule = WidgetAPI.fetch("schedule", as: SchedulePayload.self)
         async let tasks = WidgetAPI.fetch("tasks", as: TasksPayload.self)
-        return TodayEntry(date: .now, schedule: await schedule, tasks: await tasks)
+        return await (schedule, tasks)
+    }
+
+    private func entry(
+        at date: Date,
+        schedule: WidgetFetchResult<SchedulePayload>,
+        tasks: WidgetFetchResult<TasksPayload>
+    ) -> TodayEntry {
+        let staleAt = [schedule.staleAt, tasks.staleAt].compactMap { $0 }.min()
+        return TodayEntry(date: date, schedule: schedule.state.at(date), tasks: tasks.state.at(date), staleAt: staleAt)
     }
 }
 
@@ -61,6 +89,7 @@ struct TodayWidgetView: View {
 
     var body: some View {
         content
+            .modifier(StaleNote(staleAt: entry.staleAt))
             .widgetURL(SharedConfig.deepLink(path: "/calendar"))
             .containerBackground(.fill.tertiary, for: .widget)
     }

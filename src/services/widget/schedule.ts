@@ -9,7 +9,7 @@ import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/even
 import { getActivityCalendarId } from "@/services/activity/settings";
 import { listEvents, toCalendarItems } from "@/services/google-calendar/events";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
-import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
+import { readWidgetCache, type WidgetFetchOptions, writeWidgetCache } from "@/services/widget/cache";
 import type { CalendarEventItem } from "@/types/calendar";
 import type { WidgetScheduleItem, WidgetSchedulePayload } from "@/types/widget";
 
@@ -21,7 +21,10 @@ import type { WidgetScheduleItem, WidgetSchedulePayload } from "@/types/widget";
  * たびにNotionへの往復が何本も積み上がる（docs/spec.md §20）。移動を混ぜるのは、出発時刻が
  * まさにホーム画面で読みたい値であり、DaySpanのDBの読み取りだけで済むため。
  */
-export async function buildWidgetSchedule(userId: string): Promise<WidgetSchedulePayload> {
+export async function buildWidgetSchedule(
+  userId: string,
+  options: WidgetFetchOptions = {},
+): Promise<WidgetSchedulePayload> {
   const now = new Date();
 
   const uiSetting = await db.uiSetting.findUnique({
@@ -32,7 +35,7 @@ export async function buildWidgetSchedule(userId: string): Promise<WidgetSchedul
   const utils = createCalendarDateUtils(timeZone);
   const dateKey = utils.todayKey();
 
-  const source = await loadSource(userId, timeZone, dateKey, now);
+  const source = await loadSource(userId, timeZone, dateKey, now, options);
 
   return {
     timeZone,
@@ -56,9 +59,10 @@ async function loadSource(
   timeZone: string,
   dateKey: string,
   now: Date,
+  options: WidgetFetchOptions,
 ): Promise<ScheduleSource> {
   const cacheKey = { userId, view: "schedule" as const, dateKey, timeZone };
-  const cached = readWidgetCache<ScheduleSource>(cacheKey, now);
+  const cached = options.fresh ? null : readWidgetCache<ScheduleSource>(cacheKey, now);
   if (cached) return cached;
 
   // Google未接続は失敗ではなく空になるため、繋いでいないことを先に見分ける。区別しないと、

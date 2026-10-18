@@ -3,7 +3,7 @@ import Foundation
 // `/api/widget/*` の応答（`src/types/widget.ts`・`src/types/activity.ts`）。
 // 新しい項目はサーバー側で足されても読めるよう、必須でないものは Optional にしている。
 
-struct ActivityPayload: Decodable {
+struct ActivityPayload: WidgetPayload {
     struct Running: Decodable {
         let title: String
         let startedAt: String
@@ -28,7 +28,7 @@ struct ActivityPayload: Decodable {
     let todayUnavailable: String?
 }
 
-struct SchedulePayload: Decodable {
+struct SchedulePayload: WidgetPayload {
     struct Item: Decodable {
         let kind: String
         let title: String
@@ -37,7 +37,8 @@ struct SchedulePayload: Decodable {
         let end: String?
         let detail: String?
         let outcome: String?
-        let past: Bool
+        /// 取得時点でサーバーが決めた値。先の時刻のエントリでは `SchedulePayload.at(_:)` が付け直す
+        var past: Bool
         // 移動のときだけ入る。古い応答には無いため Optional
         var mode: String? = nil
         var origin: String? = nil
@@ -49,7 +50,7 @@ struct SchedulePayload: Decodable {
     let unavailable: String?
 }
 
-struct TasksPayload: Decodable {
+struct TasksPayload: WidgetPayload {
     struct Item: Decodable {
         let title: String
         let bucket: String
@@ -65,7 +66,7 @@ struct TasksPayload: Decodable {
     let unavailable: String?
 }
 
-struct ShoppingPayload: Decodable {
+struct ShoppingPayload: WidgetPayload {
     struct Item: Decodable {
         let name: String
         let category: String?
@@ -76,6 +77,29 @@ struct ShoppingPayload: Decodable {
     let remaining: Int
     let items: [Item]
     let unavailable: String?
+}
+
+extension SchedulePayload {
+    /// 予定が終わるごとに「済んだ」へ移り、次の予定が変わる
+    var boundaries: [Date] { items.compactMap { ISODate.parse($0.end) } }
+
+    /// `date` の時点で済んだかどうかを付け直して並べ直す（issue #1255）。規則はサーバーの
+    /// `order()`（src/services/widget/schedule.ts）と同じ: 終わりが `date` 以前なら済み、
+    /// これからのものが先、どちらも終日を先頭に、あとは時刻順。
+    func at(_ date: Date) -> SchedulePayload {
+        let shifted = items.map { item -> Item in
+            var item = item
+            if let end = ISODate.parse(item.end) { item.past = end <= date } else { item.past = false }
+            return item
+        }
+        let ordered = shifted.sorted { a, b in
+            if a.past != b.past { return !a.past }
+            if a.allDay != b.allDay { return a.allDay }
+            if let sa = a.start, let sb = b.start, sa != sb { return sa < sb }
+            return a.title.compare(b.title, locale: Locale(identifier: "ja")) == .orderedAscending
+        }
+        return SchedulePayload(timeZone: timeZone, items: ordered, unavailable: unavailable)
+    }
 }
 
 enum ISODate {

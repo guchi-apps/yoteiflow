@@ -1,4 +1,5 @@
 import { resolveWidgetUserId, widgetJson } from "@/app/api/widget/shared";
+import { isWidgetFreshRequest } from "@/lib/widget-fresh";
 import { buildWidgetSchedule } from "@/services/widget/schedule";
 
 /**
@@ -12,5 +13,5 @@ export async function GET(request: Request) {
   const auth = await resolveWidgetUserId(request);
   if (!auth.ok) return auth.response;
 
-  return widgetJson(await buildWidgetSchedule(auth.userId));
+  return widgetJson(await buildWidgetSchedule(auth.userId, { fresh: isWidgetFreshRequest(request.headers) }));
 }
