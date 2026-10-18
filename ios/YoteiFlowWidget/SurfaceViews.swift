@@ -35,6 +35,34 @@ private func notice<P>(_ state: WidgetState<P>) -> String? {
     }
 }
 
+/// 取得に失敗して保存してあった応答を出しているときに「H:mm時点」を添える（issue #1255）。
+/// 何分前の内容かを読めるようにするため。ロック画面の枠は幅が無いため出さない
+struct StaleNote: ViewModifier {
+    let staleAt: Date?
+    @Environment(\.widgetFamily) private var family
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let staleAt, !isAccessory {
+            VStack(alignment: .leading, spacing: 2) {
+                content
+                Text("\(staleAt.formatted(date: .omitted, time: .shortened))時点")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        } else {
+            content
+        }
+    }
+
+    private var isAccessory: Bool {
+        switch family {
+        case .accessoryInline, .accessoryCircular, .accessoryRectangular: true
+        default: false
+        }
+    }
+}
+
 private struct Header: View {
     let title: String
     var trailing: String?
@@ -111,6 +139,7 @@ struct ActivityWidgetView: View {
 
     var body: some View {
         content
+            .modifier(StaleNote(staleAt: entry.staleAt))
             .widgetURL(SharedConfig.deepLink(path: "/activity"))
             .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -235,6 +264,7 @@ struct ScheduleWidgetView: View {
 
     var body: some View {
         content
+            .modifier(StaleNote(staleAt: entry.staleAt))
             .widgetURL(SharedConfig.deepLink(path: "/calendar"))
             .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -314,6 +344,7 @@ struct TasksWidgetView: View {
 
     var body: some View {
         content
+            .modifier(StaleNote(staleAt: entry.staleAt))
             .widgetURL(SharedConfig.deepLink(path: "/tasks"))
             .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -376,6 +407,7 @@ struct ShoppingWidgetView: View {
 
     var body: some View {
         content
+            .modifier(StaleNote(staleAt: entry.staleAt))
             .widgetURL(SharedConfig.deepLink(path: "/shopping"))
             .containerBackground(.fill.tertiary, for: .widget)
     }

@@ -8,6 +8,7 @@ import {
 } from "@/services/activity/today-cache";
 import { summarizeActivityMinutes } from "@/services/activity/totals";
 import { listEvents } from "@/services/google-calendar/events";
+import type { WidgetFetchOptions } from "@/services/widget/cache";
 import type {
   ActivityTodayTotals,
   ActivityTodayUnavailable,
@@ -24,7 +25,10 @@ const MAX_ITEMS = 4;
  * （docs/spec.md §19・§27）。どちらか片方だけでは「いま何を、今日どれだけ」が揃わないため、
  * ここで両方を読んでまとめる。
  */
-export async function buildActivityWidgetSummary(userId: string): Promise<ActivityWidgetSummary> {
+export async function buildActivityWidgetSummary(
+  userId: string,
+  options: WidgetFetchOptions = {},
+): Promise<ActivityWidgetSummary> {
   const now = new Date();
 
   const [uiSetting, running] = await Promise.all([
@@ -33,7 +37,7 @@ export async function buildActivityWidgetSummary(userId: string): Promise<Activi
   ]);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
-  const today = await loadTodayTotals(userId, timeZone, now, running);
+  const today = await loadTodayTotals(userId, timeZone, now, running, options);
 
   return {
     timeZone,
@@ -62,6 +66,7 @@ async function loadTodayTotals(
   timeZone: string,
   now: Date,
   running: { title: string; startedAt: string } | null,
+  options: WidgetFetchOptions,
 ): Promise<TodayResult> {
   const calendarId = await getActivityCalendarId(userId);
   if (!calendarId) return { ok: false, reason: "calendar_not_selected" };
@@ -83,7 +88,8 @@ async function loadTodayTotals(
   // その回のぶんは1回の問い合わせで済ませる（today-cache.ts）。取り出した予定は now で切り詰めて
   // 数えるので、持ち回した後に読んでも合計が先へ進むことはない。
   const cacheKey = { userId, calendarId, dateKey };
-  let events = readCachedTodayEvents(cacheKey, now);
+  // アプリが求めた取り直し（issue #1255）では持ち回しを読まない。
+  let events = options.fresh ? null : readCachedTodayEvents(cacheKey, now);
 
   if (!events) {
     try {

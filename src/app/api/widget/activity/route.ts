@@ -1,4 +1,5 @@
 import { resolveWidgetUserId, widgetJson } from "@/app/api/widget/shared";
+import { isWidgetFreshRequest } from "@/lib/widget-fresh";
 import { buildActivityWidgetSummary } from "@/services/activity/summary";
 
 /**
@@ -13,5 +14,5 @@ export async function GET(request: Request) {
   const auth = await resolveWidgetUserId(request);
   if (!auth.ok) return auth.response;
 
-  return widgetJson(await buildActivityWidgetSummary(auth.userId));
+  return widgetJson(await buildActivityWidgetSummary(auth.userId, { fresh: isWidgetFreshRequest(request.headers) }));
 }
