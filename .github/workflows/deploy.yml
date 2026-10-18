@@ -325,12 +325,13 @@ jobs:
           APNS_TEAM_ID: ${{ env.APNS_TEAM_ID }}
           APNS_PRIVATE_KEY: ${{ env.APNS_PRIVATE_KEY }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
+          APP_COMMIT_SHA: ${{ github.sha }}
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: DATABASE_URL,MIGRATE_DATABASE_URL,DB_USER,DB_PASSWORD,DB_HOST,DB_PORT,DB_NAME,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,TOKEN_ENCRYPTION_KEY,GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET,CLAUDE_CODE_OAUTH_TOKEN,OPS_API_TOKEN,TYPESAFE_API_KEY,SHARED_TOKEN_API_SECRET,ISSUE_DECK_URL,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,APNS_KEY_ID,APNS_TEAM_ID,APNS_PRIVATE_KEY,TARGET_DIR
+          envs: DATABASE_URL,MIGRATE_DATABASE_URL,DB_USER,DB_PASSWORD,DB_HOST,DB_PORT,DB_NAME,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,TOKEN_ENCRYPTION_KEY,GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET,CLAUDE_CODE_OAUTH_TOKEN,OPS_API_TOKEN,TYPESAFE_API_KEY,SHARED_TOKEN_API_SECRET,ISSUE_DECK_URL,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,APNS_KEY_ID,APNS_TEAM_ID,APNS_PRIVATE_KEY,TARGET_DIR,APP_COMMIT_SHA
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
@@ -378,6 +379,7 @@ jobs:
             update_env APNS_KEY_ID "$APNS_KEY_ID"
             update_env APNS_TEAM_ID "$APNS_TEAM_ID"
             update_env APNS_PRIVATE_KEY "$APNS_PRIVATE_KEY"
+            update_env APP_COMMIT_SHA "$APP_COMMIT_SHA"
 
             echo "Installing production dependencies..."
             corepack enable pnpm >/dev/null 2>&1 || true
@@ -396,18 +398,19 @@ jobs:
               exit 1
             fi
 
-            echo "Health check..."
-            # Next.js は起動完了までに数秒かかる（next.config.mjs の読み込みを含む）。
-            # 1回だけの curl では起動が間に合わずに失敗するため、一定時間リトライする。
+            echo "Verifying running version..."
+            # 起動できただけでは新しい版が動いているとは限らない（古いプロセスが応答しうる）。
+            # 稼働中の版が今回のコミットと一致するまで成功にしない。
             for i in $(seq 1 30); do
-              if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/"; then
-                echo "Deployment successful."
+              RUNNING_SHA="$(curl -fsS "http://127.0.0.1:${PORT}/api/app-version" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{process.stdout.write(String(JSON.parse(d).sha||""))}catch{}})' || true)"
+              if [ -n "$RUNNING_SHA" ] && [ "$RUNNING_SHA" = "$APP_COMMIT_SHA" ]; then
+                echo "Deployment successful. Running version: ${RUNNING_SHA}"
                 exit 0
               fi
               sleep 2
             done
 
-            echo "Health check failed after 60s."
+            echo "Version check failed after 60s. expected=${APP_COMMIT_SHA} running=${RUNNING_SHA:-none}"
             pm2 describe dayspan || true
             pm2 logs dayspan --lines 50 --nostream || true
             exit 1

@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.19.1",
+    date: "2026-10-18",
+    changes: [
+      "iPhoneのウィジェットが、アプリを閉じたあとも古い内容のまま止まりにくくなりました。取得に失敗したときも、同じ日の直前の内容を正しい日付の判定で表示します。",
+    ],
+  },
+  {
     version: "4.19.0",
     date: "2026-10-17",
     changes: [

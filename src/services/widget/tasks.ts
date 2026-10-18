@@ -5,7 +5,7 @@ import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
 import { classifyTasks, overdueDaysLabel, sortTasks } from "@/services/notion/task-buckets";
 import { listTasksInRange } from "@/services/notion/tasks";
-import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
+import { readWidgetCache, type WidgetFetchOptions, writeWidgetCache } from "@/services/widget/cache";
 import type { TaskItem } from "@/types/calendar";
 import type { WidgetTaskItem, WidgetTasksPayload } from "@/types/widget";
 
@@ -41,7 +41,10 @@ const LOOKAHEAD_DAYS = 14;
  * 書き直すと、ウィジェットの数字と画面の見出しの件数が食い違う。丸い枠に出す数（期限切れ＋今日）は
  * アプリアイコンのバッジと同じ数え方でもある（docs/spec.md §32）。
  */
-export async function buildWidgetTasks(userId: string): Promise<WidgetTasksPayload> {
+export async function buildWidgetTasks(
+  userId: string,
+  options: WidgetFetchOptions = {},
+): Promise<WidgetTasksPayload> {
   const now = new Date();
 
   const uiSetting = await db.uiSetting.findUnique({
@@ -52,7 +55,7 @@ export async function buildWidgetTasks(userId: string): Promise<WidgetTasksPaylo
   const utils = createCalendarDateUtils(timeZone);
   const todayKey = utils.todayKey();
 
-  const source = await loadSource(userId, timeZone, todayKey, now);
+  const source = await loadSource(userId, timeZone, todayKey, now, options);
   if (!source.ok) {
     return {
       timeZone,
@@ -103,9 +106,10 @@ async function loadSource(
   timeZone: string,
   todayKey: string,
   now: Date,
+  options: WidgetFetchOptions,
 ): Promise<TasksSource> {
   const cacheKey = { userId, view: "tasks" as const, dateKey: todayKey, timeZone };
-  const cached = readWidgetCache<TaskItem[]>(cacheKey, now);
+  const cached = options.fresh ? null : readWidgetCache<TaskItem[]>(cacheKey, now);
   if (cached) return { ok: true, tasks: cached };
 
   const connection = await getNotionConnection(userId);

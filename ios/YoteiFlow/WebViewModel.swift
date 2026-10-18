@@ -614,6 +614,9 @@ extension WebViewModel {
             hasSyncedWidgetToken = false
             hasSyncedActivityToken = false
             WidgetCredentials.clear()
+            // 保存してある応答（予定・タスク・買い物の中身）も消す。別の利用者で再ログインした
+            // 最初の取得が失敗したときに、前の利用者の中身を出さないため（issue #1255）
+            WidgetRefreshStore.clear()
             SleepFocusDiagnostics.clear()
             // 停止ボタン用トークンも消し、表示中のアクティビティを終わらせる（ログアウト後に
             // 前のアカウントの記録を出し続けたり、止められたりしないように。#971）
@@ -645,6 +648,7 @@ extension WebViewModel {
                 let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
                 if let token = value as? String, !token.isEmpty, WidgetCredentials.save(token: token) {
                     hasSyncedWidgetToken = true
+                    WidgetRefreshStore.markRefreshRequested()
                     WidgetCenter.shared.reloadAllTimelines()
                 }
             }

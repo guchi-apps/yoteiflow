@@ -40,9 +40,17 @@ struct ContentView: View {
             // 記録の開始・停止はWebの中で行われ、アプリへは伝わらない。開いたとき・戻ったときに
             // ウィジェットを取り直させて、古い値が残らないようにする
             if phase == .active {
+                WidgetRefreshStore.markRefreshRequested()
                 WidgetCenter.shared.reloadAllTimelines()
                 // 食い違うライブアクティビティの片付け・取り残しの表示（#971）
                 Task { await LiveActivityCoordinator.shared.reconcile() }
+            }
+            // 離れるときにも取り直させる。開いている間に始めた記録・付けたチェックが、
+            // 次にiOSが更新するまで（予算次第で数十分以上）ウィジェットへ映らないため（issue #1255）。
+            // 印を付けて、サーバーの3分の持ち回し（変更前の内容）を飛ばさせる
+            if phase == .background {
+                WidgetRefreshStore.markRefreshRequested()
+                WidgetCenter.shared.reloadAllTimelines()
             }
         }
     }

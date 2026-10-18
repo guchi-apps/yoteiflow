@@ -45,6 +45,12 @@ export type WidgetCacheKey = {
   timeZone: string;
 };
 
+/**
+ * 取得の指定。`fresh` はiOSアプリが求めた取り直し（`lib/widget-fresh.ts`）で、持ち回しを読まずに
+ * 取り直す。取り直した結果は書き込むので、同じ回にまとめて走る他の枠はそれを使い回せる。
+ */
+export type WidgetFetchOptions = { fresh?: boolean };
+
 type CacheEntry = { value: unknown; fetchedAt: number };
 
 const cache = new Map<string, CacheEntry>();
