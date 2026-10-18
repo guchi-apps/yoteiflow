@@ -51,7 +51,7 @@ struct WidgetFetchResult<Payload> {
 /// 同じ面を複数の枠が取りにきてもサーバー側で3分持ち回される（services/widget/cache.ts）。
 /// アプリが取り直しを求めた回だけ `X-Widget-Fresh: 1` で持ち回しを飛ばす（WidgetRefreshStore）。
 enum WidgetAPI {
-    static func fetch<Payload: Decodable>(_ surface: String, as type: Payload.Type) async -> WidgetFetchResult<Payload> {
+    static func fetch<Payload: WidgetPayload>(_ surface: String, as type: Payload.Type) async -> WidgetFetchResult<Payload> {
         guard let token = WidgetCredentials.load() else {
             return WidgetFetchResult(state: .noToken, staleAt: nil, failed: false)
         }
@@ -82,12 +82,16 @@ enum WidgetAPI {
     }
 
     /// 取得に失敗した回は、同じ日のうちに取れた直前の応答を出し続ける。前の日の応答は
-    /// 「今日」の内容として読めないため使わない
-    private static func fallback<Payload: Decodable>(_ surface: String, now: Date) -> WidgetFetchResult<Payload> {
+    /// 「今日」の内容として読めないため使わない。「同じ日」は応答を組み立てた設定のタイムゾーンで
+    /// 決める（端末のタイムゾーンで決めると、旅行中などに前日の応答が今日として残る・issue #1260）
+    private static func fallback<Payload: WidgetPayload>(_ surface: String, now: Date) -> WidgetFetchResult<Payload> {
         if let saved = WidgetRefreshStore.savedPayload(surface),
-           Calendar.current.isDate(saved.fetchedAt, inSameDayAs: now),
            let payload = try? JSONDecoder().decode(Payload.self, from: saved.data) {
-            return WidgetFetchResult(state: .ready(payload), staleAt: saved.fetchedAt, failed: true)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: payload.timeZone) ?? .current
+            if calendar.isDate(saved.fetchedAt, inSameDayAs: now) {
+                return WidgetFetchResult(state: .ready(payload), staleAt: saved.fetchedAt, failed: true)
+            }
         }
         return WidgetFetchResult(state: .failed, staleAt: nil, failed: true)
     }
