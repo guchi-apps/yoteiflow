@@ -6,27 +6,8 @@ import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { isLoginError } from "@/lib/login-errors";
 import { getRequestOrigin } from "@/lib/request-origin";
-import { isPublicPath } from "@/lib/supabase/public-paths";
+import { isPublicPath, isTokenAuthApiPath } from "@/lib/supabase/public-paths";
 
-
-/**
- * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
- *
- * - `/api/widget/` … iPhoneウィジェット用（docs/spec.md §28）
- * - `/api/shortcuts/` … ライブアクティビティの停止ボタン用（docs/spec.md §43）
- * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
- *
- * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ
- * 到達できない間は（下の authUnreachable の分岐で）トークンだけで判定できる要求まで503になる。
- * matcherから外さずここで分けるのは、外すと詐称されたユーザーIDヘッダーがそのまま後段へ届くため。
- */
-function isTokenAuthApiPath(pathname: string): boolean {
-  return (
-    pathname.startsWith("/api/widget/") ||
-    pathname.startsWith("/api/shortcuts/") ||
-    pathname.startsWith("/api/internal/")
-  );
-}
 
 export async function updateSession(request: NextRequest) {
   if (isTokenAuthApiPath(request.nextUrl.pathname)) {

@@ -543,6 +543,10 @@ GitHub Secretsに無い値は空文字としてワークフローへ渡り、`up
 PR・pushでは届いていない値があればCIを落とす**（#476）。deploy側は警告のままにする（VAPID鍵の
 ように、無くても他の機能は動く値が含まれるため）。
 
+## 稼働版の照合
+
+`deploy.yml` はpm2の起動後、`/api/app-version` の `sha` が `APP_COMMIT_SHA`（`github.sha`）と一致するまで成功にしない。HTTP 200だけでは古いプロセスの応答も通るため。`/api/app-version` は未ログインで呼ばれるので、`isTokenAuthApiPath()`（`src/lib/supabase/public-paths.ts`）でSupabaseを通さず素通しにしている（issue #1257。issue-deckのリリース候補の稼働確認の証拠）。
+
 ## 自動テスト
 
 外部I/Oを持たない純粋関数（`annual-leave.ts`・`japanese-holidays.ts`・`yahoo-transit-route.ts`・
