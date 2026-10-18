@@ -54,7 +54,7 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 決定 | 理由 |
 |---|---|
 | Prisma は 6 系を使う | 7 系は `datasource url` が廃止され driver adapter が必須。他アプリの構成から外れる |
-| 設定ファイルは `next.config.mjs` にし、TypeScriptに戻さない | `next.config.ts` だと本番の `next start` が設定ファイルをトランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する。`.mjs` なら読み込まれない。ローカルで本番と同じ形（`node --max-old-space-size=128 next start`）に起動して測ると、`next-swc` のマップは4→0、`Threads` は35→23、`VmHWM` は164MB→138MBだった（issue #675。ops-dashboardのカナリアの横展開）。型は先頭の `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` に `next.config.mjs` を足して `tsc --noEmit` の対象に入れている。`deploy.yml` の掃除の `rm -rf` に `next.config.ts` も残すのは、本番に既にある古いファイルを消す手段を無くさないため |
+| 設定ファイルは `next.config.mjs` にし、TypeScriptに戻さない | `next.config.ts` だと本番の `next start` が設定ファイルをトランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する。`.mjs` なら読み込まれない。ローカルで本番と同じ形（`node --max-old-space-size=128 next start`）に起動して測ると、`next-swc` のマップは4→0、`Threads` は35→23、`VmHWM` は164MB→138MBだった（issue #675。ops-dashboardのカナリアの横展開）。型は先頭の `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` に `next.config.mjs` を足して `tsc --noEmit` の対象に入れている。本番の旧配布物の削除（`rm -rf`）は #1257 で `app-deploy-gate`（`guchi-apps/vps` の `scripts/app-deploy-gate.sh`）へ移り、そこでも `next.config.ts` を消す対象に含めている（本番に既にある古いファイルを消す手段を無くさないため） |
 | `prisma.config.ts` の `loadEnv()` には `quiet: true` を付ける | dotenv v17は読み込み結果の案内文を **stdout** へ出す。`prisma migrate dev` / `migrate diff --script` が生成するSQLも同じstdoutへ流れるため、案内文が `migration.sql` の1行目へ混ざる。本番の `prisma migrate deploy` がその行で構文エラー（MariaDB 1064 → P3018）になり、さらに `_prisma_migrations` へ失敗が記録されて以後のデプロイがP3009で止まる（VPS上での `migrate resolve --rolled-back` が要る）。実例は `guchi-apps/aide-bot#10` |
 | Notion は `taskDataSourceId` を一次キーにする | API 2025-09-03 以降、プロパティとクエリの対象はデータベースではなくデータソース |
 | タスクDBの対応付け（`propertyMap`）は取得時に24時間間隔で自動で取り直し、Notionへプロパティを足すのは設定画面で押したときだけ | 選んだ時点の1回だけ保存していると、Notionで後から足した・改名したプロパティ（「対応状況」など）が設定でDBを選び直すまで反映されない。取り直しは読み取りだけで、間隔を置くのは取得のたびに `dataSources.retrieve` が1往復増えるため（docs/spec.md §20）。専用の列を足さず `lastValidatedAt` を流用したのは、マイグレーションが自動マージ不可カテゴリのため（他DBの検証でも更新されるので間隔は目安）。Notionへの書き込みを自動にしないのは、DaySpanが無断でNotionのDBを変えない方針（§9）のため。必須プロパティが欠けた取り直しは保存しない（一時的な削除でタスクの読み書きが止まる）（issue #783） |
@@ -543,9 +543,18 @@ GitHub Secretsに無い値は空文字としてワークフローへ渡り、`up
 PR・pushでは届いていない値があればCIを落とす**（#476）。deploy側は警告のままにする（VAPID鍵の
 ように、無くても他の機能は動く値が含まれるため）。
 
+## 本番デプロイはapp-deploy-gateを通す（issue #1257）
+
+`deploy.yml` の `deploy` ジョブは、organization共通の `SERVER_SSH_PRIVATE_KEY` ではなく**アプリ専用の鍵**（マニフェストの `SSH_PRIVATE_KEY`＝`op://apps/yoteiflow/deploy-ssh-key`）でVPSの `app-deploy-gate`（`guchi-apps/vps#275`）へ入り、`ssh … upload < deploy.tar.gz` → `ssh … env`（標準入力に `KEY=VALUE` を1行1変数） → `ssh … deploy` の3語だけを呼ぶ（issue-deckの新規アプリ雛形と同じ形）。展開・旧配布物の削除・`.env` 更新・`pnpm install --prod`・`prisma migrate deploy`（`MIGRATE_DATABASE_URL` は `.env` へ書かない）・pm2の再起動はgateが行う。
+
+- **gateでのアプリ名は `dayspan`**（リポジトリ名ではない）。gateは置き場 `/home/github-user/apps/<アプリ名>` とpm2のプロセス名を同じ名前として扱うため、表示名を変えた後も本番の置き場・プロセス名（`dayspan`）に合わせる。`deploy/ecosystem.config.js` の `name` を変えるとgateが旧プロセスを止められず、2本立つ
+- **改行を含む値はgateへ送れない**（1行1変数）。APNsの認証キー（PEM）はワークフローでbase64の1行へ直して送る（`normalizeApnsPrivateKey()` がbase64も読む）。他の値に改行が入っていたら送る前に落とす
+- `TARGET_DIR` はgateが置き場を固定するため使っていない（マニフェストには移行確認まで残している）
+- 鍵の発行・VPSでの登録（`sudo`）・同期は人の作業で、手順は `docs/setup-checklist.md`「本番デプロイ用のアプリ専用鍵」
+
 ## 稼働版の照合
 
-`deploy.yml` はpm2の起動後、`/api/app-version` の `sha` が `APP_COMMIT_SHA`（`github.sha`）と一致するまで成功にしない。HTTP 200だけでは古いプロセスの応答も通るため。`/api/app-version` は未ログインで呼ばれるので、`isTokenAuthApiPath()`（`src/lib/supabase/public-paths.ts`）でSupabaseを通さず素通しにしている（issue #1257。issue-deckのリリース候補の稼働確認の証拠）。
+稼働版の照合はgateが行う。gateは `.env` の `APP_COMMIT_SHA`（`deploy.yml` が `github.sha` を `env` で渡す）と、pm2の起動後の `127.0.0.1:3113/api/app-version` の `sha` が一致するまで成功にしない（`guchi-apps/vps#298`）。HTTP 200だけでは古いプロセスの応答も通るため。issue-deckはこの形（`APP_COMMIT_SHA` を `env` で渡し `ssh … deploy` を呼ぶ）を「gateへ委譲した照合付き」と判定する（guchi-apps/issue-deck#4757 の `classifyDeployVersionCheck()`）。`/api/app-version` は未ログインで呼ばれるので、`isTokenAuthApiPath()`（`src/lib/supabase/public-paths.ts`）でSupabaseを通さず素通しにしている（issue #1257。issue-deckのリリース候補の稼働確認の証拠）。
 
 ## 自動テスト
 
