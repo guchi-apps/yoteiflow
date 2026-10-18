@@ -545,7 +545,7 @@ PR・pushでは届いていない値があればCIを落とす**（#476）。dep
 
 ## 本番デプロイはapp-deploy-gateを通す（issue #1257）
 
-`deploy.yml` の `deploy` ジョブは、organization共通の `SERVER_SSH_PRIVATE_KEY` ではなく**アプリ専用の鍵**（マニフェストの `SSH_PRIVATE_KEY`＝`op://apps/yoteiflow/deploy-ssh-key`）でVPSの `app-deploy-gate`（`guchi-apps/vps#275`）へ入り、`ssh … upload < deploy.tar.gz` → `ssh … env`（標準入力に `KEY=VALUE` を1行1変数） → `ssh … deploy` の3語だけを呼ぶ（issue-deckの新規アプリ雛形と同じ形）。展開・旧配布物の削除・`.env` 更新・`pnpm install --prod`・`prisma migrate deploy`（`MIGRATE_DATABASE_URL` は `.env` へ書かない）・pm2の再起動はgateが行う。
+`deploy.yml` の `deploy` ジョブは、organization共通の `SERVER_SSH_PRIVATE_KEY` ではなく**アプリ専用の鍵**（マニフェストの `SSH_PRIVATE_KEY`＝`op://apps/dayspan/deploy-ssh-key`）でVPSの `app-deploy-gate`（`guchi-apps/vps#275`）へ入り、`ssh … upload < deploy.tar.gz` → `ssh … env`（標準入力に `KEY=VALUE` を1行1変数） → `ssh … deploy` の3語だけを呼ぶ（issue-deckの新規アプリ雛形と同じ形）。展開・旧配布物の削除・`.env` 更新・`pnpm install --prod`・`prisma migrate deploy`（`MIGRATE_DATABASE_URL` は `.env` へ書かない）・pm2の再起動はgateが行う。
 
 - **gateでのアプリ名は `dayspan`**（リポジトリ名ではない）。gateは置き場 `/home/github-user/apps/<アプリ名>` とpm2のプロセス名を同じ名前として扱うため、表示名を変えた後も本番の置き場・プロセス名（`dayspan`）に合わせる。`deploy/ecosystem.config.js` の `name` を変えるとgateが旧プロセスを止められず、2本立つ
 - **改行を含む値はgateへ送れない**（1行1変数）。APNsの認証キー（PEM）はワークフローでbase64の1行へ直して送る（`normalizeApnsPrivateKey()` がbase64も読む）。他の値に改行が入っていたら送る前に落とす

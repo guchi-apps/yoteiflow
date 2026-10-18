@@ -178,7 +178,7 @@ pm2の再起動・稼働版の照合（`/api/app-version` の `sha` と `APP_COM
    sudo readlink /proc/"$(sudo -u github-user pm2 pid dayspan)"/cwd   # → /home/github-user/apps/dayspan
    ```
 
-2. （サブPC）鍵を作り、秘密鍵を1Passwordの `op://apps/yoteiflow/deploy-ssh-key` へ入れる（秘密鍵はファイルに残さない）
+2. （サブPC）鍵を作り、秘密鍵を1Passwordの `op://apps/dayspan/deploy-ssh-key` へ入れる（秘密鍵はファイルに残さない）
 
    ```bash
    ssh-keygen -t ed25519 -N "" -C "deploy-dayspan" -f "$(mktemp -u)"
