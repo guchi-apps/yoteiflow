@@ -3855,6 +3855,7 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 - 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止・`POST /api/shortcuts/activity/token`（activity push tokenの登録）・`GET /api/shortcuts/activity/running`（記録中の読み取り。起動時の突き合わせ用）と、Yahoo!乗換案内の共有の確認・取り込み（`POST /api/shortcuts/travel/preview`・`/import`・§29）の5つだけ
 - 登録: push-to-start トークンは `POST /api/live-activity/register`（ログイン済みのWebViewから）、停止専用トークンの受け渡しは `POST /api/settings/live-activity/native`
 - 起動時・前面に戻ったとき、手元のアクティビティとサーバーの記録中を突き合わせて片付ける（二重表示・取り残しを防ぐ）
+- 他端末の停止の反映（issue #1280）: end が届くのは、停止の時点でサーバーに activity push token が登録済みの端末だけ。push-to-start で作られたアクティビティのトークンは、アプリが裏起動されて登録する。裏起動では画面（WebViewModel）が作られないため、監視（`LiveActivityCoordinator.startObserving()`）は `AppDelegate.didFinishLaunching` からも始める。登録には表示中の `title`・`startedAtEpoch` を添え、サーバー（`syncRegisteredLiveActivityToken()`・判定は `planTokenRegistration()`）は登録の時点で記録中でなければそのトークンへ end を送って行を消し、別の記録を表示していれば update で合わせる（登録が停止より遅れた端末の取り残しを防ぐ）。停止後に消すトークンは end を送った行だけ（送信中に登録された行を巻き添えにしない）。登録の通信失敗は2回までやり直す
 - ログアウトで停止専用トークンを消し、表示中のアクティビティを終わらせる。サーバー側のトークン行は残す（失効は410で自然に消える）
 - 実機確認は Xcode が要る（`ios/README.md`）
 
