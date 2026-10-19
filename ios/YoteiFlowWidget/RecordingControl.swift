@@ -71,8 +71,9 @@ struct ToggleRecordingIntent: SetValueIntent {
         let picked: LiveActivityClient.Preset
         if presets.count == 1 {
             picked = presets[0]
-        } else {
-            // システムの選択を出す。項目名はユーザーごとに一意（DBの一意制約）なので、選ばれた名前で引き当てる
+        } else if #available(iOS 26.0, *) {
+            // システムの選択を出す。項目名はユーザーごとに一意（DBの一意制約）なので、選ばれた名前で引き当てる。
+            // `requestChoice` は iOS 26 以降のAPI（配布の下限は iOS 18）
             let options = presets.map { IntentChoiceOption(title: LocalizedStringResource(String.LocalizationValue($0.name))) }
             let choice = try await requestChoice(between: options, dialog: "どの記録を始めますか？")
             let chosenTitle = String(localized: choice.title)
@@ -80,6 +81,9 @@ struct ToggleRecordingIntent: SetValueIntent {
                 throw RecordingControlError.presetsUnavailable
             }
             picked = match
+        } else {
+            // iOS 18〜25 には項目を選ばせる手段が無いため、始めずに理由を返す
+            throw RecordingControlError.choiceUnsupported
         }
 
         guard await LiveActivityClient.startRecording(presetId: picked.id) else {
@@ -94,6 +98,7 @@ enum RecordingControlError: Error, CustomLocalizedStringResourceConvertible {
     case notSignedIn
     case presetsUnavailable
     case noPresets
+    case choiceUnsupported
     case startFailed
     case stopFailed
 
@@ -102,6 +107,7 @@ enum RecordingControlError: Error, CustomLocalizedStringResourceConvertible {
         case .notSignedIn: "YoteiFlowアプリでログインしてから使ってください。"
         case .presetsUnavailable: "記録の項目を読み込めませんでした。アプリの記録の画面から始めてください。"
         case .noPresets: "記録の項目がありません。アプリの記録の画面で項目を追加してください。"
+        case .choiceUnsupported: "この iOS では項目を選べません。アプリの記録の画面から始めてください。"
         case .startFailed: "記録を始められませんでした。アプリの記録の画面から始めてください。"
         case .stopFailed: "記録を止められませんでした。通信を確かめて、もう一度押してください。"
         }
