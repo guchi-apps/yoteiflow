@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Keyboard,
   Plus,
-  RefreshCw,
 } from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
@@ -29,7 +28,7 @@ import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { Button } from "@/components/ui/button";
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import {
   addDays,
@@ -1141,19 +1140,6 @@ export function CalendarShell({
           ))}
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-10 md:size-9 md:max-lg:size-10"
-          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
-          // 通信が戻った時点の取り直しは useReconnectRefresh が行う。
-          disabled={pending || offline}
-          aria-label="再取得"
-          onClick={() => startTransition(() => router.refresh())}
-        >
-          <RefreshCw className="size-5" />
-        </Button>
-
         {/*
           PCのキーボードショートカット（issue #635）。マウス操作が前提のスマートフォンでは
           そもそも押す機会が無いため、ほかのPC限定のボタンと同じく `hidden md:flex` にする。
@@ -1167,11 +1153,20 @@ export function CalendarShell({
         >
           <Keyboard className="size-5" />
         </Button>
+        {/*
+          再取得は右上の端に置き、取得中はこのアイコンが回る（issue #1271）。ヘッダー直下の
+          横に流れるバーはやめた。オフライン中に押しても、再接続まで終わらない読み込みが
+          始まるだけになる。通信が戻った時点の取り直しは useReconnectRefresh が行う。
+        */}
+        <RefreshButton
+          spinning={pending || windowLoading}
+          disabled={offline}
+          className="md:max-lg:size-10"
+          onClick={() => startTransition(() => router.refresh())}
+        />
         {/* 勤務・場所・設定はヘッダーに置かない（issue #463）。どの画面幅でもドロワーが開くように
             なったため、この帯に3つ並べる理由が無くなった（docs/spec.md §4・§9・§34）。 */}
       </header>
-
-      <LinearProgress active={pending || windowLoading} />
 
       <OfflineNotice />
 
@@ -1180,7 +1175,7 @@ export function CalendarShell({
         `nav`（useOptimistic の楽観値）だけで決まり、予定・タスクの取得を待たない
         （issue #697）。`CalendarBody` はもう `use()` でPromiseを消費しないため、
         ここをSuspenseで包む必要は無い。取得中かどうかは `onLoadingChange` で
-        上のヘッダー直下（LinearProgress）へ伝える。
+        ヘッダー右上の再取得ボタン（回る印）へ伝える。
         なお前へ・次へは startTransition の中で遷移するため、表示中の内容を保った
         まま差し替わる（操作のたびに画面が消えることはない）。
       */}

@@ -14,7 +14,6 @@ import {
   ChevronRight,
   ListChecks,
   Plus,
-  RefreshCw,
   Tag,
 } from "lucide-react";
 
@@ -32,7 +31,7 @@ import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { useApiResource } from "@/components/offline/use-api-resource";
 import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
@@ -320,19 +319,14 @@ export function TaskList({
           <ArrowUpDown className="size-4" />
           {TASK_SORT_LABELS[sort]}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="再取得"
-          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
-          disabled={pending || offline}
+        {/* 右上の端の再取得。取得中・保存中はこのアイコンが回る（issue #1271）。オフライン中に
+            押しても、再接続まで終わらない読み込みが始まるだけになる。 */}
+        <RefreshButton
+          spinning={pending || busyId !== null}
+          disabled={offline}
           onClick={() => reload()}
-        >
-          <RefreshCw className="size-4" />
-        </Button>
+        />
       </header>
-
-      <LinearProgress active={pending || busyId !== null} />
 
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}

@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { ArrowLeft, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Plus } from "lucide-react";
 
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import {
@@ -23,7 +23,7 @@ import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   buildReminderSections,
   type ReminderOccurrence,
@@ -129,9 +129,9 @@ export function ReminderList({
           </Link>
         </Button>
         <h1 className="type-title-large min-w-0 flex-1 truncate px-1">日付</h1>
-        <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>
+        {/* 取得中はこのアイコンが回る（issue #1271）。 */}
+        <RefreshButton spinning={pending} disabled={offline} onClick={() => startTransition(() => router.refresh())} />
       </header>
-      <LinearProgress active={pending} />
       <OfflineNotice />
       {loadError && <div className="bg-error-container/70 px-3 py-2 text-xs text-on-error-container">{loadError}</div>}
       {/* 広い画面では一覧を48remの幅に収めて中央へ置く（issue #636）。行が画面の端から端まで伸びると、

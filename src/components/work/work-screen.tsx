@@ -9,7 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Plus,
+  ClipboardCheck,
 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
@@ -23,13 +23,14 @@ import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { useApiResource } from "@/components/offline/use-api-resource";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
-import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import type { WorkMonthData } from "@/types/work";
+import { MonthPickerDialog } from "@/components/work/month-picker-dialog";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
-import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
 import { useWriteSynced } from "@/lib/offline-queue/use-write-synced";
 import { dayTone, OFF_DAY_TONE } from "@/lib/day-tone";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
@@ -46,7 +47,6 @@ import {
   HOLIDAY_TITLE,
   isDefaultHolidayTitle,
   isPartialLeave,
-  isTripPlace,
   splitOpenWorkRecords,
   WORK_TODO_LABELS,
   workTodos,
@@ -67,7 +67,9 @@ import type { RunningActivitySummary } from "@/types/activity";
 export function WorkScreen({
   monthKey: initialMonthKey,
   ...rest
-}: Omit<WorkMonthScreenProps, "monthKey" | "onMonthChange"> & { monthKey: string }) {
+}: Omit<WorkMonthScreenProps, "monthKey" | "onMonthChange" | "onOpenMonthPicker"> & {
+  monthKey: string;
+}) {
   // 月送りはページ（RSC）の取り直しにしない。取り直しだと、オフライン・低速時に別の月が開けない
   // （issue #974）。月ごとの内容は GET /api/work/month から取り、Service Worker が保存済みへ倒す。
   const [monthKey, setMonthKey] = useState(initialMonthKey);
@@ -78,14 +80,43 @@ export function WorkScreen({
     window.history.replaceState(null, "", `/work?month=${next}`);
   }, []);
 
+  // 月を選ぶシート（issue #1271）は月ごとに作り直す子の外に置く。子の中に置くと、月を選んだ
+  // 瞬間に開いたままのダイアログごと子がアンマウントされ、Radixが <body> に残す
+  // `pointer-events: none` で画面全体が操作を受け付けなくなることがある。
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+
   // 月が変わったら内部の状態（取得結果・開いたダイアログ）を作り直す。
-  return <WorkMonthScreen key={monthKey} monthKey={monthKey} onMonthChange={onMonthChange} {...rest} />;
+  return (
+    <>
+      <WorkMonthScreen
+        key={monthKey}
+        monthKey={monthKey}
+        onMonthChange={onMonthChange}
+        onOpenMonthPicker={() => setMonthPickerOpen(true)}
+        {...rest}
+      />
+      <MonthPickerDialog
+        // 開くたびに表示中の月の年から始める（閉じている間に月が変わっても古い年を残さない）。
+        key={monthKey}
+        open={monthPickerOpen}
+        monthKey={monthKey}
+        todayKey={rest.todayKey}
+        onPick={(next) => {
+          setMonthPickerOpen(false);
+          if (next !== monthKey) onMonthChange(next);
+        }}
+        onClose={() => setMonthPickerOpen(false)}
+      />
+    </>
+  );
 }
 
 type WorkMonthScreenProps = {
   /** YYYY-MM */
   monthKey: string;
   onMonthChange: (monthKey: string) => void;
+  /** 月の見出しを押したとき。月を選ぶシートは親（`WorkScreen`）が持つ。 */
+  onOpenMonthPicker: () => void;
   todayKey: string;
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
@@ -104,6 +135,7 @@ type WorkMonthScreenProps = {
 function WorkMonthScreen({
   monthKey,
   onMonthChange,
+  onOpenMonthPicker,
   todayKey,
   tripPlaces,
   capabilities,
@@ -136,6 +168,7 @@ function WorkMonthScreen({
   const [draft, setDraft] = useState<WorkDraft | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [recalculating, setRecalculating] = useState(false);
+  const [proceduresOpen, setProceduresOpen] = useState(false);
 
   // 勤務予定・移動の再計算（docs/spec.md §46）。同期の契機は勤務記録の作成・更新・削除だけで、
   // Notionを直接編集した分は追従しないため、その取りこぼしを拾う手動の入口。
@@ -172,9 +205,6 @@ function WorkMonthScreen({
   };
 
   const days = useMemo(() => daysOfMonth(monthKey), [monthKey]);
-  const todayRecord = records.find((record) => coversDate(record, todayKey)) ?? null;
-  const showsToday = todayKey.slice(0, 7) === monthKey;
-
   const send = async (path: string, init: RequestInit, fallback: string): Promise<boolean> => {
     if (offline) {
       setError(OFFLINE_WRITE_MESSAGE);
@@ -199,87 +229,6 @@ function WorkMonthScreen({
     }
   };
 
-  /**
-   * 今日の記録をチップから直せるか。
-   *
-   * 場所から出張になった単日の記録（行き先＝場所名）は、もう一度押して取り消せる必要がある。
-   * 1押しで登録したものを1押しで戻せないと、消すためだけに日の行から入り直すことになる。
-   * 手で作った出張は行き先が場所名と違う・複数日にまたがるため、チップで上書きすると
-   * 行き先や期間が消える。年休・会社休業日は場所と無関係に決められたものなので、日別の
-   * 一覧の行から直す。
-   */
-  const todayEditableByChip =
-    !todayRecord?.annualLeave &&
-    !todayRecord?.companyHoliday &&
-    (!todayRecord?.businessTrip ||
-      (todayRecord.startDate === todayRecord.endDate &&
-        todayRecord.title === todayRecord.place &&
-        isTripPlace(tripPlaces, todayRecord.place)));
-
-  /**
-   * 今日の勤務場所を1押しで決める。
-   *
-   * すでに同じ場所が入っているときは取り消す。押した先が変わらない操作を残すより、
-   * 押し間違えたときに同じ場所をもう一度押せば戻せるほうが道が短い。
-   *
-   * 出張扱いの場所（docs/spec.md §34）はその場で出張として登録する。出張かどうかは毎回
-   * 明示して送る。送らないとNotion側の既存のチェックが残り、出張扱いでない場所へ変えても
-   * 出張のままになる。
-   */
-  const pickToday = async (place: string) => {
-    if (!todayEditableByChip) return;
-
-    // オフライン中・先にためた操作があるときは、意図（日付と場所）だけをためる。送信時にその日の
-    // 記録を引き直して、取り消し・変更・新規を選ぶ（issue #1135）。キャッシュ上の記録は古いことがある。
-    if (shouldQueueWrite(offline)) {
-      setError(null);
-      submitWrite({
-        kind: "workToday",
-        date: todayKey,
-        place: todayRecord && todayRecord.place === place ? null : place,
-        ...(capabilities.businessTrip ? { businessTrip: isTripPlace(tripPlaces, place) } : {}),
-      });
-      return;
-    }
-
-    const trip = capabilities.businessTrip
-      ? { businessTrip: isTripPlace(tripPlaces, place) }
-      : {};
-
-    if (todayRecord && todayRecord.place === place) {
-      await send(
-        `/api/work/records/${todayRecord.id}`,
-        { method: "DELETE" },
-        "勤務場所を取り消せませんでした。",
-      );
-      return;
-    }
-
-    if (todayRecord) {
-      await send(
-        `/api/work/records/${todayRecord.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          // 1押しは「その日まるごとこの場所」なので、時間帯の内訳があれば消す（issue #1155）。
-          body: JSON.stringify({ place, title: place, ...trip, segments: [] }),
-        },
-        "勤務場所を変更できませんでした。",
-      );
-      return;
-    }
-
-    await send(
-      "/api/work/records",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: todayKey, place, title: place, ...trip }),
-      },
-      "勤務場所を登録できませんでした。",
-    );
-  };
-
   /** 手続きの済み・未済を切り替える。日付は動かさないため、重なりの確認は要らない。 */
   const toggleTodo = async (record: WorkRecordItem, todo: WorkTodo, done: boolean) => {
     await send(
@@ -298,8 +247,8 @@ function WorkMonthScreen({
     // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休みのタブへは寄せない）。
     // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
     // 休みとして登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
-    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休みを追加」または
-    // このダイアログの中でタブを切り替えて登録する。
+    // 混ざって読めなくなる。休みとして明示的に記録したいときは、このダイアログの中でタブを切り替えて
+    // 登録する（「休みを追加」などの追加ボタンは issue #1271 で撤去した）。
     setDraft(
       existing
         ? { mode: "edit", record: existing }
@@ -308,36 +257,29 @@ function WorkMonthScreen({
   };
 
   const monthLabel = `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
-  // 上部の2つの区画に出すのは、手続きが残っている記録だけ（docs/spec.md §34）。済んだものを
-  // 月のあいだ残すと、いま手を打つべきものがその中に埋もれる。出張の前の事後登録も同じ理由で
-  // 落ちる（`workTodos()` が終了日を過ぎるまで数えないため、判定を二重に持たなくてよい）。
-  // 済んだ記録を直したくなったときは、下の日別の一覧から入力ダイアログを開く（issue #412）。
-  //
-  // 並べるのは「いま片付けるもの」だけで、1週間より先の事前申請は畳んでおく（issue #571）。
-  // 事前申請は先の予定にも付くため、絞り込まないと、まだ申請しなくてよい先の出張・年休が
-  // 同じ枠へ積み上がり、期限が迫っている事前申請・終わった出張の事後登録がその中に埋もれる。
-  // 見出しの件数は総数のまま（ドロワーのバッジが数えているのも総数で、片方だけ減ると同じ
-  // 画面の中で数字が食い違う）。畳んだぶんの件数はボタンに出すので、総数＝表示中＋畳んだぶん
-  // として読める。
+  // 出張・年休の手続きは本文から外し、ヘッダー右上のアイコンとそこから開くシートへ移した
+  // （issue #1271）。月ごとの勤務場所を画面の先頭に置くため。中身（いま片付けるものだけを
+  // 並べ、1週間より先の事前申請は畳む・issue #571）は従来の区画のまま。
   const trips = splitOpenWorkRecords(openTrips, todayKey);
   const leaves = splitOpenWorkRecords(openLeaves, todayKey);
-  // 赤い件数が数えるのは「いま手を打つべき件数」（docs/spec.md §34）。畳んだぶんまで足すと、
-  // 全件が先の予定の月に「未対応 3件」の直下へ「いま対応が必要な手続きはありません。」が並び、
-  // 同じ見出しの中で意味が反対になる（issue #571 計画レビューG2の指摘）。畳んだぶんの件数は
-  // 折りたたみのボタンが出すため、総数も画面から読める。ドロワーのバッジ（`/api/work/alerts`）は
-  // 総数のままにする。あちらは「勤務の画面を開く理由があるか」を示すもので役割が違う。
+  // バッジが数えるのは「いま手を打つべき件数」（docs/spec.md §34）。畳んだぶん（1週間より先の
+  // 事前申請）は足さない。足すと、全件が先の予定のときにバッジは「3」なのに、開いたシートには
+  // 「いま対応が必要な手続きはありません。」が並び、同じ数字の意味が食い違う（issue #571 計画
+  // レビューG2の指摘と同じ理由）。ドロワーのバッジ（`/api/work/alerts`）は総数のまま。あちらは
+  // 「勤務の画面を開く理由があるか」を示すもので役割が違う。
   //
   // dueの記録の手続きは必ず全てdueになる。事後登録が未対応に数えられるのは終了日を過ぎた
   // ときだけ（`workTodos()`）で、そのとき開始日も当然過ぎており事前申請もdueになるため、
   // 「事後登録がdueで事前申請がlater」の組み合わせは起きない。
   const openTodos = trips.due.flatMap((trip) => workTodos(trip, todayKey));
   const openLeaveCount = leaves.due.length;
-  // 出張・年休の区画を1つでも持つか。広い画面ではこの2つを左の列に、月の内容を右の列に置く。
+  const attentionCount = openTodos.length + openLeaveCount;
+  // 出張・年休の手続きを1つでも持てるか。持てないDBでは右上のアイコンごと出さない。
   const hasProcedures = capabilities.approval || capabilities.annualLeave;
 
   return (
     <AppFrame current="work" activityRunning={runningActivity !== null} running={runningActivity}>
-      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
+      <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
         {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="work" activityRunning={runningActivity !== null} />
@@ -348,6 +290,35 @@ function WorkMonthScreen({
           <span>勤務</span>
         </div>
         <span className="flex-1" />
+
+        {/* 対応が必要な出張・年休（issue #1271）。件数はバッジで常に見え、押すとシートで開く。
+            読み上げでは件数まで含めて名前にする（バッジは装飾として隠す）。 */}
+        {hasProcedures && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-10 md:size-9"
+            aria-label={
+              attentionCount > 0 ? `対応が必要な手続き ${attentionCount}件` : "出張・年休の手続き"
+            }
+            onClick={() => setProceduresOpen(true)}
+          >
+            <ClipboardCheck className="size-5" />
+            {attentionCount > 0 && (
+              <span
+                aria-hidden
+                className="type-label-small absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 font-bold text-on-error tabular-nums"
+              >
+                {attentionCount > 99 ? "99+" : attentionCount}
+              </span>
+            )}
+          </Button>
+        )}
+        <RefreshButton
+          spinning={resource.loading || busy || recalculating}
+          disabled={offline}
+          onClick={resource.reload}
+        />
       </header>
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}
@@ -363,94 +334,16 @@ function WorkMonthScreen({
         </p>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {/*
-          広い画面では「片付ける手続き（出張・年休）」を左、「この月」を右に分ける（issue #636）。
-          縦に並べていたときは、月切替を2つの区画のあいだに置いて、上の手続きには月切替が
-          効かないことを位置で示していた（issue #510）。左右に分ければ同じことが列で示せる。
-        */}
-        <div
-          className={cn(
-            "mx-auto flex w-full max-w-2xl flex-col gap-6 p-6",
-            hasProcedures &&
-              "@4xl/main:grid @4xl/main:max-w-6xl @4xl/main:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @4xl/main:items-start @4xl/main:gap-x-8",
-          )}
-        >
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
           {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
           {(error ?? loadError) && (
-            <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container @4xl/main:col-span-full">
+            <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
               {error ?? loadError}
             </p>
           )}
 
-          {hasProcedures && (
-            <div className="flex flex-col gap-6">
-              {/* 出張。残っている手続きだけを出す。事前申請・事後登録のプロパティが無いDBでは片付ける
-                  手続きそのものが持てないため、区画ごと出さない。 */}
-              {capabilities.approval && (
-                <section className="flex flex-col gap-3">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="type-title-small">出張</h2>
-                    {openTodos.length > 0 && (
-                      <span className="type-label-medium flex items-center gap-1 text-error">
-                        <CircleAlert className="size-3.5" />
-                        未対応 {openTodos.length}件
-                      </span>
-                    )}
-                  </div>
-
-                  <OpenRecords
-                    split={trips}
-                    todayKey={todayKey}
-                    todos={["preApplied", "postRegistered"]}
-                    emptyLabel="未対応の手続きはありません。"
-                    writeDisabled={busy || offline}
-                    onToggle={toggleTodo}
-                    onOpen={(record) => setDraft({ mode: "edit", record })}
-                  />
-                </section>
-              )}
-
-              {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
-                  日別の一覧を上から探すのでは見つからないため。 */}
-              {capabilities.annualLeave && (
-                <section className="flex flex-col gap-3">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="type-title-small">年休</h2>
-                    {openLeaveCount > 0 && (
-                      <span className="type-label-medium flex items-center gap-1 text-error">
-                        <CircleAlert className="size-3.5" />
-                        未申請 {openLeaveCount}件
-                      </span>
-                    )}
-                    {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
-                        この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
-                        ドロワーには行を足さない。 */}
-                    <Link
-                      href="/work/leave"
-                      className="type-label-medium ml-auto text-primary underline"
-                    >
-                      年度の取得状況
-                    </Link>
-                  </div>
-
-                  <OpenRecords
-                    split={leaves}
-                    todayKey={todayKey}
-                    todos={["preApplied"]}
-                    emptyLabel="未申請の年休はありません。"
-                    writeDisabled={busy || offline}
-                    onToggle={toggleTodo}
-                    onOpen={(record) => setDraft({ mode: "edit", record })}
-                  />
-                </section>
-              )}
-            </div>
-          )}
-
-          {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。
-              月切替はここへ添える（issue #510）。出張・年休の区画は月に限定されない情報のため、
-              月切替をヘッダー直下に置くとそれらの区画にも効くように見えてしまう。月ごとの内容の
-              直前に置くことで、上（出張・年休）と下（この月の勤務場所）の境目をはっきりさせる。 */}
+          {/* この月の勤務場所。画面の先頭に置く（issue #1271）。月の見出しは押せるボタンにし、
+              前へ・次へを何度も押さずに離れた月へ移れるようにする。 */}
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <Button
@@ -461,7 +354,18 @@ function WorkMonthScreen({
               >
                 <ChevronLeft className="size-4" />
               </Button>
-              <h2 className="type-title-small tabular-nums">{monthLabel}の勤務場所</h2>
+              <h2 className="min-w-0">
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-label={`${monthLabel}の勤務場所（表示する月を選ぶ）`}
+                  onClick={onOpenMonthPicker}
+                  className="type-title-small flex items-center gap-1 rounded-full px-3 py-1.5 tabular-nums hover:bg-on-surface/8"
+                >
+                  {monthLabel}の勤務場所
+                  <ChevronDown className="size-4 text-on-surface-variant" />
+                </button>
+              </h2>
               <Button
                 variant="ghost"
                 size="sm"
@@ -472,98 +376,11 @@ function WorkMonthScreen({
               </Button>
             </div>
 
-            {!offline && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="self-center"
-                disabled={recalculating}
-                onClick={() => void recalculate()}
-              >
-                {recalculating ? "再計算中…" : "勤務予定・移動を再計算"}
-              </Button>
-            )}
-
-            {showsToday && (
-              <Card>
-                <CardContent className="flex flex-col gap-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="type-label-large">今日の勤務場所</span>
-                    <span className={cn("type-body-small ml-auto tabular-nums", dateClass(todayKey))}>
-                      {dayLabel(todayKey)}
-                      {japaneseHolidayName(todayKey) && (
-                        <span className="ml-1">{japaneseHolidayName(todayKey)}</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {/* 登録が無い土日祝は自動的に「休み」として扱う（表示だけで、Notionへは書き込まない・
-                      docs/spec.md §34）。出社した場合は従来どおり下から勤務場所を選べる。 */}
-                  {!todayRecord && isAutoOffDay(todayKey) && (
-                    <p className="type-body-small text-on-surface-variant">
-                      土日祝は自動的に「休み」として扱われます。出社した場合は下から勤務場所を選んでください。
-                    </p>
-                  )}
-
-                  {!todayEditableByChip && todayRecord ? (
-                    <p className="type-body-medium">
-                      {recordLabel(todayRecord)}
-                      <span className="type-body-small ml-2 text-on-surface-variant">
-                        直すときは下の日付の一覧から
-                      </span>
-                    </p>
-                  ) : !loaded ? (
-                    <p className="type-body-small text-on-surface-variant">読み込んでいます…</p>
-                  ) : placeOptions.length === 0 ? (
-                    <p className="type-body-small text-on-surface-variant">
-                      勤務場所の選択肢がありません。
-                      <Link href="/settings/work" className="ml-1 underline">
-                        設定 ▸ 勤務
-                      </Link>
-                      から追加してください。
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {placeOptions.map((option) => {
-                        const selected = todayRecord?.place === option.name;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            disabled={busy || offline}
-                            aria-pressed={selected}
-                            onClick={() => pickToday(option.name)}
-                            className={cn(
-                              "type-label-large rounded-full border px-4 py-2 transition-colors disabled:opacity-38",
-                              selected
-                                ? cn("border-transparent font-bold", tagChipClass(option.color))
-                                : "border-outline text-on-surface hover:bg-on-surface/8",
-                            )}
-                          >
-                            {option.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* 場所から出張になったことは、押した本人にも見えている必要がある。
-                      手続きの行き先を上の出張ではなく日別の一覧にするのは、この経路で作られるのが
-                      単日の出張で、事前申請を済ませた時点で上の区画から消えるため（事後登録は
-                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。
-                      一覧の行からは印が読めるだけになったため（issue #521）、押して開くことまで書く。 */}
-                  {todayEditableByChip && todayRecord?.businessTrip && (
-                    <p className="type-body-small text-travel">
-                      この場所は出張扱いです。
-                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧の行を押して。"}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+            {!loaded && !loadError && (
+              <p className="type-body-small text-on-surface-variant">読み込んでいます…</p>
             )}
 
             <Tally records={records} days={days} />
-
             {/*
               日別の一覧は、カードの幅が36rem以上あれば前半・後半の2段に分け、1か月ぶんがスクロール
               せずに入るようにする（issue #636）。列優先で流すため、段の中は上から日付順のまま。
@@ -582,7 +399,7 @@ function WorkMonthScreen({
                   const record = records.find((item) => coversDate(item, dateKey));
                   const holiday = japaneseHolidayName(dateKey);
                   // 未対応の手続き。事後登録は終了日を過ぎるまで含まれないため、まだできない
-                  // 手続きが未対応として並ぶことはない（判定は上の区画と同じ関数に任せる）。
+                  // 手続きが未対応として並ぶことはない（判定は右上の手続きのシートと同じ関数に任せる）。
                   // 出張は期間の全ての日に同じ記録が並ぶため、印は開始日の行にだけ出す
                   // （同じ手続きの印が日数ぶん縦に重複しないように・issue #521）。
                   const marks =
@@ -672,8 +489,8 @@ function WorkMonthScreen({
                       )}
                       {/* 残っている手続きは印だけを出し、この行からは済ませられない（issue #521）。
                           チェックボックスを置くと手続きが残る日だけ2行になり、日ごとの行の高さが
-                          揃わない。片付ける場所は上の出張・年休の区画と、行を押して開く入力
-                          ダイアログに寄せる。色だけに意味を持たせないよう、上の区画の
+                          揃わない。片付ける場所は右上のアイコンから開く出張・年休のシートと、行を押して開く入力
+                          ダイアログに寄せる。色だけに意味を持たせないよう、シートの
                           「未対応 N件」と同じ印と読み上げ用の文字を添える。 */}
                       {marks.length > 0 && (
                         <span className="flex shrink-0 items-center gap-1 text-error">
@@ -698,67 +515,17 @@ function WorkMonthScreen({
               </CardContent>
             </Card>
 
-            {/* 出張・年休・会社休業日は先の日付に入れるものが多い。日別の一覧をスクロールして
-                押させるより、開いてから日付を選ばせるほうが短い。 */}
-            {(capabilities.businessTrip || capabilities.annualLeave || capabilities.companyHoliday) && (
-              <div
-                className={cn(
-                  "grid grid-cols-1 gap-2",
-                  [capabilities.businessTrip, capabilities.annualLeave, capabilities.companyHoliday]
-                    .filter(Boolean).length >= 3
-                    ? "sm:grid-cols-3"
-                    : "sm:grid-cols-2",
-                )}
+            {/* 勤務予定・移動の再計算は、月を開くたびに押すものではないため一番下に置く（issue #1271）。 */}
+            {!offline && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="self-center"
+                disabled={recalculating}
+                onClick={() => void recalculate()}
               >
-                {capabilities.businessTrip && (
-                  <Button
-                    variant="outline"
-                    disabled={offline}
-                    onClick={() =>
-                      setDraft({
-                        mode: "create",
-                        startDate: defaultDate(monthKey, todayKey),
-                        kind: "trip",
-                      })
-                    }
-                  >
-                    <Plus className="size-4" />
-                    出張を追加
-                  </Button>
-                )}
-                {capabilities.annualLeave && (
-                  <Button
-                    variant="outline"
-                    disabled={offline}
-                    onClick={() =>
-                      setDraft({
-                        mode: "create",
-                        startDate: defaultDate(monthKey, todayKey),
-                        kind: "leave",
-                      })
-                    }
-                  >
-                    <Plus className="size-4" />
-                    年休を追加
-                  </Button>
-                )}
-                {capabilities.companyHoliday && (
-                  <Button
-                    variant="outline"
-                    disabled={offline}
-                    onClick={() =>
-                      setDraft({
-                        mode: "create",
-                        startDate: defaultDate(monthKey, todayKey),
-                        kind: "holiday",
-                      })
-                    }
-                  >
-                    <Plus className="size-4" />
-                    休みを追加
-                  </Button>
-                )}
-              </div>
+                {recalculating ? "再計算中…" : "勤務予定・移動を再計算"}
+              </Button>
             )}
           </section>
         </div>
@@ -766,6 +533,29 @@ function WorkMonthScreen({
 
       <RunningActivityBar running={runningActivity} />
       <BottomNav current="work" activityRunning={runningActivity !== null} timeZone={timeZone} />
+
+      {/* 開閉は `open` で切り替え、閉じるときにアンマウントしない（Radixのダイアログを開いたまま
+          アンマウントすると、<body> の `pointer-events: none` が残ることがあるため）。 */}
+      {hasProcedures && (
+        <ProceduresDialog
+          open={proceduresOpen}
+          capabilities={capabilities}
+          trips={trips}
+          leaves={leaves}
+          openTodoCount={openTodos.length}
+          openLeaveCount={openLeaveCount}
+          todayKey={todayKey}
+          writeDisabled={busy || offline}
+          onToggle={toggleTodo}
+          onOpen={(record) => {
+            // シートを閉じてから入力画面を開く。重ねて開くと、入力を閉じたあとに手続きの
+            // シートが残り、保存した結果がその下に隠れる。
+            setProceduresOpen(false);
+            setDraft({ mode: "edit", record });
+          }}
+          onClose={() => setProceduresOpen(false)}
+        />
+      )}
 
       {draft && (
         <WorkRecordDialog
@@ -784,6 +574,107 @@ function WorkMonthScreen({
         />
       )}
     </AppFrame>
+  );
+}
+
+/**
+ * ヘッダー右上のアイコンから開く、対応が必要な出張・年休のシート（issue #1271）。
+ *
+ * 以前は勤務画面の先頭に置いていた2つの区画をそのまま移した。月に限られない情報のため、
+ * 月ごとの勤務場所と同じ面に並べると、月切替がこれらにも効くように見えていた（issue #510）。
+ * シートに分ければ、画面の先頭を月ごとの勤務場所に譲れる。
+ */
+function ProceduresDialog({
+  open,
+  capabilities,
+  trips,
+  leaves,
+  openTodoCount,
+  openLeaveCount,
+  todayKey,
+  writeDisabled,
+  onToggle,
+  onOpen,
+  onClose,
+}: {
+  open: boolean;
+  capabilities: WorkCapabilities;
+  trips: { due: WorkRecordItem[]; later: WorkRecordItem[] };
+  leaves: { due: WorkRecordItem[]; later: WorkRecordItem[] };
+  openTodoCount: number;
+  openLeaveCount: number;
+  todayKey: string;
+  writeDisabled: boolean;
+  onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
+  onOpen: (record: WorkRecordItem) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        position="bottom"
+        className="max-h-[85dvh] gap-6 overflow-y-auto pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]"
+      >
+        <DialogHeader>
+          <DialogTitle>対応が必要な手続き</DialogTitle>
+        </DialogHeader>
+
+        {/* 出張。事前申請・事後登録のプロパティが無いDBでは片付ける手続きそのものが持てないため、
+            区画ごと出さない。 */}
+        {capabilities.approval && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-baseline gap-2">
+              <h3 className="type-title-small">出張</h3>
+              {openTodoCount > 0 && (
+                <span className="type-label-medium flex items-center gap-1 text-error">
+                  <CircleAlert className="size-3.5" />
+                  未対応 {openTodoCount}件
+                </span>
+              )}
+            </div>
+            <OpenRecords
+              split={trips}
+              todayKey={todayKey}
+              todos={["preApplied", "postRegistered"]}
+              emptyLabel="未対応の手続きはありません。"
+              writeDisabled={writeDisabled}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
+          </section>
+        )}
+
+        {/* 年休。出張と同じ形にする（開く理由がどちらも「まだ済ませていない手続きを片付けること」）。 */}
+        {capabilities.annualLeave && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-baseline gap-2">
+              <h3 className="type-title-small">年休</h3>
+              {openLeaveCount > 0 && (
+                <span className="type-label-medium flex items-center gap-1 text-error">
+                  <CircleAlert className="size-3.5" />
+                  未申請 {openLeaveCount}件
+                </span>
+              )}
+              {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
+                  この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
+                  ドロワーには行を足さない。 */}
+              <Link href="/work/leave" className="type-label-medium ml-auto text-primary underline">
+                年度の取得状況
+              </Link>
+            </div>
+            <OpenRecords
+              split={leaves}
+              todayKey={todayKey}
+              todos={["preApplied"]}
+              emptyLabel="未申請の年休はありません。"
+              writeDisabled={writeDisabled}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
+          </section>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1083,11 +974,6 @@ function shiftMonth(monthKey: string, delta: number): string {
   const month = Number(monthKey.slice(5, 7));
   const shifted = new Date(Date.UTC(year, month - 1 + delta, 1));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/** 追加を押したときの初期の日付。表示中の月に今日があればその日、無ければ月の初日。 */
-function defaultDate(monthKey: string, todayKey: string): string {
-  return todayKey.slice(0, 7) === monthKey ? todayKey : `${monthKey}-01`;
 }
 
 /**

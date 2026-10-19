@@ -1,4 +1,5 @@
 import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 import { WIDE_SECTION_CARD_CLASS } from "@/components/ui/wide-section";
 import { cn } from "@/lib/utils";
 
@@ -6,7 +7,7 @@ import { cn } from "@/lib/utils";
  * 買い物リストの骨組み（docs/spec.md §36）。
  *
  * この画面はNotionへ取りにいくため、下部ナビから移ったときに待ちが入る。独自の骨組みを
- * 持たせないと、根の loading.tsx（面とプログレスバーだけ）に落ちる。
+ * 持たせないと、根の loading.tsx（面と回る更新アイコンだけ）に落ちる。
  * 広い画面では実物の「すべて」と同じく、サイドバーとカテゴリのカードの段組みにする（issue #636）。
  */
 export default function Loading() {
@@ -17,10 +18,7 @@ export default function Loading() {
         <span className="flex-1" />
         <SkeletonBlock className="h-8 w-20 rounded-full" />
         <SkeletonBlock className="h-8 w-8 rounded-full" />
-      </div>
-
-      <div className="h-1 w-full overflow-hidden bg-secondary-container">
-        <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        <LoadingRefreshMark />
       </div>
 
       {/* カテゴリのタブ。件数はDBによって違うため、幅を揃えず3つだけ置く。 */}
