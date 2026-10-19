@@ -16,7 +16,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `google-calendar-client-id` | 本番用のDaySpan専用OAuthクライアントID |
 | `google-calendar-client-secret` | 同シークレット |
 | （issue-deckの共有トークン） | `DAYSPAN_INTERNAL_API_KEY`（読み取り用）・`DAYSPAN_INTERNAL_EVENTS_API_KEY`（予定書き込み用）・`DAYSPAN_INTERNAL_TASKS_API_KEY`（タスク書き込み用）はissue-deckで管理する。3値は互いに別にし、呼び出し元のAIDEも同名の共有トークンから読む（docs/internal-api.md） |
-| （`ops-dashboard` アイテムの `ops-api-token`） | ops-dashboardがAIの使用量（`GET /api/internal/ai-usage`）を読むときのBearer認証。**値の正は `op://apps/ops-dashboard/ops-api-token` で、`dayspan` アイテムへは複製しない**（ops-dashboard・issue-deckと同じ値を持つ。docs/internal-api.md） |
+| （`ops-dashboard` アイテムの `ops-api-token`） | ops-dashboardがAIの使用量（`GET /api/internal/ai-usage`）を読むときのBearer認証。**GitHub Secrets・本番の`.env`へは配らない**（#1264）。issue-deckの共有トークン `OPS_API_TOKEN` から実行時に読む。値の正は `op://apps/ops-dashboard/ops-api-token`（docs/internal-api.md） |
 | （`issue-deck` アイテムの `typesafe-api-key`） | 買い物リストのカテゴリの自動判定（TypeSafeのJev・issue #725）。**値の正は `op://apps/issue-deck/typesafe-api-key` で、`dayspan` アイテムへは複製しない**。未設定でも判定以外は動く |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
 | `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
