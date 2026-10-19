@@ -70,7 +70,8 @@ test("トークン登録時、記録中でなければend・食い違えばupdat
   assert.equal(planTokenRegistration(null, null), "end");
   assert.equal(planTokenRegistration(running, null), "keep");
   assert.equal(planTokenRegistration(running, shown), "keep");
-  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch + 0.4 }), "keep");
+  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch + 0.0000001 }), "keep");
+  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch + 0.4 }), "update");
   assert.equal(planTokenRegistration(running, { ...shown, title: "睡眠" }), "update");
   assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch - 600 }), "update");
 });

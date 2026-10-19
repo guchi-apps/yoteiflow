@@ -107,7 +107,9 @@ export function planTokenRegistration(
   if (!running) return "end";
   if (!shown) return "keep";
   const current = toContentState(running);
-  // 端末側の Double とサーバーの値で端数が揺れうるため、秒未満の差は同じとみなす
-  const sameStart = Math.abs(current.startedAtEpoch - shown.startedAtEpoch) < 1;
+  // 停止ボタンの前提条件（`/api/shortcuts/activity/stop` の parseExpected）と同じく、秒の小数を
+  // ミリ秒へ丸めて比べる（浮動小数の誤差だけを吸収し、別の記録は取り違えない）
+  const sameStart =
+    Math.round(current.startedAtEpoch * 1000) === Math.round(shown.startedAtEpoch * 1000);
   return sameStart && current.title === shown.title ? "keep" : "update";
 }
