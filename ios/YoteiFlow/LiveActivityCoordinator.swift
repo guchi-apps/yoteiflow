@@ -57,7 +57,7 @@ final class LiveActivityCoordinator {
     func reconcile() async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled,
               ActivityStopCredentials.load() != nil,
-              case .running(let running) = await fetchRunning()
+              case .running(let running) = await LiveActivityClient.fetchRunning()
         else { return }
 
         let activities = Activity<RecordingActivityAttributes>.activities
@@ -81,38 +81,6 @@ final class LiveActivityCoordinator {
                 await activities[index].update(.init(state: state, staleDate: nil))
             }
         }
-    }
-
-    private enum Fetched {
-        /// 取得に失敗した（何もしない）
-        case failed
-        /// 取得できた。記録が無いときは nil
-        case running(LiveActivityReconcile.Running?)
-    }
-
-    private func fetchRunning() async -> Fetched {
-        guard let token = ActivityStopCredentials.load() else { return .failed }
-
-        var request = URLRequest(url: SharedConfig.baseURL.appending(path: "api/shortcuts/activity/running"))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
-
-        struct Payload: Decodable {
-            struct Running: Decodable { let title: String; let startedAt: String }
-            let running: Running?
-        }
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else { return .failed }
-
-        guard let running = payload.running else { return .running(nil) }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: running.startedAt) ?? ISO8601DateFormatter().date(from: running.startedAt)
-        guard let date else { return .failed }
-        return .running(.init(title: running.title, startedAtEpoch: date.timeIntervalSince1970))
     }
 
     /// ログアウト時。表示中のアクティビティを終わらせ、停止専用トークンを消す

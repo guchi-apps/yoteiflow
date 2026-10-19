@@ -46,6 +46,66 @@ enum LiveActivityClient {
         return await post(path: "api/shortcuts/activity/token", body: body)
     }
 
+    enum RunningFetch {
+        /// 取得に失敗した（トークンが無い・通信できない）
+        case failed
+        /// 取得できた。記録が無いときは nil
+        case running(LiveActivityReconcile.Running?)
+    }
+
+    /// サーバーの記録中を読む（`/api/shortcuts/activity/running`。DBの1行だけで済む）。
+    /// アプリの突き合わせ（`LiveActivityCoordinator.reconcile`）と、コントロール（#1281）の表示が使う
+    static func fetchRunning() async -> RunningFetch {
+        struct Payload: Decodable {
+            struct Running: Decodable { let title: String; let startedAt: String }
+            let running: Running?
+        }
+
+        guard let data = await getData(path: "api/shortcuts/activity/running"),
+              let payload = try? JSONDecoder().decode(Payload.self, from: data)
+        else { return .failed }
+
+        guard let running = payload.running else { return .running(nil) }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: running.startedAt) ?? ISO8601DateFormatter().date(from: running.startedAt)
+        guard let date else { return .failed }
+        return .running(.init(title: running.title, startedAtEpoch: date.timeIntervalSince1970))
+    }
+
+    struct Preset: Decodable, Hashable {
+        let id: String
+        let name: String
+    }
+
+    /// 記録の項目の一覧（`/api/shortcuts/activity/presets`・#1281）。取得できないときは nil
+    static func fetchPresets() async -> [Preset]? {
+        struct Payload: Decodable { let presets: [Preset] }
+        guard let data = await getData(path: "api/shortcuts/activity/presets") else { return nil }
+        return (try? JSONDecoder().decode(Payload.self, from: data))?.presets
+    }
+
+    /// 登録済みの項目で記録を始める（`/api/shortcuts/activity/start`・#1281）。
+    /// 項目名ではなくIDを送る（サーバーは登録済みの項目しか始めない）
+    @discardableResult
+    static func startRecording(presetId: String) async -> Bool {
+        let body = try? JSONSerialization.data(withJSONObject: ["presetId": presetId])
+        return await post(path: "api/shortcuts/activity/start", body: body)
+    }
+
+    private static func getData(path: String) async -> Data? {
+        guard let token = ActivityStopCredentials.load() else { return nil }
+
+        var request = URLRequest(url: SharedConfig.baseURL.appending(path: path))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200
+        else { return nil }
+        return data
+    }
+
     private static func post(path: String, body: Data?) async -> Bool {
         await postData(path: path, body: body) != nil
     }

@@ -2,7 +2,7 @@
 // サーバー（TypeScript）とiOSアプリ（Swift）で揃えておく値・判定が食い違っていないかを照合する。
 // Xcodeの無い環境（subpc・CI）でも動く。`pnpm test:unit` の `src/lib/native-auth/ios-consistency.test.mts`
 // が同じ関数を使う。単独でも `node ios/scripts/check-consistency.mjs` で実行できる。
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -195,6 +195,27 @@ export function checkConsistency() {
   }
   if (!read("ios/YoteiFlowWidget/YoteiFlowWidgetBundle.swift").includes("RecordingLiveActivity()")) {
     problems.push("ウィジェットバンドルに RecordingLiveActivity がありません");
+  }
+
+  // 記録の開始・停止のコントロール（#1281）。拡張に閉じ、kind は SharedConfig の定数を使う
+  if (!read("ios/YoteiFlowWidget/YoteiFlowWidgetBundle.swift").includes("RecordingControl()")) {
+    problems.push("ウィジェットバンドルに RecordingControl がありません");
+  }
+  if (!sharedConfig.includes('static let recordingControlKind = "')) {
+    problems.push("SharedConfig.swift に recordingControlKind がありません");
+  }
+  const recordingControl = read("ios/YoteiFlowWidget/RecordingControl.swift");
+  if (!recordingControl.includes("StaticControlConfiguration(kind: SharedConfig.recordingControlKind")) {
+    problems.push("RecordingControl の kind が SharedConfig.recordingControlKind ではありません");
+  }
+  if (!read("ios/YoteiFlow/YoteiFlowApp.swift").includes("reloadControls(ofKind: SharedConfig.recordingControlKind)")) {
+    problems.push("アプリが記録のコントロールを取り直していません（YoteiFlowApp.swift）");
+  }
+  // Control系APIを6ターゲット共有の Shared/ へ持ち込まない（共有拡張・テストのターゲットでも組まれるため）
+  for (const file of readdirSync(join(root, "ios/Shared"))) {
+    if (/ControlWidget|ControlCenter\.shared|SetValueIntent/.test(read(`ios/Shared/${file}`))) {
+      problems.push(`ios/Shared/${file} に Control 系のAPIがあります（ウィジェット拡張に閉じる）`);
+    }
   }
 
   // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている
