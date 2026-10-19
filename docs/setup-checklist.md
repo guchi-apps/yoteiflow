@@ -8,21 +8,22 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 
 | フィールド | 値 |
 |---|---|
-| `target-dir` | VPS上の配置先（例: `/apps/dayspan`） |
+| `target-dir` | VPS上の配置先（例: `/apps/dayspan`）。本番デプロイがapp-deploy-gateへ移ったため（#1257）使っていない |
+| （`dayspan-deploy` アイテム〔SSH鍵〕の `private_key`） | 本番デプロイ用の**アプリ専用**SSH鍵（ed25519の秘密鍵）。下の「7. VPS」の手順で発行する（#1257） |
 | `port` | `3113` |
 | `db-name` | `app_dayspan` |
 | `token-encryption-key` | `openssl rand -base64 32` で生成した32byte鍵 |
 | `google-calendar-client-id` | 本番用のDaySpan専用OAuthクライアントID |
 | `google-calendar-client-secret` | 同シークレット |
 | （issue-deckの共有トークン） | `DAYSPAN_INTERNAL_API_KEY`（読み取り用）・`DAYSPAN_INTERNAL_EVENTS_API_KEY`（予定書き込み用）・`DAYSPAN_INTERNAL_TASKS_API_KEY`（タスク書き込み用）はissue-deckで管理する。3値は互いに別にし、呼び出し元のAIDEも同名の共有トークンから読む（docs/internal-api.md） |
-| （`ops-dashboard` アイテムの `ops-api-token`） | ops-dashboardがAIの使用量（`GET /api/internal/ai-usage`）を読むときのBearer認証。**値の正は `op://apps/ops-dashboard/ops-api-token` で、`dayspan` アイテムへは複製しない**（ops-dashboard・issue-deckと同じ値を持つ。docs/internal-api.md） |
+| （`ops-dashboard` アイテムの `ops-api-token`） | ops-dashboardがAIの使用量（`GET /api/internal/ai-usage`）を読むときのBearer認証。**GitHub Secrets・本番の`.env`へは配らない**（#1264）。issue-deckの共有トークン `OPS_API_TOKEN` から実行時に読む。値の正は `op://apps/ops-dashboard/ops-api-token`（docs/internal-api.md） |
 | （`issue-deck` アイテムの `typesafe-api-key`） | 買い物リストのカテゴリの自動判定（TypeSafeのJev・issue #725）。**値の正は `op://apps/issue-deck/typesafe-api-key` で、`dayspan` アイテムへは複製しない**。未設定でも判定以外は動く |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
 | `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
 | `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
 | （App Store Connect） | `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（TestFlight自動配信・#961）は専用の項目を持たず、`op://apps/AppStoreConnect/key-id`・`issuer-id`・`key-p8` を参照する（kurashioのCIと同じ。キーの正を1か所にする）。`key-p8` は `.p8` の中身をbase64の1行にした値。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く |
-| （APNs） | `APNS_KEY_ID`・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY` は専用の項目を持たず、kurashio（MyRoom）の `op://apps/MyRoom/apns-key-id`・`apns-team-id`・`apns-auth-key` をそのまま参照する。APNsの認証キー（.p8）はApple DeveloperのTeam単位で、同じTeamの全アプリに使えるため（#957）。`apns-auth-key` はPEMのままでよい（デプロイが改行を `\n` へ直して `.env` へ書く）。YoteiFlowのBundle IDはコード側の既定値（`com.gucchii.yoteiflow`）で分ける |
+| （APNs） | `APNS_KEY_ID`・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY` は専用の項目を持たず、kurashio（MyRoom）の `op://apps/MyRoom/apns-key-id`・`apns-team-id`・`apns-auth-key` をそのまま参照する。APNsの認証キー（.p8）はApple DeveloperのTeam単位で、同じTeamの全アプリに使えるため（#957）。`apns-auth-key` はPEMのままでよい（gateは1行1変数でしか受けないため、デプロイがbase64の1行へ直して送る。`src/lib/apns/config.ts` はbase64も読む）。YoteiFlowのBundle IDはコード側の既定値（`com.gucchii.yoteiflow`）で分ける |
 
 **`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット）を撤去した。**
 交通系APIの窓口を `guchi-apps/trainroute` に置き、`op://apps/trainroute/internal-api-key` を
@@ -157,7 +158,53 @@ CREATE DATABASE app_dayspan CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ## 7. VPS
 
-- `/apps/dayspan/` を作成する
+- `/apps/dayspan/` を作成する（現在の置き場は `/home/github-user/apps/dayspan`。app-deploy-gateはここを固定で使う）
+
+### 本番デプロイ用のアプリ専用鍵（#1257）
+
+本番デプロイ（`deploy.yml` の `deploy` ジョブ）は、organization共通の `SERVER_SSH_PRIVATE_KEY` ではなく、
+**このアプリ専用の鍵**でVPSの `app-deploy-gate`（`guchi-apps/vps#275`・稼働版の照合は `#298`）へ入る。
+`authorized_keys` の `command=` が対象アプリ（gateでのアプリ名は **`dayspan`**。置き場
+`/home/github-user/apps/dayspan` とpm2のプロセス名 `dayspan` の両方に一致する）を固定するため、この鍵では
+`upload`・`env`・`deploy` の3語しか実行できない。展開・`.env` 更新・`pnpm install`・`prisma migrate deploy`・
+pm2の再起動・稼働版の照合（`/api/app-version` の `sha` と `APP_COMMIT_SHA`）はgateが行う。
+
+**`develop`→`main` のリリースPRをマージする前に**、次を済ませる（済ませないと本番デプロイが鍵で失敗する）。
+
+1. （VPS）置き場とプロセス名がgateの前提と合っていることを確かめる
+
+   ```bash
+   ls -ld /home/github-user/apps/dayspan
+   sudo readlink /proc/"$(sudo -u github-user pm2 pid dayspan)"/cwd   # → /home/github-user/apps/dayspan
+   ```
+
+2. （サブPC）鍵を作り、1Passwordアプリで保管庫 `apps` に**SSH鍵アイテム** `dayspan-deploy` を作って秘密鍵をインポートする
+   （サブPCの `op` は読み取り専用のサービスアカウントのため書き込めない。通常の「パスワード」欄へ貼ると改行が空白に化けて鍵が壊れる）。
+   マニフェストは `op://apps/dayspan-deploy/private_key?ssh-format=openssh` で読む（欄のIDは `private_key`。`ssh-format=openssh` が無いとPKCS#8で返る）。
+   確かめるときは秘密鍵を画面に出さず、公開鍵だけを出す。インポートしたら手元のファイルは消す
+
+   ```bash
+   KEY="$(mktemp -u)"; ssh-keygen -t ed25519 -N "" -C "deploy-dayspan" -f "$KEY"
+   # 1Passwordアプリで $KEY をインポートしたあと
+   T="$(mktemp)"; op read "op://apps/dayspan-deploy/private_key?ssh-format=openssh" > "$T"; chmod 600 "$T"; ssh-keygen -y -f "$T"; rm "$T"
+   ```
+
+3. （VPS）公開鍵を登録する（`guchi-apps/vps` の `scripts/setup-app-keys.sh`。`sudo` を含むため代行できない）
+
+   ```bash
+   sudo scripts/setup-app-keys.sh add --app dayspan --pubkey dayspan.pub
+   ```
+
+   登録後、サブPCから `ssh -i <秘密鍵> -p <port> github-user@<host> check` が `ok: dayspan (...)` を返すことを確かめる
+
+4. GitHub Secretsへ同期し、並んだことを確かめる
+
+   ```bash
+   gh workflow run sync-secrets.yml --ref <ブランチ名> -f only=SSH_PRIVATE_KEY
+   gh secret list | grep '^SSH_PRIVATE_KEY'
+   ```
+
+移行が済んで本番デプロイが一度通ったら、`TARGET_DIR`（マニフェスト・1Password）は撤去してよい。
 - Apache VirtualHost を追加する（`dayspan.gucchii.com` → `127.0.0.1:3113`）。DNS登録・Let's Encrypt証明書の取得を含む
 - 本番プロセスを追加する前に、実機のメモリ余力を確認する（VPSは約2GB。仕様 §24）
 

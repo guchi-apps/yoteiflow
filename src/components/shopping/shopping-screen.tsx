@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
-import { ArrowRight, ArrowUpDown, Eye, EyeOff, Heart, Plus, RefreshCw, ShoppingCart } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Eye, EyeOff, Heart, Plus, ShoppingCart } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
@@ -26,7 +26,7 @@ import { ShoppingItemDetailDialog } from "@/components/shopping/shopping-item-de
 import { useShoppingViewPrefs } from "@/components/shopping/use-shopping-view-prefs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
 import { applyBoughtOps } from "@/lib/offline-queue/ops";
 import { usePendingWrites } from "@/lib/offline-queue/store";
@@ -275,19 +275,10 @@ export function ShoppingScreen({
           <ArrowUpDown className="size-4" />
           {SHOPPING_SORT_LABELS[sort]}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="再取得"
-          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
-          disabled={pending || offline}
-          onClick={reload}
-        >
-          <RefreshCw className="size-4" />
-        </Button>
+        {/* 右上の端の再取得。取得中・保存中はこのアイコンが回る（issue #1271）。オフライン中に
+            押しても、再接続まで終わらない読み込みが始まるだけになる。 */}
+        <RefreshButton spinning={pending || busyId !== null} disabled={offline} onClick={reload} />
       </header>
-
-      <LinearProgress active={pending || busyId !== null} />
 
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}

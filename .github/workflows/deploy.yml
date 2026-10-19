@@ -96,12 +96,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       TARGET_DIR: ${{ secrets.TARGET_DIR }}
       DB_NAME: ${{ secrets.DB_NAME }}
       GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
       TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-      OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       SHARED_TOKEN_API_SECRET: ${{ secrets.SHARED_TOKEN_API_SECRET }}
       ISSUE_DECK_URL: ${{ vars.APP_BASE_URL }}
@@ -146,7 +146,7 @@ jobs:
     #
     # このブロックは scripts/generate-workflow-env-block.sh で生成する（guchi-apps/issue-deck#1307）。
     env:
-      SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       HOST: ${{ secrets.SERVER_HOST }}
       USERNAME: ${{ secrets.SERVER_USERNAME }}
       SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
@@ -164,7 +164,6 @@ jobs:
       GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
       TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-      OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       SHARED_TOKEN_API_SECRET: ${{ secrets.SHARED_TOKEN_API_SECRET }}
       ISSUE_DECK_URL: ${{ vars.APP_BASE_URL }}
@@ -212,8 +211,6 @@ jobs:
             .next \
             prisma \
             deploy \
-            scripts/construct-database-url.sh \
-            scripts/update-env-file.sh \
             next.config.mjs
 
       - name: Upload artifact
@@ -234,7 +231,7 @@ jobs:
     #
     # このブロックは scripts/generate-workflow-env-block.sh で生成する（guchi-apps/issue-deck#1307）。
     env:
-      SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       HOST: ${{ secrets.SERVER_HOST }}
       USERNAME: ${{ secrets.SERVER_USERNAME }}
       SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
@@ -252,7 +249,6 @@ jobs:
       GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
       TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-      OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       SHARED_TOKEN_API_SECRET: ${{ secrets.SHARED_TOKEN_API_SECRET }}
       ISSUE_DECK_URL: ${{ vars.APP_BASE_URL }}
@@ -290,17 +286,27 @@ jobs:
           HOST: ${{ env.HOST }}
           SSH_PORT: ${{ env.SSH_PORT }}
 
+      # **VPSのgate（/usr/local/sbin/app-deploy-gate。guchi-apps/vps#275）へ渡す**（#1257）。
+      # 鍵はこのアプリ専用で、VPSのauthorized_keysのcommand=がgateのアプリ名（dayspan。置き場の
+      # /home/github-user/apps/dayspan とpm2のプロセス名に一致する）を固定する。任意のシェルコマンドは
+      # 実行できず、upload・env・deployの3語だけが通る。旧配布物の削除（next.config.tsを含む）・展開・
+      # .env更新・pnpm install・prisma migrate deploy（MIGRATE_DATABASE_URLは.envへ書かずここだけで使う）・
+      # pm2の再起動・稼働版の照合はgate側が行う。
       - name: Upload archive
-        run: scp -P "${SSH_PORT}" deploy.tar.gz "${USERNAME}@${HOST}:${TARGET_DIR}/deploy.tar.gz"
+        run: ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" upload < deploy.tar.gz
         env:
           HOST: ${{ env.HOST }}
           USERNAME: ${{ env.USERNAME }}
           SSH_PORT: ${{ env.SSH_PORT }}
-          TARGET_DIR: ${{ env.TARGET_DIR }}
 
-      - name: Deploy and restart
-        uses: appleboy/ssh-action@v1
+      - name: Send environment variables
         env:
+          HOST: ${{ env.HOST }}
+          USERNAME: ${{ env.USERNAME }}
+          SSH_PORT: ${{ env.SSH_PORT }}
+          # 稼働中の版の確認に使う（guchi-apps/issue-deck#4712）。gateが.envのAPP_COMMIT_SHAと
+          # 稼働中の/api/app-versionのshaを照合する（guchi-apps/vps#298）。コミットのSHAは公開情報
+          APP_COMMIT_SHA: ${{ github.sha }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
           MIGRATE_DATABASE_URL: ${{ env.MIGRATE_DATABASE_URL }}
           DB_USER: ${{ env.DB_USER }}
@@ -314,7 +320,6 @@ jobs:
           GOOGLE_CALENDAR_CLIENT_ID: ${{ env.GOOGLE_CALENDAR_CLIENT_ID }}
           GOOGLE_CALENDAR_CLIENT_SECRET: ${{ env.GOOGLE_CALENDAR_CLIENT_SECRET }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
-          OPS_API_TOKEN: ${{ env.OPS_API_TOKEN }}
           TYPESAFE_API_KEY: ${{ env.TYPESAFE_API_KEY }}
           SHARED_TOKEN_API_SECRET: ${{ env.SHARED_TOKEN_API_SECRET }}
           ISSUE_DECK_URL: ${{ env.ISSUE_DECK_URL }}
@@ -324,96 +329,60 @@ jobs:
           APNS_KEY_ID: ${{ env.APNS_KEY_ID }}
           APNS_TEAM_ID: ${{ env.APNS_TEAM_ID }}
           APNS_PRIVATE_KEY: ${{ env.APNS_PRIVATE_KEY }}
-          TARGET_DIR: ${{ env.TARGET_DIR }}
-          APP_COMMIT_SHA: ${{ github.sha }}
-        with:
-          host: ${{ env.HOST }}
-          username: ${{ env.USERNAME }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          port: ${{ env.SSH_PORT }}
-          envs: DATABASE_URL,MIGRATE_DATABASE_URL,DB_USER,DB_PASSWORD,DB_HOST,DB_PORT,DB_NAME,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,TOKEN_ENCRYPTION_KEY,GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET,CLAUDE_CODE_OAUTH_TOKEN,OPS_API_TOKEN,TYPESAFE_API_KEY,SHARED_TOKEN_API_SECRET,ISSUE_DECK_URL,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,APNS_KEY_ID,APNS_TEAM_ID,APNS_PRIVATE_KEY,TARGET_DIR,APP_COMMIT_SHA
-          script: |
-            set -euo pipefail
-            cd "${TARGET_DIR}"
-
-            # 待受ポートはシークレットではなく設定値として平文で持つ
-            # （guchi-apps/docs の standards/ports.md「ポート番号は 1Password で管理しない」。#267）。
-            PORT=3113
-
-            echo "Cleaning up old release files..."
-            rm -rf .next public package.json pnpm-lock.yaml prisma deploy next.config.mjs next.config.ts
-
-            echo "Extracting archive..."
-            tar -xzf deploy.tar.gz
-            rm deploy.tar.gz
-
-            update_env() {
-              bash scripts/update-env-file.sh .env "$1" "$2"
-            }
-
-            echo "Updating .env..."
-            update_env NODE_ENV production
-            update_env PORT "$PORT"
-            update_env DATABASE_URL "$DATABASE_URL"
-            update_env DB_USER "$DB_USER"
-            update_env DB_PASSWORD "$DB_PASSWORD"
-            update_env DB_HOST "$DB_HOST"
-            update_env DB_PORT "$DB_PORT"
-            update_env DB_NAME "$DB_NAME"
-            update_env NEXT_PUBLIC_SUPABASE_URL "$NEXT_PUBLIC_SUPABASE_URL"
-            update_env NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-            update_env TOKEN_ENCRYPTION_KEY "$TOKEN_ENCRYPTION_KEY"
-            update_env GOOGLE_CALENDAR_CLIENT_ID "$GOOGLE_CALENDAR_CLIENT_ID"
-            update_env GOOGLE_CALENDAR_CLIENT_SECRET "$GOOGLE_CALENDAR_CLIENT_SECRET"
-            update_env CLAUDE_CODE_OAUTH_TOKEN "$CLAUDE_CODE_OAUTH_TOKEN"
-            # ops-dashboardがAIの使用量（GET /api/internal/ai-usage）を読むときのBearer認証（#680）
-            update_env OPS_API_TOKEN "$OPS_API_TOKEN"
+        run: |
+          set -euo pipefail
+          # gateは標準入力を1行1変数（KEY=VALUE）で受けるため、改行を含む値は送れない。
+          # APNsの認証キーはPEM（複数行）のまま1Passwordにあるので、base64の1行へ直して送る
+          # （src/lib/apns/config.ts の normalizeApnsPrivateKey() はbase64も受ける）。
+          case "$APNS_PRIVATE_KEY" in
+            *BEGIN*|*$'\n'*) APNS_PRIVATE_KEY="$(printf '%s' "$APNS_PRIVATE_KEY" | base64 -w0)" ;;
+          esac
+          for name in DATABASE_URL MIGRATE_DATABASE_URL DB_USER DB_PASSWORD DB_HOST DB_PORT DB_NAME \
+            NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY TOKEN_ENCRYPTION_KEY \
+            GOOGLE_CALENDAR_CLIENT_ID GOOGLE_CALENDAR_CLIENT_SECRET CLAUDE_CODE_OAUTH_TOKEN \
+            TYPESAFE_API_KEY SHARED_TOKEN_API_SECRET ISSUE_DECK_URL VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY \
+            VAPID_SUBJECT APNS_KEY_ID APNS_TEAM_ID APNS_PRIVATE_KEY; do
+            case "${!name}" in
+              *$'\n'*) echo "::error::${name} が改行を含むためgateへ送れません"; exit 1 ;;
+            esac
+          done
+          # 待受ポートはシークレットではなく設定値として平文で持つ
+          # （guchi-apps/docs の standards/ports.md「ポート番号は 1Password で管理しない」。#267）。
+          {
+            printf '%s\n' "NODE_ENV=production" "PORT=3113"
+            printf '%s\n' "APP_COMMIT_SHA=${APP_COMMIT_SHA}"
+            printf '%s\n' "DATABASE_URL=${DATABASE_URL}"
+            printf '%s\n' "MIGRATE_DATABASE_URL=${MIGRATE_DATABASE_URL}"
+            printf '%s\n' "DB_USER=${DB_USER}"
+            printf '%s\n' "DB_PASSWORD=${DB_PASSWORD}"
+            printf '%s\n' "DB_HOST=${DB_HOST}"
+            printf '%s\n' "DB_PORT=${DB_PORT}"
+            printf '%s\n' "DB_NAME=${DB_NAME}"
+            printf '%s\n' "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}"
+            printf '%s\n' "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}"
+            printf '%s\n' "TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}"
+            printf '%s\n' "GOOGLE_CALENDAR_CLIENT_ID=${GOOGLE_CALENDAR_CLIENT_ID}"
+            printf '%s\n' "GOOGLE_CALENDAR_CLIENT_SECRET=${GOOGLE_CALENDAR_CLIENT_SECRET}"
+            printf '%s\n' "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}"
             # 買い物のカテゴリの自動判定（TypeSafeのJev・#725）。未設定なら判定だけが使えない
-            update_env TYPESAFE_API_KEY "$TYPESAFE_API_KEY"
+            printf '%s\n' "TYPESAFE_API_KEY=${TYPESAFE_API_KEY}"
             # 共有トークンAPI（issue-deck）。未設定だと各トークンが環境変数へ落ちる（issue #860）
-            update_env SHARED_TOKEN_API_SECRET "$SHARED_TOKEN_API_SECRET"
-            update_env ISSUE_DECK_URL "$ISSUE_DECK_URL"
-            update_env VAPID_PUBLIC_KEY "$VAPID_PUBLIC_KEY"
-            update_env VAPID_PRIVATE_KEY "$VAPID_PRIVATE_KEY"
-            update_env VAPID_SUBJECT "$VAPID_SUBJECT"
-            update_env APNS_KEY_ID "$APNS_KEY_ID"
-            update_env APNS_TEAM_ID "$APNS_TEAM_ID"
-            update_env APNS_PRIVATE_KEY "$APNS_PRIVATE_KEY"
-            update_env APP_COMMIT_SHA "$APP_COMMIT_SHA"
+            printf '%s\n' "SHARED_TOKEN_API_SECRET=${SHARED_TOKEN_API_SECRET}"
+            printf '%s\n' "ISSUE_DECK_URL=${ISSUE_DECK_URL}"
+            printf '%s\n' "VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}"
+            printf '%s\n' "VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}"
+            printf '%s\n' "VAPID_SUBJECT=${VAPID_SUBJECT}"
+            printf '%s\n' "APNS_KEY_ID=${APNS_KEY_ID}"
+            printf '%s\n' "APNS_TEAM_ID=${APNS_TEAM_ID}"
+            printf '%s\n' "APNS_PRIVATE_KEY=${APNS_PRIVATE_KEY}"
+          } | ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" env
 
-            echo "Installing production dependencies..."
-            corepack enable pnpm >/dev/null 2>&1 || true
-            pnpm install --prod --frozen-lockfile
-
-            echo "Applying database migrations..."
-            DATABASE_URL="$MIGRATE_DATABASE_URL" pnpm exec prisma migrate deploy
-
-            echo "Restarting PM2..."
-            if command -v pm2 >/dev/null 2>&1; then
-              pm2 delete dayspan 2>/dev/null || true
-              PORT="$PORT" pm2 start deploy/ecosystem.config.js --env production
-              pm2 save
-            else
-              echo "pm2 is required on the server. Install: npm install -g pm2"
-              exit 1
-            fi
-
-            echo "Verifying running version..."
-            # 起動できただけでは新しい版が動いているとは限らない（古いプロセスが応答しうる）。
-            # 稼働中の版が今回のコミットと一致するまで成功にしない。
-            for i in $(seq 1 30); do
-              RUNNING_SHA="$(curl -fsS "http://127.0.0.1:${PORT}/api/app-version" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{process.stdout.write(String(JSON.parse(d).sha||""))}catch{}})' || true)"
-              if [ -n "$RUNNING_SHA" ] && [ "$RUNNING_SHA" = "$APP_COMMIT_SHA" ]; then
-                echo "Deployment successful. Running version: ${RUNNING_SHA}"
-                exit 0
-              fi
-              sleep 2
-            done
-
-            echo "Version check failed after 60s. expected=${APP_COMMIT_SHA} running=${RUNNING_SHA:-none}"
-            pm2 describe dayspan || true
-            pm2 logs dayspan --lines 50 --nostream || true
-            exit 1
+      - name: Deploy and restart
+        run: ssh -p "${SSH_PORT}" "${USERNAME}@${HOST}" deploy
+        env:
+          HOST: ${{ env.HOST }}
+          USERNAME: ${{ env.USERNAME }}
+          SSH_PORT: ${{ env.SSH_PORT }}
 
   notify:
     runs-on: ubuntu-latest

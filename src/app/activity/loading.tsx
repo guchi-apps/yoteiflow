@@ -1,4 +1,5 @@
 import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 
 /**
  * 活動記録の骨組み（issue #352）。
@@ -18,10 +19,7 @@ export default function Loading() {
         <SkeletonBlock className="h-6 w-20" />
         <span className="flex-1" />
         <SkeletonBlock className="h-8 w-24 rounded-full" />
-      </div>
-
-      <div className="h-1 w-full overflow-hidden bg-secondary-container">
-        <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        <LoadingRefreshMark />
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">

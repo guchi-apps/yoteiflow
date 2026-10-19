@@ -80,12 +80,12 @@ jobs:
     # undeclared として報告する（判定できないまま黙って通さない）。
     # このブロックは scripts/generate-workflow-env-block.sh で生成する。
     env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       TARGET_DIR: ${{ secrets.TARGET_DIR }}
       DB_NAME: ${{ secrets.DB_NAME }}
       GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
       TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-      OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       SHARED_TOKEN_API_SECRET: ${{ secrets.SHARED_TOKEN_API_SECRET }}
       ISSUE_DECK_URL: ${{ vars.APP_BASE_URL }}

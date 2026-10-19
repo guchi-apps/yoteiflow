@@ -1,4 +1,4 @@
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 
 /**
  * どの画面にも当てはまる読み込み中の面（issue #352）。
@@ -17,7 +17,10 @@ import { LinearProgress } from "@/components/ui/linear-progress";
 export default function Loading() {
   return (
     <div className="flex h-app flex-col bg-background">
-      <LinearProgress active />
+      {/* 読み込み中の印は、どの画面でもヘッダー右上で回る更新アイコンにそろえる（issue #1271）。 */}
+      <div className="flex justify-end bg-surface-container-low px-2 py-2">
+        <LoadingRefreshMark />
+      </div>
     </div>
   );
 }
