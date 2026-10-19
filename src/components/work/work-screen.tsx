@@ -97,7 +97,9 @@ export function WorkScreen({
       />
       <MonthPickerDialog
         // 開くたびに表示中の月の年から始める（閉じている間に月が変わっても古い年を残さない）。
-        key={monthKey}
+        // 兄弟の `WorkMonthScreen` と同じ key にしない。同じ親の中で key が重なると、月が
+        // 変わってもReactが子を作り直せず、10月のまま動かなくなった（issue #1276）。
+        key={`month-picker-${monthKey}`}
         open={monthPickerOpen}
         monthKey={monthKey}
         todayKey={rest.todayKey}
