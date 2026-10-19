@@ -41,7 +41,13 @@ final class LiveActivityCoordinator {
     private func observeToken(of activity: Activity<RecordingActivityAttributes>) {
         Task {
             for await token in activity.pushTokenUpdates {
-                await LiveActivityClient.registerActivityToken(token)
+                // 表示中の内容を添えると、サーバーが今の記録と食い違うときに end / update を返してくれる
+                // （登録が停止より遅れた場合の取り残しを防ぐ・#1280）。裏起動の短い時間で通信が落ちることが
+                // あるため、2回までやり直す
+                for attempt in 0..<3 {
+                    if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+                    if await LiveActivityClient.registerActivityToken(token, state: activity.content.state) { break }
+                }
             }
         }
     }

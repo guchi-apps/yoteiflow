@@ -29,11 +29,20 @@ enum LiveActivityClient {
         return status == "record_changed" ? .recordChanged : .stopped
     }
 
-    /// activity push token をサーバーへ登録する（以後の update / end の宛先）
+    /// activity push token をサーバーへ登録する（以後の update / end の宛先）。
+    /// 表示中の内容（`state`）を添え、サーバーが今の記録と突き合わせられるようにする（#1280）
     @discardableResult
-    static func registerActivityToken(_ token: Data) async -> Bool {
+    static func registerActivityToken(
+        _ token: Data,
+        state: RecordingActivityAttributes.ContentState
+    ) async -> Bool {
         let hex = token.map { String(format: "%02x", $0) }.joined()
-        let body = try? JSONSerialization.data(withJSONObject: ["token": hex, "environment": environment])
+        let body = try? JSONSerialization.data(withJSONObject: [
+            "token": hex,
+            "environment": environment,
+            "title": state.title,
+            "startedAtEpoch": state.startedAtEpoch,
+        ])
         return await post(path: "api/shortcuts/activity/token", body: body)
     }
 

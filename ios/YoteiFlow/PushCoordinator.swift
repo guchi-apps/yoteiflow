@@ -150,6 +150,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) -> Bool {
         // 起動時に押された通知（アプリが終了していた場合）も、起動後に didReceive で届く
         UNUserNotificationCenter.current().delegate = self
+        // push-to-start でOSが作ったライブアクティビティのために裏起動されたときは画面（WebViewModel）が
+        // 作られない。ここで監視を始めないと activity push token が登録されず、他の端末で止めた end が
+        // この端末へ届かない（#1280）。二重に呼ばれても startObserving 側で1回に収まる
+        Task { @MainActor in LiveActivityCoordinator.shared.startObserving() }
         return true
     }
 
