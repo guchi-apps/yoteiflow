@@ -332,7 +332,7 @@ jobs:
         run: |
           set -euo pipefail
           # gateは標準入力を1行1変数（KEY=VALUE）で受けるため、改行を含む値は送れない。
-          # APNsの認証キーはPEM（複数行）のまま1Passwordにあるので、base64の1行へ直して送る
+          # APNsの認証キーがPEM（複数行）で入っていたらbase64の1行へ直して送る（apps/AppStoreConnectの値はbase64の1行）
           # （src/lib/apns/config.ts の normalizeApnsPrivateKey() はbase64も受ける）。
           case "$APNS_PRIVATE_KEY" in
             *BEGIN*|*$'\n'*) APNS_PRIVATE_KEY="$(printf '%s' "$APNS_PRIVATE_KEY" | base64 -w0)" ;;
