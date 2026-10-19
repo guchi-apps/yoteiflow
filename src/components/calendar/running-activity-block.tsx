@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { RunningActivityItem } from "@/types/activity";
 
+import { subduedEventColors } from "./calendar-color";
 import { ActivityMark } from "./activity-mark";
 import { formatElapsed } from "./activity-format";
 import { MIN_EVENT_HEIGHT, MINUTES_PER_DAY, type CalendarDateUtils } from "./item-layout";
@@ -56,6 +57,7 @@ export function RunningActivityBlock({
   const top = offsetOf(startMinutes);
   const height = Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT);
 
+  const colors = subduedEventColors(running.color ?? null);
   const elapsed = formatElapsed(running.startedAt, nowIso);
   const timeText = `${utils.formatTime(running.startedAt)}–`;
 
@@ -65,15 +67,22 @@ export function RunningActivityBlock({
       onClick={onOpen}
       className={cn(
         "absolute flex flex-col items-center gap-0.5 overflow-hidden rounded-item",
-        "border border-dashed border-l-[3px] border-l-primary border-primary",
-        // 塗りを薄くして、重なった予定が透けて読めるようにする。
-        "bg-primary-container/45 py-0.5 text-on-primary-container",
+        // 色は記録済みの活動（ActivityLaneBlock）と同じ保存先カレンダーの色にする（issue #1279）。
+        "border border-dashed border-l-[3px] py-0.5 text-on-surface",
       )}
-      style={{ top, height, left, width }}
+      style={{
+        top,
+        height,
+        left,
+        width,
+        backgroundColor: colors.background,
+        borderColor: colors.border,
+        borderLeftColor: colors.accent,
+      }}
       title={`${running.title}（記録中 ${timeText}${elapsed}）`}
     >
       {/* 動いていることを形でも示す。色だけだと、止め忘れているのか保存済みなのかが分からない。 */}
-      <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      <span aria-hidden style={{ backgroundColor: colors.accent }} className="size-1.5 shrink-0 animate-pulse rounded-full" />
       {/* アイコンは点滅の点の隣へ足すだけ。点は「記録中」の合図なので消さない（issue #907）。 */}
       {width >= 14 && <ActivityMark title={running.title} className="hidden" />}
       <span

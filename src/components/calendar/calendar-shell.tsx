@@ -1678,6 +1678,13 @@ function CalendarBody({
     data.invalidate(taskRanges(task));
   };
 
+  // 記録中の帯は、記録済みの活動と同じ茶系（保存先カレンダーの色）で描く（issue #1279）。
+  const runningWithColor = useMemo(() => {
+    if (!runningActivity) return null;
+    const color = data.calendars.find((c) => c.calendarId === runningActivity.calendarId)?.color;
+    return { ...runningActivity, color: color ?? null };
+  }, [runningActivity, data.calendars]);
+
   // 右下の「＋」で作れる種類。キーボードショートカットの `c`（issue #635）も同じ条件で判定する。
   const addAvailable: Record<AddableKind, boolean> = {
     event: !offline && data.calendars.length > 0,
@@ -1751,7 +1758,7 @@ function CalendarBody({
           workPlaceOptions={workPlaceOptions}
           workWritable={work.writable}
           onOpenWork={openWork}
-          runningActivity={runningActivity}
+          runningActivity={runningWithColor}
           activityCalendarIds={activityCalendars}
           holidayCalendarIds={holidayCalendars}
           utils={utils}
