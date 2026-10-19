@@ -32,8 +32,9 @@ export function AppLaunchScreen() {
       </div>
 
       {/*
-        アプリ内の LinearProgress と同じ動き。色だけは紫の面に乗せるため白側で組む
-        （M3のトークンはダークで --md-primary が淡い紫になり、この面では沈む）。
+        起動画面だけは横に流れるバーのまま残す（アプリ内のヘッダーは更新ボタンが回る形へ
+        変えた・issue #1271。ここにはヘッダーも更新ボタンも無い）。色は紫の面に乗せるため
+        白側で組む（M3のトークンはダークで --md-primary が淡い紫になり、この面では沈む）。
       */}
       <div className="h-1 w-24 overflow-hidden rounded-full bg-white/25">
         <div

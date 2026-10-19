@@ -1,3 +1,4 @@
+import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,10 +17,7 @@ export function CalendarSkeleton() {
         <span aria-hidden className="hidden md:max-lg:block md:max-lg:basis-full" />
         <SkeletonBlock className="h-8 w-14 rounded-full md:max-lg:h-10" />
         <SkeletonBlock className="h-8 w-24 rounded-full md:max-lg:h-10" />
-      </div>
-
-      <div className="h-1 w-full overflow-hidden bg-secondary-container">
-        <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        <LoadingRefreshMark />
       </div>
 
       <CalendarGridSkeleton />

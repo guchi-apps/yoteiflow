@@ -20,7 +20,7 @@ import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh"
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { LinearProgress } from "@/components/ui/linear-progress";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { ACTIVITY_ICONS, resolveActivityIcon } from "@/lib/activity-icons";
 import { submitActivityOp, type SubmitInput, type SubmitResult } from "@/lib/activity-queue/flush";
 import { useEffectiveRunning } from "@/lib/activity-queue/use-effective-running";
@@ -254,9 +254,15 @@ export function ActivityScreen({
             <span className="hidden sm:inline">項目を編集</span>
           </Link>
         </Button>
-      </header>
 
-      <LinearProgress active={pending || busy} />
+        {/* 右上の端の再取得（issue #1271）。別の端末で始めた・止めた記録をこの場で取り直す。
+            記録の開始・停止の保存中もこのアイコンが回る（ヘッダー直下の横に流れるバーはやめた）。 */}
+        <RefreshButton
+          spinning={pending || busy}
+          disabled={offline}
+          onClick={() => startTransition(() => router.refresh())}
+        />
+      </header>
 
       <OfflineNotice />
 

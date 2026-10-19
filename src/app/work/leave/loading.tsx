@@ -1,4 +1,5 @@
 import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 
 /**
  * 年休の取得状況の骨組み。
@@ -13,11 +14,9 @@ export default function Loading() {
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <SkeletonBlock className="h-8 w-20 rounded-full" />
         <SkeletonBlock className="h-6 w-16" />
+        <span className="flex-1" />
+        <LoadingRefreshMark className="size-8 md:size-8" />
       </header>
-
-      <div className="h-1 w-full overflow-hidden bg-secondary-container">
-        <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
-      </div>
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6 lg:grid lg:max-w-5xl lg:grid-cols-2 lg:content-start lg:items-start">
         <div className="flex items-center justify-between gap-2 lg:col-span-2">
