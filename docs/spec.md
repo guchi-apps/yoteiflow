@@ -3852,10 +3852,11 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 
 - 同期: 記録の開始・切り替え・停止・開始時刻の修正・取り消しは、Web・PWA・ショートカット・他端末のどこで起きても、サーバーが `notifyLiveActivity()` からAPNs（liveactivity）で送る。アプリが動いていなくても **push-to-start**（iOS 17.2以降）で始められ、表示中のものへは activity push token 宛に update / end を送る。切り替えは `update` 1通（end と start を別々に送らない）
 - 経過時間は端末の `Text(timerInterval:)` が数える。ContentState の時刻はUnix秒の数値（`startedAtEpoch`）
-- 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止・`POST /api/shortcuts/activity/token`（activity push tokenの登録）・`GET /api/shortcuts/activity/running`（記録中の読み取り。起動時の突き合わせ用）と、Yahoo!乗換案内の共有の確認・取り込み（`POST /api/shortcuts/travel/preview`・`/import`・§29）の5つだけ
+- 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止・`POST /api/shortcuts/activity/token`（activity push tokenの登録）・`GET /api/shortcuts/activity/running`（記録中の読み取り。起動時の突き合わせ用）と、Yahoo!乗換案内の共有の確認・取り込み（`POST /api/shortcuts/travel/preview`・`/import`・§29）、記録のコントロール（下記）の項目一覧・開始（`GET /api/shortcuts/activity/presets`・`POST /api/shortcuts/activity/start`）に限る（睡眠モード連動の `activity/sleep` を含む）
 - 登録: push-to-start トークンは `POST /api/live-activity/register`（ログイン済みのWebViewから）、停止専用トークンの受け渡しは `POST /api/settings/live-activity/native`
 - 起動時・前面に戻ったとき、手元のアクティビティとサーバーの記録中を突き合わせて片付ける（二重表示・取り残しを防ぐ）
 - ログアウトで停止専用トークンを消し、表示中のアクティビティを終わらせる。サーバー側のトークン行は残す（失効は410で自然に消える）
+- 記録のコントロール（issue #1281）: iOS 18のコントロール（コントロールセンター・ロック画面・アクションボタン）に置くトグル。記録中＝オン（タイルがアプリの紫・項目名と「記録中」）、オフ＝「活動記録」「停止中」。オフで押すと登録済みの項目からシステムの選択で選んで始め（1件なら選ばない）、オンで押すとその場で止める。開始APIは項目名を受けず、本人の `ActivityPreset` のIDだけを受ける（任意の名前の記録は作らせない）。同じ項目を記録中なら何もしない（`not_changed`）、別の項目なら切り替える。表示はサーバーの記録中で決め、他端末の変更はコントロールセンターを開いたとき・アプリの前面/背面の遷移で映る（即時ではない）。経過時間は出さない
 - 実機確認は Xcode が要る（`ios/README.md`）
 
 ## 46. 勤務記録からの勤務予定・移動の自動生成（issue #1081）
