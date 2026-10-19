@@ -1,11 +1,19 @@
 import { isApnsConfigured } from "@/lib/apns/config";
-import { isApnsEnvironment, sendLiveActivity, type ApnsResult } from "@/lib/apns/send";
+import {
+  isApnsEnvironment,
+  sendLiveActivity,
+  type ApnsEnvironment,
+  type ApnsResult,
+} from "@/lib/apns/send";
 import {
   buildLiveActivityPayload,
   planLiveActivity,
+  planTokenRegistration,
   type LiveActivityChange,
+  type LiveActivityContentState,
 } from "@/lib/live-activity/payload";
 import { db } from "@/lib/db";
+import { getRunningActivity } from "@/services/activity/running";
 
 /**
  * 記録の開始・切り替え・停止・開始時刻の修正を、iOSアプリのライブアクティビティへ伝える（issue #971）。
@@ -52,10 +60,48 @@ export async function notifyLiveActivity(
     );
 
     // 終わったアクティビティのトークンはもう使えない。残すと次の記録でupdateの宛先になり得る。
-    if (change.type === "stopped") {
-      await db.liveActivityToken.deleteMany({ where: { userId } }).catch(() => null);
+    // 消すのは end を送ったものだけにする。送っている間に登録されたトークンまで消すと、その端末へは
+    // end が届かないまま宛先が無くなる（登録側は記録中でないことを見て自分で end を送る・issue #1280）。
+    if (change.type === "stopped" && tokenRows.length > 0) {
+      await db.liveActivityToken
+        .deleteMany({ where: { id: { in: tokenRows.map((row) => row.id) } } })
+        .catch(() => null);
     }
   } catch (error) {
     console.error("[dayspan] live activity notify failed:", error);
+  }
+}
+
+/**
+ * 登録されたばかりのactivity push tokenのアクティビティを、今の記録に合わせる（issue #1280）。
+ *
+ * push-to-start で裏起動された端末は、トークンの登録が停止より遅れることがある。停止の end は
+ * その時点で登録済みのトークンにしか送られないため、登録の時点で記録中でなければここで end を送り、
+ * トークンは残さない。別の記録を表示していれば update で合わせる。ベストエフォート（例外を投げない）。
+ */
+export async function syncRegisteredLiveActivityToken(
+  userId: string,
+  target: { token: string; environment: ApnsEnvironment },
+  shown: LiveActivityContentState | null,
+): Promise<void> {
+  try {
+    if (!isApnsConfigured()) return;
+
+    const running = await getRunningActivity(userId);
+    const plan = planTokenRegistration(running, shown);
+    if (plan === "keep") return;
+
+    const payload = buildLiveActivityPayload(plan, running, Math.floor(Date.now() / 1000));
+    const result = await sendLiveActivity(target, payload);
+    if (result.status === "failed") {
+      console.error("[dayspan] live activity push failed:", result.reason);
+    }
+    if (plan === "end" || result.status === "gone") {
+      await db.liveActivityToken
+        .deleteMany({ where: { token: target.token.toLowerCase() } })
+        .catch(() => null);
+    }
+  } catch (error) {
+    console.error("[dayspan] live activity token sync failed:", error);
   }
 }

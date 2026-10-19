@@ -89,3 +89,27 @@ export function buildLiveActivityPayload(
     },
   };
 }
+
+export type LiveActivityTokenPlan = "keep" | "end" | "update";
+
+/**
+ * アプリがactivity push tokenを登録してきたとき、そのアクティビティへすぐ送るものを決める（issue #1280）。
+ *
+ * 停止の end は「その時点で登録済みのトークン」にしか届かない。push-to-start で裏起動された端末は
+ * トークンの登録が停止より遅れることがあり、そのままだと停止後も表示が残る。登録の時点で記録中で
+ * なければ end を、別の記録を表示していれば update を送って合わせる。
+ * `shown` は端末が表示している内容（古いアプリは添えないため null。そのときは記録中なら触らない）。
+ */
+export function planTokenRegistration(
+  running: LiveActivityRunning | null,
+  shown: LiveActivityContentState | null,
+): LiveActivityTokenPlan {
+  if (!running) return "end";
+  if (!shown) return "keep";
+  const current = toContentState(running);
+  // 停止ボタンの前提条件（`/api/shortcuts/activity/stop` の parseExpected）と同じく、秒の小数を
+  // ミリ秒へ丸めて比べる（浮動小数の誤差だけを吸収し、別の記録は取り違えない）
+  const sameStart =
+    Math.round(current.startedAtEpoch * 1000) === Math.round(shown.startedAtEpoch * 1000);
+  return sameStart && current.title === shown.title ? "keep" : "update";
+}

@@ -20,6 +20,8 @@ export type RunningActivityItem = {
   calendarId: string;
   /** 開始日時（ISO 8601）。 */
   startedAt: string;
+  /** 保存先カレンダーの色。時間グリッドの記録中の帯だけが使う（画面側で補う）。 */
+  color?: string | null;
 };
 
 /**

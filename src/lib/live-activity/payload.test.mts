@@ -5,6 +5,7 @@ import { buildApnsHeaders } from "@/lib/apns/send";
 import {
   buildLiveActivityPayload,
   planLiveActivity,
+  planTokenRegistration,
   toContentState,
 } from "@/lib/live-activity/payload";
 
@@ -61,4 +62,16 @@ test("liveactivityのヘッダーはtopicに.push-type.liveactivityを付け、a
   assert.equal(alert["apns-topic"], "com.example.app");
   assert.equal(alert["apns-push-type"], "alert");
   assert.equal(alert["apns-collapse-id"], "x");
+});
+
+test("トークン登録時、記録中でなければend・食い違えばupdate・一致か内容なしならkeep", () => {
+  const shown = toContentState(running);
+  assert.equal(planTokenRegistration(null, shown), "end");
+  assert.equal(planTokenRegistration(null, null), "end");
+  assert.equal(planTokenRegistration(running, null), "keep");
+  assert.equal(planTokenRegistration(running, shown), "keep");
+  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch + 0.0000001 }), "keep");
+  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch + 0.4 }), "update");
+  assert.equal(planTokenRegistration(running, { ...shown, title: "睡眠" }), "update");
+  assert.equal(planTokenRegistration(running, { ...shown, startedAtEpoch: shown.startedAtEpoch - 600 }), "update");
 });
