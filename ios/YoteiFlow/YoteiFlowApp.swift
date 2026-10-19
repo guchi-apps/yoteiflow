@@ -42,6 +42,8 @@ struct ContentView: View {
             if phase == .active {
                 WidgetRefreshStore.markRefreshRequested()
                 WidgetCenter.shared.reloadAllTimelines()
+                // 記録の開始・停止のコントロール（#1281）も取り直させる
+                ControlCenter.shared.reloadControls(ofKind: SharedConfig.recordingControlKind)
                 // 食い違うライブアクティビティの片付け・取り残しの表示（#971）
                 Task { await LiveActivityCoordinator.shared.reconcile() }
             }
@@ -51,6 +53,7 @@ struct ContentView: View {
             if phase == .background {
                 WidgetRefreshStore.markRefreshRequested()
                 WidgetCenter.shared.reloadAllTimelines()
+                ControlCenter.shared.reloadControls(ofKind: SharedConfig.recordingControlKind)
             }
         }
     }

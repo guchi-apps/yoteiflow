@@ -11,6 +11,10 @@ enum SharedConfig {
     /// （`ios/scripts/check-consistency.mjs` が照合する）
     static let appGroup = "group.com.gucchii.yoteiflow"
 
+    /// 記録の開始・停止のコントロール（#1281）の kind。アプリは前面・背面の遷移でこの kind を取り直させる
+    /// （`ios/scripts/check-consistency.mjs` がウィジェット側の登録と照合する）
+    static let recordingControlKind = "com.gucchii.yoteiflow.RecordingControl"
+
     /// ウィジェットを押したときにアプリへ渡すURLのスキーム・ホスト。アプリは `onOpenURL` で受ける
     static let deepLinkScheme = "yoteiflow"
     static let deepLinkHost = "open"
