@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.21.1",
+    date: "2026-10-20",
+    changes: [
+      "iPhoneでカレンダーの予定を長押ししたまま指を動かしても、画面がスクロールせずに予定の日時を変えられるようになりました。",
+    ],
+  },
+  {
     version: "4.21.0",
     date: "2026-10-20",
     changes: [
