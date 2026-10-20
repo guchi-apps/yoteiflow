@@ -63,6 +63,45 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * ドラッグが成立している間、ブラウザのスクロールと長押しのメニューを止める。
+ *
+ * touch-actionの変更はジェスチャー開始後には効かないため、非パッシブのtouchmoveで
+ * preventDefaultする。リスナーはドラッグが成立してから足すのではなく、マウント時から
+ * 面に置いておく。iOS（WebKit）はタッチを始めた時点で非パッシブのリスナーが無い面の
+ * touchmoveを、スクロールを待たせずに流す。途中で `document` へ足しても止められず、
+ * 長押しのあと指を動かした瞬間にスクロールが始まって pointercancel でドラッグが
+ * 取りやめになっていた（issue #1291）。止めるのは成立している間だけで、それ以外の
+ * 指の動きは従来どおり縦スクロールになる。
+ *
+ * contextmenu は長押しで出る端末のメニュー（Android・iOSアプリのWebView）。出ると
+ * タッチが取り上げられるため、掴みかけている間は出さない。
+ */
+function useBlockTouchWhileDragging(
+  surfaceRef: React.RefObject<HTMLElement | null>,
+  activeRef: React.RefObject<boolean>,
+  originRef: React.RefObject<unknown>,
+) {
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+
+    const blockMove = (event: TouchEvent) => {
+      if (activeRef.current && event.cancelable) event.preventDefault();
+    };
+    const blockMenu = (event: Event) => {
+      if (originRef.current !== null) event.preventDefault();
+    };
+
+    surface.addEventListener("touchmove", blockMove, { passive: false });
+    surface.addEventListener("contextmenu", blockMenu);
+    return () => {
+      surface.removeEventListener("touchmove", blockMove);
+      surface.removeEventListener("contextmenu", blockMenu);
+    };
+  }, [surfaceRef, activeRef, originRef]);
+}
+
 export function useGridDrag({
   days,
   onCommit,
@@ -77,17 +116,15 @@ export function useGridDrag({
   const movedRef = useRef(false);
 
   const [preview, setPreview] = useState<DragPreview | null>(null);
-  const [active, setActive] = useState(false);
+  const [active, setActiveState] = useState(false);
+  // 非パッシブのリスナーはマウント時から置きっぱなしにするため、成立したかはrefで読む。
+  const activeRef = useRef(false);
+  const setActive = useCallback((value: boolean) => {
+    activeRef.current = value;
+    setActiveState(value);
+  }, []);
 
-  // ドラッグ中はブラウザのスクロールを止める。touch-actionの変更はジェスチャー開始後には
-  // 効かないため、非パッシブのtouchmoveでpreventDefaultする。
-  useEffect(() => {
-    if (!active) return;
-
-    const block = (event: TouchEvent) => event.preventDefault();
-    document.addEventListener("touchmove", block, { passive: false });
-    return () => document.removeEventListener("touchmove", block);
-  }, [active]);
+  useBlockTouchWhileDragging(gridRef, activeRef, originRef);
 
   const cancelLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -203,7 +240,7 @@ export function useGridDrag({
       startMinutes: current.startMinutes,
       endMinutes: current.endMinutes,
     });
-  }, [days, onCommit, preview]);
+  }, [days, onCommit, preview, setActive]);
 
   const startDrag = useCallback(
     (
@@ -235,7 +272,7 @@ export function useGridDrag({
         setPreview({ id: targetKey(target), ...geometry });
       }
     },
-    [],
+    [setActive],
   );
 
   const handlePointerMove = useCallback(
@@ -275,7 +312,7 @@ export function useGridDrag({
       return;
     }
     finish();
-  }, [finish]);
+  }, [finish, setActive]);
 
   /**
    * 確定させずに取りやめる。ピンチのように、掴んだあとで別の操作だと分かったときに使う。
@@ -286,6 +323,17 @@ export function useGridDrag({
     originRef.current = null;
     setActive(false);
     setPreview(null);
+  }, [setActive]);
+
+  /**
+   * 長押しの成立を待っている間に、ほかの操作（横スワイプ）がポインタを取り上げた場合。
+   * 以後この指の pointermove / pointerup はこちらへ届かないため、待ちを残すと指を
+   * 離したあとにドラッグだけが成立してしまう。
+   */
+  const handleLostPointerCapture = useCallback(() => {
+    if (longPressTimerRef.current === null) return;
+    cancelLongPress();
+    originRef.current = null;
   }, []);
 
   /** ドラッグ直後のclickかどうか。trueなら編集ダイアログを開かない。 */
@@ -305,6 +353,7 @@ export function useGridDrag({
     cancelDrag,
     handlePointerMove,
     handlePointerUp,
+    handleLostPointerCapture,
     consumeDragClick,
   };
 }
@@ -349,15 +398,14 @@ export function useAllDayDrag({
   const movedRef = useRef(false);
 
   const [preview, setPreview] = useState<AllDayDragPreview | null>(null);
-  const [active, setActive] = useState(false);
+  const [active, setActiveState] = useState(false);
+  const activeRef = useRef(false);
+  const setActive = useCallback((value: boolean) => {
+    activeRef.current = value;
+    setActiveState(value);
+  }, []);
 
-  useEffect(() => {
-    if (!active) return;
-
-    const block = (event: TouchEvent) => event.preventDefault();
-    document.addEventListener("touchmove", block, { passive: false });
-    return () => document.removeEventListener("touchmove", block);
-  }, [active]);
+  useBlockTouchWhileDragging(rowRef, activeRef, originRef);
 
   const cancelLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -412,7 +460,7 @@ export function useAllDayDrag({
         setPreview({ id: targetKey(target), deltaDays: 0, dayIndex });
       }
     },
-    [dayIndexFromPointer],
+    [dayIndexFromPointer, setActive],
   );
 
   const handlePointerMove = useCallback(
@@ -471,13 +519,20 @@ export function useAllDayDrag({
       deltaDays: current.deltaDays,
       dayKey: days[current.dayIndex],
     });
-  }, [days, onCommit, preview]);
+  }, [days, onCommit, preview, setActive]);
 
   const cancelDrag = useCallback(() => {
     cancelLongPress();
     originRef.current = null;
     setActive(false);
     setPreview(null);
+  }, [setActive]);
+
+  // 長押しの待ちを横スワイプに取り上げられた場合（useGridDrag と同じ）。
+  const handleLostPointerCapture = useCallback(() => {
+    if (longPressTimerRef.current === null) return;
+    cancelLongPress();
+    originRef.current = null;
   }, []);
 
   const consumeDragClick = useCallback(() => {
@@ -496,6 +551,7 @@ export function useAllDayDrag({
     cancelDrag,
     handlePointerMove,
     handlePointerUp,
+    handleLostPointerCapture,
     consumeDragClick,
   };
 }

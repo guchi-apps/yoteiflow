@@ -86,6 +86,13 @@ type PaneDays = [string[], string[], string[]];
 const NOOP = () => {};
 
 /**
+ * 予定を長押しで掴む面。指で操作する端末だけ、文字の選択と長押しのコールアウトを止める。
+ * iPhoneは長押しでこれらを始め、その時点でタッチを取り上げる（pointercancel）ため、
+ * 掴んだ予定が動き出す前に取りやめになる（issue #1291）。マウスでは選択を残す。
+ */
+const LONG_PRESS_SURFACE = "pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]";
+
+/**
  * 日付ヘッダー・時間グリッド・終日エリアの列幅を揃えるための共通定義。
  * flexboxの`flex-1`とCSS Gridの`1fr`は端数pxの配分が異なり、列境界がずれることがあるため
  * （issue #120）、日数ぶんの列を描く箇所は必ずこれを使う。
@@ -180,6 +187,7 @@ export function TimeGridView({
     cancelDrag,
     handlePointerMove,
     handlePointerUp,
+    handleLostPointerCapture,
     consumeDragClick,
   } = useGridDrag({ days, onCommit: onDragCommit });
 
@@ -191,6 +199,7 @@ export function TimeGridView({
     cancelDrag: cancelAllDayDrag,
     handlePointerMove: handleAllDayPointerMove,
     handlePointerUp: handleAllDayPointerUp,
+    handleLostPointerCapture: handleAllDayLostPointerCapture,
     consumeDragClick: consumeAllDayDragClick,
   } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
 
@@ -363,6 +372,7 @@ export function TimeGridView({
         onConsumeDragClick={consumeAllDayClick}
         onPointerMove={handleAllDayPointerMove}
         onPointerUp={handleAllDayPointerUp}
+        onLostPointerCapture={handleAllDayLostPointerCapture}
         onOpenEvent={onOpenEvent}
         onOpenTask={onOpenTask}
         onOpenReminder={onOpenReminder}
@@ -374,12 +384,15 @@ export function TimeGridView({
           data-gutter-width="48"
           // 範囲を引いている間は文字の選択を止める。カーソルが予定の上を通ると、
           // 時間帯を引いているつもりでタイトルが選択され、青く反転してしまう。
-          className={cn("relative flex", rangeSelecting && "select-none")}
+          // 指（pointer: coarse）では常に止める。iPhoneは長押しで文字の選択・コールアウトを
+          // 始め、その時点でタッチを取り上げるため、予定の長押しドラッグが成立しない（issue #1291）。
+          className={cn("relative flex", LONG_PRESS_SURFACE, rangeSelecting && "select-none")}
           style={{ height: gridHeight }}
           onPointerDown={handleGridPointerDown}
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
           onPointerCancel={handleGridPointerCancel}
+          onLostPointerCapture={handleLostPointerCapture}
         >
           <div className="relative w-12 shrink-0">
             {Array.from({ length: 24 }, (_, hour) => (
@@ -1335,6 +1348,7 @@ function AllDayArea({
   onConsumeDragClick,
   onPointerMove,
   onPointerUp,
+  onLostPointerCapture,
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
@@ -1355,6 +1369,7 @@ function AllDayArea({
   onConsumeDragClick: () => boolean;
   onPointerMove: (event: React.PointerEvent) => void;
   onPointerUp: (event: React.PointerEvent) => void;
+  onLostPointerCapture: () => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
@@ -1364,11 +1379,12 @@ function AllDayArea({
       ref={rowRef}
       data-gutter-width="48"
       data-gutter-end={endGutter}
-      className="flex border-b border-outline-variant bg-surface-container-low"
+      className={cn("flex border-b border-outline-variant bg-surface-container-low", LONG_PRESS_SURFACE)}
       style={{ paddingRight: endGutter }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onLostPointerCapture={onLostPointerCapture}
     >
       <div className="type-label-small w-12 shrink-0 py-1.5 pr-2 text-right text-on-surface-variant">
         終日
