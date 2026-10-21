@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Moon } from "lucide-react";
 
 import { SleepScreen } from "@/components/activity/sleep-screen";
+import { isoToLocalInput } from "@/components/calendar/datetime-fields";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { SLEEP_RANGE_DAYS, buildSleepNights } from "@/lib/sleep";
 import { getRunningActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
 import { loadSleepEvents, sleepNightKeys } from "@/services/activity/sleep";
+import { getSleepHealthExportedUntil } from "@/services/activity/sleep-health-sent";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** 既定で並べる夜の数。 */
@@ -31,10 +33,12 @@ export default async function SleepPage({
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
-  const [uiSetting, sleep, running] = await Promise.all([
+  const [uiSetting, sleep, running, exportedUntil] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
     getSleepSettings(user.id),
     getRunningActivity(user.id),
+    // ヘッダーのヘルスケア連携のシートに出す（issue #1302）。DBの1行だけで外部APIは呼ばない。
+    getSleepHealthExportedUntil(user.id),
   ]);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
@@ -72,6 +76,9 @@ export default async function SleepPage({
       days={days}
       activityTitle={sleep.title}
       timeZone={timeZone}
+      exportedLabel={
+        exportedUntil ? isoToLocalInput(exportedUntil.toISOString(), timeZone).replace("T", " ") : null
+      }
       loadError={
         loaded.ok
           ? null
