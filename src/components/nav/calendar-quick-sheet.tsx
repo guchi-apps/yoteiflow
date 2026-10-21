@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { type EventDraft } from "@/components/calendar/event-form";
@@ -22,7 +22,12 @@ import {
 } from "@/components/ui/dialog";
 import type { WritableCalendar } from "@/types/calendar";
 
-type QuickEventData = { calendars: WritableCalendar[]; timeZone: string };
+type QuickEventData = {
+  calendars: WritableCalendar[];
+  timeZone: string;
+  /** 活動記録の保存先（issue #1309）。古い応答には無いため任意にする。 */
+  activityCalendarId?: string | null;
+};
 
 /**
  * メインナビのカレンダーを長押ししたときに出るシート（issue #652）。
@@ -41,6 +46,11 @@ export function CalendarQuickSheet({
   const [data, setData] = useState<QuickEventData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detailDraft, setDetailDraft] = useState<EventDraft | null>(null);
+  const activityCalendarId = data?.activityCalendarId ?? null;
+  const activityCalendarIds = useMemo(
+    () => new Set(activityCalendarId ? [activityCalendarId] : []),
+    [activityCalendarId],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -94,6 +104,7 @@ export function CalendarQuickSheet({
           timeZone={data.timeZone}
           onClose={close}
           onSaved={close}
+          activityCalendarIds={activityCalendarIds}
         />
       );
     }
@@ -109,6 +120,7 @@ export function CalendarQuickSheet({
         onClose={close}
         onSaved={close}
         onOpenDetail={setDetailDraft}
+        activityCalendarIds={activityCalendarIds}
       />
     );
   }
