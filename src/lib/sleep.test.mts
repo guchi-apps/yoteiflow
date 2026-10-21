@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nightBedWake, sleepNightKey, type SleepNight } from "@/lib/sleep";
+import { nightBedWake, sleepNightKey, summarizeSleepNights, type SleepNight } from "@/lib/sleep";
 
 const TZ = "Asia/Tokyo";
 
@@ -73,4 +73,59 @@ test("nightBedWake: 昼寝は夜の帯に混ぜず、昼寝だけの行はフォ
 test("nightBedWake: 記録中は running を返し、記録が無ければ null", () => {
   assert.equal(nightBedWake(night([[695, 800, true]]))?.running, true);
   assert.equal(nightBedWake(night([]), { fallbackToAll: true }), null);
+});
+
+const summaryNight = (dateKey: string, minutes: number, settled = true): SleepNight => ({
+  dateKey,
+  segments: minutes > 0 ? [{ from: 700, to: 700 + minutes, running: !settled }] : [],
+  minutes,
+  settled,
+});
+
+test("summarizeSleepNights: 睡眠負債は不足ぶんだけを足し、長い夜で相殺しない", () => {
+  const summary = summarizeSleepNights(
+    [summaryNight("2026-09-07", 360), summaryNight("2026-09-08", 540), summaryNight("2026-09-09", 400)],
+    420,
+  );
+
+  assert.equal(summary.debtMinutes, 60 + 20);
+});
+
+test("summarizeSleepNights: 記録の無い夜・結果の出ていない夜は負債にも最長最短にも数えない", () => {
+  const summary = summarizeSleepNights(
+    [
+      summaryNight("2026-09-07", 400),
+      summaryNight("2026-09-08", 0),
+      // 記録中の今夜（短いが、まだ終わっていない）。
+      summaryNight("2026-09-09", 30, false),
+    ],
+    420,
+  );
+
+  assert.equal(summary.debtMinutes, 20);
+  assert.deepEqual(summary.shortest, { dateKey: "2026-09-07", minutes: 400 });
+  assert.deepEqual(summary.longest, { dateKey: "2026-09-07", minutes: 400 });
+});
+
+test("summarizeSleepNights: 最長・最短は同じ長さなら新しい夜", () => {
+  const summary = summarizeSleepNights(
+    [
+      summaryNight("2026-09-07", 480),
+      summaryNight("2026-09-08", 300),
+      summaryNight("2026-09-09", 480),
+      summaryNight("2026-09-10", 300),
+    ],
+    420,
+  );
+
+  assert.deepEqual(summary.longest, { dateKey: "2026-09-09", minutes: 480 });
+  assert.deepEqual(summary.shortest, { dateKey: "2026-09-10", minutes: 300 });
+});
+
+test("summarizeSleepNights: 記録が1晩も無ければ負債・最長最短は null", () => {
+  const summary = summarizeSleepNights([summaryNight("2026-09-07", 0)], 420);
+
+  assert.equal(summary.debtMinutes, null);
+  assert.equal(summary.longest, null);
+  assert.equal(summary.shortest, null);
 });
