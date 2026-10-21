@@ -1,3 +1,4 @@
+import ActivityKit
 import Combine
 import Network
 import SwiftUI
@@ -55,6 +56,11 @@ final class WebViewModel: NSObject, ObservableObject {
         // （WKWebViewは生成時に設定を複製するため、生成後は webView 側の設定へ足す）
         webView.configuration.userContentController.addScriptMessageHandler(
             PushBridgeHandler(model: self), contentWorld: .page, name: Self.pushBridgeName
+        )
+
+        // 設定 ▸ 活動記録から、この端末のライブアクティビティの表示をオン・オフするブリッジ（#1297）
+        webView.configuration.userContentController.addScriptMessageHandler(
+            LiveActivityBridgeHandler(model: self), contentWorld: .page, name: Self.liveActivityBridgeName
         )
 
         // 睡眠をヘルスケア（HealthKit）へ書くブリッジ（#976）
@@ -690,11 +696,14 @@ extension WebViewModel {
         await LiveActivityCoordinator.shared.reconcile()
     }
 
-    /// push-to-start トークンをログイン済みのWebViewからサーバーへ渡す。通知を切っている（`pushOptOut`）間は登録しない
+    /// push-to-start トークンをログイン済みのWebViewからサーバーへ渡す。通知を切っている（`pushOptOut`）間と、
+    /// ライブアクティビティの表示を切っている（`liveActivityOptOut`・#1297）間は登録しない
     fileprivate func registerLiveActivityStartToken() async {
         let startToken = await LiveActivityCoordinator.shared.pushToStartToken
+        let liveActivityOptedOut = await LiveActivityCoordinator.shared.isOptedOut
         guard
             !PushCoordinator.shared.isOptedOut,
+            !liveActivityOptedOut,
             let token = startToken,
             token != registeredLiveActivityStartToken,
             let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
@@ -714,7 +723,111 @@ extension WebViewModel {
             arguments: ["token": token, "environment": LiveActivityClient.environment],
             contentWorld: .page
         )
-        if (value as? Int) == 200 { registeredLiveActivityStartToken = token }
+        if (value as? Int) == 200 {
+            registeredLiveActivityStartToken = token
+            // オフにするときに消せるよう、登録できた値を端末に残す。メモリ上の `pushToStartToken` は
+            // 起動直後（ストリームが届く前）やログアウト後は nil のため（#1297）
+            UserDefaults.standard.set(token, forKey: Self.registeredStartTokenKey)
+        }
+    }
+}
+
+// MARK: - ライブアクティビティの表示の設定とのブリッジ（#1297）
+
+extension WebViewModel {
+    /// Web側の `NATIVE_LIVE_ACTIVITY_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
+    static let liveActivityBridgeName = "yoteiflowLiveActivity"
+
+    /// サーバーへ登録できた push-to-start トークン（UserDefaults のキー）
+    fileprivate static let registeredStartTokenKey = "liveActivityRegisteredStartToken"
+
+    /// 画面（Web）からの `status` / `enable` / `disable`。返事は必ず返す（スイッチが固まらないように）
+    fileprivate func handleLiveActivityBridge(_ body: Any) async -> [String: Any] {
+        let action = (body as? [String: Any])?["action"] as? String ?? "status"
+        let coordinator = LiveActivityCoordinator.shared
+
+        switch action {
+        case "enable":
+            coordinator.isOptedOut = false
+            // 切っている間に登録を消しているため、同じトークンでも送り直す
+            registeredLiveActivityStartToken = nil
+            await registerLiveActivityStartToken()
+            // 記録中なら、その場で表示する
+            await coordinator.reconcile()
+            return liveActivityReply()
+
+        case "disable":
+            coordinator.isOptedOut = true
+            // サーバーが push-to-start でこの端末に表示を始めないよう、登録を消す。メモリ上の値は
+            // 起動直後に nil のことがあるため、登録できた時点で端末に残した値も消す（トークンの更新で
+            // 2つが違うときは両方）。どれも無ければ、この端末からは一度も登録できていない
+            let tokens = Set([
+                registeredLiveActivityStartToken,
+                coordinator.pushToStartToken,
+                UserDefaults.standard.string(forKey: Self.registeredStartTokenKey),
+            ].compactMap { $0 })
+            for token in tokens {
+                let status = await deleteLiveActivityStartToken(token)
+                // 404（すでに無い・別のアカウントへ移った）も解除できた扱い
+                guard status == 200 || status == 404 else {
+                    coordinator.isOptedOut = false
+                    return liveActivityReply(error: "解除できませんでした。通信状況を確認してください。")
+                }
+            }
+            registeredLiveActivityStartToken = nil
+            UserDefaults.standard.removeObject(forKey: Self.registeredStartTokenKey)
+            await LiveActivityClient.endAll()
+            return liveActivityReply()
+
+        default:
+            return liveActivityReply()
+        }
+    }
+
+    private func liveActivityReply(error: String? = nil) -> [String: Any] {
+        var reply: [String: Any] = [
+            "supported": ActivityAuthorizationInfo().areActivitiesEnabled,
+            "enabled": !LiveActivityCoordinator.shared.isOptedOut,
+        ]
+        if let error { reply["error"] = error }
+        return reply
+    }
+
+    private func deleteLiveActivityStartToken(_ token: String) async -> Int? {
+        let script = """
+        const response = await fetch('/api/live-activity/register', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: token })
+        });
+        return response.status;
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script, arguments: ["token": token], contentWorld: .page
+        )
+        return value as? Int
+    }
+}
+
+/// WKUserContentController は登録したハンドラを強く持つため、モデルとの循環を避ける薄い入れ物
+private final class LiveActivityBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
+    weak var model: WebViewModel?
+
+    init(model: WebViewModel) {
+        self.model = model
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        guard message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, AppConfig.isAppURL(url),
+              let model else {
+            return (nil, "unavailable")
+        }
+        return (await model.handleLiveActivityBridge(message.body), nil)
     }
 }
 

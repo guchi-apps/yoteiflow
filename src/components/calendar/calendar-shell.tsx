@@ -104,12 +104,16 @@ import {
 } from "./use-calendar-chunks";
 import { useCalendarRangeData } from "./use-calendar-range-data";
 import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
+import { useLongPress } from "./use-long-press";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
 
 // 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
 // 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
 const DEFAULT_TRAVEL_MINUTES = 30;
+
+// 「＋」の長押しで作るタスクの期限の時刻（issue #1295）。タスク一覧の「＋」と同じ18:00にする。
+const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 
 // 日・3日・週表示は月ごとのチャンクを持たないため常に空（issue #697）。ContinuousMonthView
 // にしか渡らない値で、その表示形式のときは使われない。
@@ -980,9 +984,22 @@ export function CalendarShell({
   // nav（楽観値）で判定するのは、表示形式の切り替え中でも正しい方を指すようにするため。
   const defaultDayKey = nav.view === "month" ? utils.todayKey() : gridDays[0];
 
-  /** 右下の「＋」からの追加。予定の入力を下から開く（種類の切り替えは持たない・issue #729）。 */
-  const openAdd = (available: Record<AddableKind, boolean>) => {
-    if (!available.event) return;
+  /**
+   * 右下の「＋」からの追加。押せば予定、長押しならタスクの入力を下から開く（種類の切り替えは
+   * 持たない・issue #729・#1295）。タスクの期限は予定と同じく見ている日から始め、時刻は
+   * タスク一覧の「＋」と同じ18:00にする。未設定へ戻しても保存できる（ユーザー確認済み）。
+   */
+  const openAdd = (available: Record<AddableKind, boolean>, kind: AddableKind = "event") => {
+    if (!available[kind]) return;
+    if (kind === "task") {
+      setItemDialog({
+        initialKind: "task",
+        drafts: {
+          task: { dueMode: "datetime", due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES) },
+        },
+      });
+      return;
+    }
     setItemDialog({
       initialKind: "event",
       drafts: { event: newEventDraft(defaultDayKey, DEFAULT_START_MINUTES) },
@@ -1457,8 +1474,8 @@ function CalendarBody({
   onOpenStandaloneTravel: (range: { start: string; end: string }) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
-  /** 右下の「＋」。作れる種類を渡し、ひな型は呼び出し側で作る。 */
-  onAdd: (available: Record<AddableKind, boolean>) => void;
+  /** 右下の「＋」。作れる種類と押し方で決まった種類を渡し、ひな型は呼び出し側で作る。 */
+  onAdd: (available: Record<AddableKind, boolean>, kind?: AddableKind) => void;
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   /**
@@ -1688,6 +1705,8 @@ function CalendarBody({
   // 右下の「＋」で作れる種類。キーボードショートカットの `c`（issue #635）も同じ条件で判定する。
   const addAvailable: Record<AddableKind, boolean> = {
     event: !offline && data.calendars.length > 0,
+    // notionReady はタスクDBが設定済みかどうか（services/calendar/load.ts）。
+    task: !offline && data.notionReady,
   };
 
   const shortcutActions: CalendarShortcutActions = {
@@ -1948,8 +1967,11 @@ function shiftDateKey(dateKey: string, days: number): string {
 }
 
 /**
- * 画面右下の「＋」。押すと予定の入力が下から開く（docs/spec.md §15）。
- * タスク・日付リマインド・移動は作れない（AddableKind の理由を参照）。
+ * 画面右下の「＋」。押すと予定、長押しするとタスクの入力が下から開く（docs/spec.md §15・issue #1295）。
+ * 日付リマインド・移動は作れない（AddableKind の理由を参照）。
+ *
+ * 長押しは `useLongPress` に任せ、指・ペンだけで受ける（マウスの少し長いクリックを取り違えない）。
+ * 予定を作れない（保存先カレンダーが無い）ときは、押してもタスクを開く。
  */
 function AddButton({
   available,
@@ -1957,21 +1979,32 @@ function AddButton({
   hasRunningBar,
 }: {
   available: Record<AddableKind, boolean>;
-  onAdd: (available: Record<AddableKind, boolean>) => void;
+  onAdd: (available: Record<AddableKind, boolean>, kind?: AddableKind) => void;
   /** 記録中バー（issue #629）が下部ナビの直上に出ているか。出ていれば重ならない位置まで逃がす。 */
   hasRunningBar: boolean;
 }) {
-  if (!available.event) return null;
+  const press = useLongPress<AddableKind>({
+    onPress: (kind) => onAdd(available, kind),
+    onLongPress: () => onAdd(available, "task"),
+  });
+
+  if (!available.event && !available.task) return null;
+
+  const pressKind: AddableKind = available.event ? "event" : "task";
+  // 長押しがあることは見た目からは分からないため、読み上げ・ツールチップで伝える。
+  const label = available.event && available.task ? "追加（長押しでタスク）" : pressKind === "task" ? "タスクを追加" : "追加";
 
   return (
     <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>
       {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。
-          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705）。 */}
+          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705）。
+          長押しで文字の選択・iOSのコールアウトが出るとタスクの入力より先にそちらが開くため止める。 */}
       <Button
         size="icon"
-        aria-label="追加"
-        className="elevation-3 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
-        onClick={() => onAdd(available)}
+        aria-label={label}
+        title={label}
+        className="elevation-3 size-16 touch-manipulation select-none rounded-[20px] bg-primary-container text-on-primary-container [-webkit-touch-callout:none] hover:brightness-95 active:rounded-[14px]"
+        {...press(pressKind)}
       >
         <Plus className="size-6" />
       </Button>

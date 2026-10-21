@@ -38,6 +38,15 @@ export function checkConsistency() {
     problems.push(`ヘルスブリッジ名が一致しません: Swift=${swiftHealthBridge} / TS=${tsHealthBridge}`);
   }
 
+  // ライブアクティビティの表示の設定のブリッジ名（#1297）
+  const swiftLiveActivityBridge = webViewModel.match(/liveActivityBridgeName = "([^"]+)"/)?.[1];
+  const tsLiveActivityBridge = nativeApp.match(/NATIVE_LIVE_ACTIVITY_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftLiveActivityBridge || swiftLiveActivityBridge !== tsLiveActivityBridge) {
+    problems.push(
+      `ライブアクティビティのブリッジ名が一致しません: Swift=${swiftLiveActivityBridge} / TS=${tsLiveActivityBridge}`,
+    );
+  }
+
   // 認証シートから戻る失敗の種類（#1113）。Swiftが知らない値は auth_failed に丸められ、案内が変わる
   const parseList = (text) => (text ?? "").match(/"([^"]+)"/g)?.map((v) => v.slice(1, -1)).sort().join(",") ?? "";
   const swiftErrors = parseList(webViewModel.match(/loginErrors: Set<String> = \[([^\]]*)\]/)?.[1]);
