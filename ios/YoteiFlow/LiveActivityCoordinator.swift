@@ -15,6 +15,14 @@ final class LiveActivityCoordinator {
 
     private var started = false
 
+    /// 設定 ▸ 活動記録で「ライブアクティビティを表示」をオフにされたか（#1297）。端末ごとに持つ
+    /// （iPhoneとiPadで別々に選べる）。立っている間は push-to-start トークンを登録せず、起動時の
+    /// 突き合わせでも表示しない。push-to-start のすれ違いで出たものはすぐ終わらせる
+    var isOptedOut: Bool {
+        get { UserDefaults.standard.bool(forKey: "liveActivityOptOut") }
+        set { UserDefaults.standard.set(newValue, forKey: "liveActivityOptOut") }
+    }
+
     func startObserving() {
         guard !started, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         started = true
@@ -32,6 +40,11 @@ final class LiveActivityCoordinator {
         // push token は、WebViewが無くても停止専用トークンで直接登録する
         Task {
             for await activity in Activity<RecordingActivityAttributes>.activityUpdates {
+                // オフにした後に届いた push-to-start（サーバーの登録の削除とすれ違った等）は出さない
+                if isOptedOut {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                    continue
+                }
                 observeToken(of: activity)
             }
         }
@@ -55,6 +68,10 @@ final class LiveActivityCoordinator {
     /// サーバーの記録中（停止専用トークンで `/api/shortcuts/activity/running` を読む。DBの1行だけで済む）と、
     /// 手元のアクティビティを突き合わせる。食い違うものは終わらせ、1つも無いときだけ表示する
     func reconcile() async {
+        if isOptedOut {
+            await LiveActivityClient.endAll()
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled,
               ActivityStopCredentials.load() != nil,
               case .running(let running) = await LiveActivityClient.fetchRunning()

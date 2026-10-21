@@ -40,3 +40,9 @@ export const NATIVE_PUSH_BRIDGE = "yoteiflowPush";
  * `healthBridgeName` と揃える（check-consistency.mjs が照合する）。
  */
 export const NATIVE_HEALTH_BRIDGE = "yoteiflowHealth";
+
+/**
+ * この端末のライブアクティビティの表示をオン・オフするブリッジ（issue #1297）。
+ * `ios/YoteiFlow/WebViewModel.swift` の `liveActivityBridgeName` と揃える（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_LIVE_ACTIVITY_BRIDGE = "yoteiflowLiveActivity";

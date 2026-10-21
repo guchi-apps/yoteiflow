@@ -26,6 +26,14 @@ export async function saveLiveActivityDevice(
   });
 }
 
+/** push-to-startトークンの登録を消す（この端末でライブアクティビティを表示しない・issue #1297）。本人の行だけ。 */
+export async function deleteLiveActivityDevice(userId: string, token: string): Promise<boolean> {
+  const result = await db.liveActivityDevice.deleteMany({
+    where: { userId, token: token.toLowerCase() },
+  });
+  return result.count > 0;
+}
+
 /** activity push token。 */
 export async function saveLiveActivityToken(
   userId: string,

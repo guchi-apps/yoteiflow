@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ActivitySection } from "@/components/settings/activity-section";
+import { LiveActivitySection } from "@/components/settings/live-activity-section";
 import { SleepSection } from "@/components/settings/sleep-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
@@ -36,6 +37,9 @@ export default async function ActivitySettingsPage() {
         calendars={calendars}
         activityCalendarId={activityCalendarId}
       />
+
+      {/* iOSアプリの中だけ出る（端末ごとの設定・issue #1297） */}
+      <LiveActivitySection />
 
       {/* 睡眠は活動記録の1項目そのもので、どの項目を睡眠として数えるかは
           項目の一覧を見ながらでないと決められない（docs/spec.md §39）。 */}
