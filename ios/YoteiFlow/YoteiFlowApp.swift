@@ -34,12 +34,18 @@ struct ContentView: View {
         .onAppear { model.startIfNeeded() }
         // ウィジェットの押下。認証シートの戻り先（auth-callback など）は認証シートが受けるため、ここへは来ない
         .onOpenURL { model.openFromWidget($0) }
+        // 記録のコントロールを記録していないときに押した（#1296）。intent がこのプロセスで動いたときは通知で届く
+        .onReceive(NotificationCenter.default.publisher(for: ControlOpenRequest.notification)) { _ in
+            openControlRequest()
+        }
         .onChange(of: scenePhase) { _, phase in
             // 別アプリへ行っているあいだに回線が戻っていることがある
             if phase == .active, model.failure != nil { model.retry() }
             // 記録の開始・停止はWebの中で行われ、アプリへは伝わらない。開いたとき・戻ったときに
             // ウィジェットを取り直させて、古い値が残らないようにする
             if phase == .active {
+                // コントロールから前面へ切り替わったとき（#1296）。別プロセスで置かれた印もここで拾う
+                openControlRequest()
                 WidgetRefreshStore.markRefreshRequested()
                 WidgetCenter.shared.reloadAllTimelines()
                 // 記録の開始・停止のコントロール（#1281）も取り直させる
@@ -56,5 +62,10 @@ struct ContentView: View {
                 ControlCenter.shared.reloadControls(ofKind: SharedConfig.recordingControlKind)
             }
         }
+    }
+
+    private func openControlRequest() {
+        guard let path = ControlOpenRequest.consume() else { return }
+        model.openFromWidget(SharedConfig.deepLink(path: path))
     }
 }

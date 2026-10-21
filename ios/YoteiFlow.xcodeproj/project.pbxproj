@@ -86,6 +86,11 @@
 			path = YoteiFlowWidget;
 			sourceTree = "<group>";
 		};
+		4B52A5013061880000F8C8D5 /* RecordingControlIntents */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RecordingControlIntents;
+			sourceTree = "<group>";
+		};
 		4B52A2043061850000F8C8D5 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Shared;
@@ -148,6 +153,7 @@
 				4B52A1F33061842200F8C8D5 /* YoteiFlow */,
 				4B52A2033061850000F8C8D5 /* YoteiFlowWidget */,
 				4B52A2043061850000F8C8D5 /* Shared */,
+				4B52A5013061880000F8C8D5 /* RecordingControlIntents */,
 				4B52A2233061860000F8C8D5 /* YoteiFlowShare */,
 				4B52A4053061870000F8C8D5 /* YoteiFlowIntents */,
 				4B52A3023061870000F8C8D5 /* YoteiFlowTests */,
@@ -211,6 +217,7 @@
 			fileSystemSynchronizedGroups = (
 				4B52A1F33061842200F8C8D5 /* YoteiFlow */,
 				4B52A2043061850000F8C8D5 /* Shared */,
+				4B52A5013061880000F8C8D5 /* RecordingControlIntents */,
 			);
 			name = YoteiFlow;
 			productName = YoteiFlow;
@@ -232,6 +239,7 @@
 			fileSystemSynchronizedGroups = (
 				4B52A2033061850000F8C8D5 /* YoteiFlowWidget */,
 				4B52A2043061850000F8C8D5 /* Shared */,
+				4B52A5013061880000F8C8D5 /* RecordingControlIntents */,
 			);
 			name = YoteiFlowWidget;
 			productName = YoteiFlowWidget;
