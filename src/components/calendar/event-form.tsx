@@ -72,6 +72,7 @@ export function EventForm({
   onSaved,
   travelCalendarId,
   onOpenTravel,
+  activityCalendarIds,
 }: {
   draft: EventDraft;
   calendars: WritableCalendar[];
@@ -94,6 +95,8 @@ export function EventForm({
   travelCalendarId?: string | null;
   /** 入力中の日時を持ったまま、予定に紐づかない移動の入力へ移る。 */
   onOpenTravel?: (range: { start: string; end: string }) => void;
+  /** 活動記録の保存先カレンダー。ここへ保存する予定は開始を直しても終了を動かさない（issue #1309）。 */
+  activityCalendarIds?: ReadonlySet<string>;
 }) {
   const editing = draft.event;
 
@@ -131,11 +134,12 @@ export function EventForm({
 
   // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
   // Google Calendarと同じ挙動にして、終了が開始より前になる状態を作りにくくする。
+  // 活動記録は長さが決まっておらず、押し忘れた開始だけを後から直すことが多いため動かさない（issue #1309）。
   const changeStart = (value: string) => {
     const previous = inputToDate(start, allDay);
     const next = inputToDate(value, allDay);
 
-    if (previous && next) {
+    if (previous && next && !activityCalendarIds?.has(calendarId)) {
       const durationMs = Math.max((inputToDate(end, allDay)?.getTime() ?? 0) - previous.getTime(), 0);
       const nextEnd = new Date(next.getTime() + durationMs);
       setEnd(dateToInput(nextEnd, allDay));
