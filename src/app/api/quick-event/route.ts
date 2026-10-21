@@ -22,5 +22,11 @@ export async function GET() {
     db.uiSetting.findUnique({ where: { userId } }),
   ]);
 
-  return NextResponse.json({ calendars, timeZone: uiSetting?.timeZone ?? "Asia/Tokyo" });
+  // 活動記録の保存先は、開始を直したときに終了を追従させない判定に使う（issue #1309）。
+  // 読んでいる UiSetting の1行から取るため往復は増えない。
+  return NextResponse.json({
+    calendars,
+    timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+    activityCalendarId: uiSetting?.activityCalendarId ?? null,
+  });
 }
