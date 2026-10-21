@@ -156,3 +156,33 @@ export async function statusSleepFocus(): Promise<SleepFocusStatus> {
   if (!target) throw new Error("アプリの睡眠モード連動を呼べませんでした。アプリを最新にしてください。");
   return parseSleepFocusStatus(await target.postMessage({ action: "sleepFocus" }));
 }
+
+/** 書き込み許可の表示。`undefined` はまだアプリに聞けていない状態。 */
+export function permissionLabel(value: NativeHealthStatus["permission"] | undefined): string {
+  switch (value) {
+    case "granted":
+      return "許可済み";
+    case "denied":
+      return "許可されていません";
+    case "unavailable":
+      return "この端末では使えません";
+    case "notDetermined":
+      return "未確認（初回の送信時に確認）";
+    default:
+      return "確認中…";
+  }
+}
+
+/** 読み取り許可の表示。Appleは許可/拒否を返さないため、求めたかどうかだけを出す。 */
+export function importLabel(value: NativeHealthStatus["importPermission"] | undefined): string {
+  switch (value) {
+    case "requested":
+      return "確認済み";
+    case "unavailable":
+      return "この端末では使えません";
+    case "notDetermined":
+      return "未確認（初回の取り込み時に確認）";
+    default:
+      return "確認中…";
+  }
+}
