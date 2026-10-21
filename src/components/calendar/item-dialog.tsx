@@ -68,6 +68,7 @@ export function ItemDialog({
   onSaved,
   travelCalendarId,
   onOpenTravel,
+  activityCalendarIds,
 }: {
   initialKind: ItemKind;
   drafts: ItemDrafts;
@@ -87,6 +88,8 @@ export function ItemDialog({
   /** 移動の書き出し先カレンダー。予定の入力に移動への入口を出すのに使う（issue #895）。 */
   travelCalendarId?: string | null;
   onOpenTravel?: (range: { start: string; end: string }) => void;
+  /** 活動記録の保存先カレンダー。予定の入力で終了の追従を止めるのに使う（issue #1309）。 */
+  activityCalendarIds?: ReadonlySet<string>;
 }) {
   const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
@@ -132,6 +135,7 @@ export function ItemDialog({
             weekStartsOn={weekStartsOn}
             travelCalendarId={travelCalendarId}
             onOpenTravel={onOpenTravel}
+            activityCalendarIds={activityCalendarIds}
           />
         )}
         {kind === "task" && drafts.task && (

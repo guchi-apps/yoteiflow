@@ -65,6 +65,7 @@ export function QuickEventSheet({
   onOpenDetail,
   travelCalendarId,
   onOpenTravel,
+  activityCalendarIds,
 }: {
   draft: QuickEventDraft;
   calendars: WritableCalendar[];
@@ -79,6 +80,8 @@ export function QuickEventSheet({
   travelCalendarId?: string | null;
   /** 入力中の日時を持ったまま、予定に紐づかない移動の入力へ移る。 */
   onOpenTravel?: (range: { start: string; end: string }) => void;
+  /** 活動記録の保存先カレンダー。ここへ保存する予定は開始を直しても終了を動かさない（issue #1309）。 */
+  activityCalendarIds?: ReadonlySet<string>;
 }) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(draft.date);
@@ -113,12 +116,19 @@ export function QuickEventSheet({
 
   // 開始を動かしたら、それまでの長さを保ったまま終了も動かす。
   // 押した位置から作った1時間を、開始だけ直すたびに作り直さずに済む。
+  // 活動記録は長さが決まっていないため動かさない（issue #1309）。
   const changeStartTime = (value: string) => {
     const previous = toMinutes(startTime);
     const next = toMinutes(value);
     const finish = toMinutes(endTime);
 
-    if (previous !== null && next !== null && finish !== null && finish > previous) {
+    if (
+      previous !== null &&
+      next !== null &&
+      finish !== null &&
+      finish > previous &&
+      !activityCalendarIds?.has(calendarId)
+    ) {
       setEndTime(formatMinutes(Math.min(next + (finish - previous), MINUTES_PER_DAY - 1)));
     }
 

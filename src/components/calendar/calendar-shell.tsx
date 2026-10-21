@@ -1942,6 +1942,7 @@ function CalendarBody({
           onSaved={handleSaved}
           travelCalendarId={travelCalendarId}
           onOpenTravel={onOpenStandaloneTravel}
+          activityCalendarIds={activityCalendars}
         />
       )}
 
@@ -1956,6 +1957,7 @@ function CalendarBody({
           onOpenDetail={onOpenEventForm}
           travelCalendarId={travelCalendarId}
           onOpenTravel={onOpenStandaloneTravel}
+          activityCalendarIds={activityCalendars}
         />
       )}
 
