@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, TaskItem, TravelItem } from "@/types/calendar";
 
 import { MINUTES_PER_DAY, taskOccurrenceKey, type TaskDateField } from "./item-layout";
 
@@ -19,14 +19,23 @@ export type DragMode = "move" | "resize-start" | "resize-end";
 export type DragTarget =
   | { kind: "event"; item: CalendarEventItem; mode: DragMode }
   // タスクは期限と予定日で別の枠として現れる。掴んだのがどちらの日付かで動かす先が違う。
-  | { kind: "task"; item: TaskItem; field: TaskDateField };
+  | { kind: "task"; item: TaskItem; field: TaskDateField }
+  // 移動は所要時間を保ったまま前後へ動かすだけ（issue #1301）。長さは乗換案内・見積もりの値のため変えさせない。
+  | { kind: "travel"; item: TravelItem };
+
+/** 移動を掴んだときの識別子。予定のIDと同じ名前空間に置かないよう前置きを付ける。 */
+export function travelDragKey(travelId: string): string {
+  return `travel:${travelId}`;
+}
 
 /**
  * 掴んでいる枠の識別子。タスクは1つのタスクが2枠に現れるため、IDだけでは
  * 期限と予定日のどちらを動かしているのか決まらない。
  */
 function targetKey(target: DragTarget | AllDayDragTarget): string {
-  return target.kind === "task" ? taskOccurrenceKey(target.item.id, target.field) : target.item.id;
+  if (target.kind === "task") return taskOccurrenceKey(target.item.id, target.field);
+  if (target.kind === "travel") return travelDragKey(target.item.id);
+  return target.item.id;
 }
 
 export type DragPreview = {
@@ -179,7 +188,7 @@ export function useGridDrag({
           MINUTES_PER_DAY - SNAP_MINUTES,
         );
         endMinutes = startMinutes;
-      } else if (origin.target.mode === "move") {
+      } else if (origin.target.kind === "travel" || origin.target.mode === "move") {
         startMinutes = clamp(
           snap(origin.startMinutes + deltaMinutes),
           0,

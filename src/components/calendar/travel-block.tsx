@@ -31,6 +31,8 @@ export function TravelBlock({
   top,
   height,
   timeText,
+  dragging = false,
+  onPointerDown,
   onOpen,
 }: {
   travel: TravelItem;
@@ -41,6 +43,10 @@ export function TravelBlock({
   height: number;
   /** 「08:20–09:00」。日をまたぐ移動でも、実際の出発・到着の時刻を出す。 */
   timeText: string;
+  /** 掴んでいる間。動かした先の時刻で描かれ、予定と同じ輪を付ける（issue #1301）。 */
+  dragging?: boolean;
+  /** 掴んで前後へ動かす操作の起点。日をまたぐ移動では渡さない（予定と同じ扱い）。 */
+  onPointerDown?: (event: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
   const minutes = Math.max(
@@ -56,10 +62,12 @@ export function TravelBlock({
   return (
     <button
       type="button"
+      onPointerDown={onPointerDown}
       onClick={onOpen}
       className={cn(
         "absolute flex flex-col overflow-hidden rounded-item border text-on-surface",
         "py-0.5 pr-1.5 text-left text-[10px] leading-tight",
+        dragging && "ring-2 ring-foreground/50",
       )}
       style={{
         left,

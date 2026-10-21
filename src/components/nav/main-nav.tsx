@@ -200,11 +200,9 @@ export function BottomNav({
                 <span
                   className={cn(
                     "absolute bottom-0 flex size-14 items-center justify-center border-4 border-surface-container elevation-1 transition-[border-radius,background-color,color]",
-                    // 選ばれているときは円から角丸の四角へ形を変える（M3 Expressive のシェイプモーフ・
-                    // issue #705）。色だけでなく形でも「いまここ」を示す。
-                    active
-                      ? "rounded-[20px] bg-primary text-primary-foreground"
-                      : "rounded-full bg-primary-container text-on-primary-container",
+                    // 選ばれていても円・同じ色のまま（issue #1305）。記録画面だけ形と色が変わると、
+                    // カレンダー画面のフッターと見た目がずれる。現在地はラベルの色が示す。
+                    "rounded-full bg-primary-container text-on-primary-container",
                   )}
                 >
                   <Icon className="size-7" />
@@ -212,8 +210,7 @@ export function BottomNav({
                     // 印は円の縁に置く。記録中でも選択中でも埋もれないよう、円の色と入れ替える。
                     <RunningDot
                       className={cn(
-                        "size-3 ring-2 ring-surface-container",
-                        active ? "bg-primary-container" : "bg-primary",
+                        "size-3 bg-primary ring-2 ring-surface-container",
                       )}
                     />
                   )}

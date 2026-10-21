@@ -38,6 +38,15 @@ export function checkConsistency() {
     problems.push(`ヘルスブリッジ名が一致しません: Swift=${swiftHealthBridge} / TS=${tsHealthBridge}`);
   }
 
+  // ライブアクティビティの表示の設定のブリッジ名（#1297）
+  const swiftLiveActivityBridge = webViewModel.match(/liveActivityBridgeName = "([^"]+)"/)?.[1];
+  const tsLiveActivityBridge = nativeApp.match(/NATIVE_LIVE_ACTIVITY_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftLiveActivityBridge || swiftLiveActivityBridge !== tsLiveActivityBridge) {
+    problems.push(
+      `ライブアクティビティのブリッジ名が一致しません: Swift=${swiftLiveActivityBridge} / TS=${tsLiveActivityBridge}`,
+    );
+  }
+
   // 認証シートから戻る失敗の種類（#1113）。Swiftが知らない値は auth_failed に丸められ、案内が変わる
   const parseList = (text) => (text ?? "").match(/"([^"]+)"/g)?.map((v) => v.slice(1, -1)).sort().join(",") ?? "";
   const swiftErrors = parseList(webViewModel.match(/loginErrors: Set<String> = \[([^\]]*)\]/)?.[1]);
@@ -216,6 +225,30 @@ export function checkConsistency() {
     if (/ControlWidget|ControlCenter\.shared|SetValueIntent/.test(read(`ios/Shared/${file}`))) {
       problems.push(`ios/Shared/${file} に Control 系のAPIがあります（ウィジェット拡張に閉じる）`);
     }
+  }
+  // 押したときの intent はアプリと拡張の2ターゲットだけに入る RecordingControlIntents/ に置く。
+  // アプリに入っていないと、記録していないときにアプリの記録の画面へ切り替えられない（#1296）
+  const controlIntents = read("ios/RecordingControlIntents/ToggleRecordingIntent.swift");
+  if (!controlIntents.includes("struct ToggleRecordingIntent: SetValueIntent")) {
+    problems.push("ToggleRecordingIntent が ios/RecordingControlIntents/ にありません");
+  }
+  if (!controlIntents.includes(".foreground(.dynamic)")) {
+    problems.push("ToggleRecordingIntent の supportedModes に .foreground(.dynamic) がありません（記録の画面へ切り替えられない）");
+  }
+  const controlGroupId = pbxproj.match(/(\w+) \/\* RecordingControlIntents \*\/ = \{\s*isa = PBXFileSystemSynchronizedRootGroup;/)?.[1];
+  if (!controlGroupId) {
+    problems.push("project.pbxproj に RecordingControlIntents の同期グループがありません");
+  } else {
+    const targetsWithGroup = [...pbxproj.matchAll(/fileSystemSynchronizedGroups = \(([^)]*)\);[\s\S]*?name = (\w+);/g)]
+      .filter((m) => m[1].includes(controlGroupId))
+      .map((m) => m[2])
+      .sort();
+    if (targetsWithGroup.join(",") !== "YoteiFlow,YoteiFlowWidget") {
+      problems.push(`RecordingControlIntents はアプリとウィジェットの2ターゲットだけに入れる: ${targetsWithGroup.join(", ")}`);
+    }
+  }
+  if (!read("ios/YoteiFlow/YoteiFlowApp.swift").includes("ControlOpenRequest.consume()")) {
+    problems.push("アプリがコントロールからの記録の画面を開く印を読んでいません（YoteiFlowApp.swift）");
   }
 
   // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている

@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   hasNativeHealth,
+  importLabel,
   importNativeHealth,
   nativeHealthImportSummary,
   nativeHealthSummary,
+  permissionLabel,
   statusNativeHealth,
   statusSleepFocus,
   syncNativeHealth,
@@ -196,32 +198,4 @@ function Row({ label, value }: { label: string; value: string }) {
       <dd className="text-right font-medium">{value}</dd>
     </div>
   );
-}
-
-function permissionLabel(value: NativeHealthStatus["permission"] | undefined): string {
-  switch (value) {
-    case "granted":
-      return "許可済み";
-    case "denied":
-      return "許可されていません";
-    case "unavailable":
-      return "この端末では使えません";
-    case "notDetermined":
-      return "未確認（初回の送信時に確認）";
-    default:
-      return "確認中…";
-  }
-}
-
-function importLabel(value: NativeHealthStatus["importPermission"] | undefined): string {
-  switch (value) {
-    case "requested":
-      return "確認済み";
-    case "unavailable":
-      return "この端末では使えません";
-    case "notDetermined":
-      return "未確認（初回の取り込み時に確認）";
-    default:
-      return "確認中…";
-  }
 }
