@@ -723,7 +723,12 @@ extension WebViewModel {
             arguments: ["token": token, "environment": LiveActivityClient.environment],
             contentWorld: .page
         )
-        if (value as? Int) == 200 { registeredLiveActivityStartToken = token }
+        if (value as? Int) == 200 {
+            registeredLiveActivityStartToken = token
+            // オフにするときに消せるよう、登録できた値を端末に残す。メモリ上の `pushToStartToken` は
+            // 起動直後（ストリームが届く前）やログアウト後は nil のため（#1297）
+            UserDefaults.standard.set(token, forKey: Self.registeredStartTokenKey)
+        }
     }
 }
 
@@ -732,6 +737,9 @@ extension WebViewModel {
 extension WebViewModel {
     /// Web側の `NATIVE_LIVE_ACTIVITY_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
     static let liveActivityBridgeName = "yoteiflowLiveActivity"
+
+    /// サーバーへ登録できた push-to-start トークン（UserDefaults のキー）
+    fileprivate static let registeredStartTokenKey = "liveActivityRegisteredStartToken"
 
     /// 画面（Web）からの `status` / `enable` / `disable`。返事は必ず返す（スイッチが固まらないように）
     fileprivate func handleLiveActivityBridge(_ body: Any) async -> [String: Any] {
@@ -750,16 +758,24 @@ extension WebViewModel {
 
         case "disable":
             coordinator.isOptedOut = true
-            // サーバーが push-to-start でこの端末に表示を始めないよう、登録を消す
-            if let token = registeredLiveActivityStartToken ?? coordinator.pushToStartToken {
+            // サーバーが push-to-start でこの端末に表示を始めないよう、登録を消す。メモリ上の値は
+            // 起動直後に nil のことがあるため、登録できた時点で端末に残した値も消す（トークンの更新で
+            // 2つが違うときは両方）。どれも無ければ、この端末からは一度も登録できていない
+            let tokens = Set([
+                registeredLiveActivityStartToken,
+                coordinator.pushToStartToken,
+                UserDefaults.standard.string(forKey: Self.registeredStartTokenKey),
+            ].compactMap { $0 })
+            for token in tokens {
                 let status = await deleteLiveActivityStartToken(token)
-                // 404（すでに無い）も解除できた扱い
+                // 404（すでに無い・別のアカウントへ移った）も解除できた扱い
                 guard status == 200 || status == 404 else {
                     coordinator.isOptedOut = false
                     return liveActivityReply(error: "解除できませんでした。通信状況を確認してください。")
                 }
             }
             registeredLiveActivityStartToken = nil
+            UserDefaults.standard.removeObject(forKey: Self.registeredStartTokenKey)
             await LiveActivityClient.endAll()
             return liveActivityReply()
 
