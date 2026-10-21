@@ -19,12 +19,12 @@ export type ItemKind = "event" | "task" | "reminder" | "travel";
 /**
  * カレンダーの「＋」から新しく作れる種類（docs/spec.md §15）。
  *
- * 予定だけにしている。種類の切り替えタブを持たない（issue #729）ため、「＋」が開く入力は
- * 1種類に決まる。タスクはタスク画面、日付リマインドは専用一覧（/reminders）、
- * 移動は予定の表示画面の「移動を追加」から作る。ほかに、予定の入力で保存先に移動
+ * 押せば予定、長押しすればタスク（issue #1295）。種類の切り替えタブを持たない（issue #729）ため、
+ * 開く種類は押し方で決め、入力が開いたあとに選び直させない。日付リマインドは専用一覧
+ * （/reminders）、移動は予定の表示画面の「移動を追加」から作る。ほかに、予定の入力で保存先に移動
  * カレンダーを選び直したときの入口（`TravelEntryHint`・issue #895）からも入れる。
  */
-export type AddableKind = Extract<ItemKind, "event">;
+export type AddableKind = Extract<ItemKind, "event" | "task">;
 
 /**
  * 開く対象。開く種類のひな型を1つだけ渡す（`initialKind` と同じ種類）。
