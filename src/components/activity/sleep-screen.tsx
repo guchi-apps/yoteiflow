@@ -5,15 +5,18 @@ import { Settings2 } from "lucide-react";
 
 import { SleepChart } from "@/components/activity/sleep-chart";
 import { SleepHealthButton } from "@/components/activity/sleep-health-button";
+import { SleepTrendChart } from "@/components/activity/sleep-trend-chart";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { weekdayLabel } from "@/lib/day-tone";
 import {
   SLEEP_RANGE_DAYS,
   formatSleepDiff,
   formatSleepMinutes,
+  formatSleepShort,
   offsetToClock,
   summarizeSleepNights,
   type SleepNight,
@@ -169,9 +172,73 @@ export function SleepScreen({
           </CardContent>
         </Card>
       ) : (
-        <SleepChart nights={nights} targetMinutes={targetMinutes} todayKey={todayKey} />
+        <>
+          <SleepChart nights={nights} targetMinutes={targetMinutes} todayKey={todayKey} />
+
+          {/* 追加の分析（issue #1303）。数字は上のカードと同じ summary から出し、取得は増やさない。 */}
+          <Card>
+            <CardContent className="flex flex-col gap-3">
+              <h2 className="type-title-small font-bold">睡眠時間の推移</h2>
+              <SleepTrendChart nights={nights} targetMinutes={targetMinutes} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <dl className="grid grid-cols-2 gap-4">
+                <div className="min-w-0">
+                  <dt className="type-label-medium text-on-surface-variant">睡眠負債</dt>
+                  <dd
+                    className={cn(
+                      "type-title-medium font-bold tabular-nums",
+                      summary.debtMinutes !== null && summary.debtMinutes > 0 && "text-error",
+                    )}
+                  >
+                    {summary.debtMinutes === null
+                      ? "—"
+                      : summary.debtMinutes === 0
+                        ? "不足なし"
+                        : `計 ${formatSleepMinutes(summary.debtMinutes)}`}
+                  </dd>
+                  {summary.debtMinutes !== null && summary.debtMinutes > 0 && (
+                    <dd className="type-body-small text-on-surface-variant">
+                      目標に足りなかった{summary.belowTargetCount}夜の合計
+                    </dd>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <dt className="type-label-medium text-on-surface-variant">最長・最短</dt>
+                  <ExtremeNight label="最長" night={summary.longest} />
+                  <ExtremeNight label="最短" night={summary.shortest} />
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+        </>
       )}
     </SettingsShell>
+  );
+}
+
+function ExtremeNight({
+  label,
+  night,
+}: {
+  label: string;
+  night: { dateKey: string; minutes: number } | null;
+}) {
+  if (!night) return <dd className="type-title-medium font-bold">—</dd>;
+
+  const [, month, day] = night.dateKey.split("-");
+
+  return (
+    <dd className="tabular-nums">
+      <span className="type-body-medium">{label} </span>
+      <span className="type-title-medium font-bold">{formatSleepShort(night.minutes)}</span>
+      <span className="type-body-small ml-1 text-on-surface-variant">
+        {Number(month)}/{Number(day)}({weekdayLabel(night.dateKey)})
+      </span>
+    </dd>
   );
 }
 

@@ -116,6 +116,17 @@ export type SleepSummary = {
   /** 就寝・起床の中央値（その行の12:00から数えた分）。記録が無ければ null。 */
   medianBedOffset: number | null;
   medianWakeOffset: number | null;
+  /**
+   * 睡眠負債（分）。目標に届かなかった夜の不足ぶんの合計。記録が1晩も無ければ null。
+   *
+   * 目標を超えた夜で相殺しない。「期間中にどれだけ足りなかったか」を読む数字で、
+   * 長く眠った夜が1晩あると、短い夜が続いていたことが数字から消えるため（issue #1303）。
+   * 記録の無い夜を目標ぶんの不足として数えないのは平均と同じ理由。
+   */
+  debtMinutes: number | null;
+  /** 最も長く眠った夜・最も短かった夜。同じ長さなら新しい夜。記録が1晩も無ければ null。 */
+  longest: { dateKey: string; minutes: number } | null;
+  shortest: { dateKey: string; minutes: number } | null;
 };
 
 /**
@@ -253,7 +264,32 @@ export function summarizeSleepNights(
     belowTargetCount: recorded.filter((night) => night.minutes < targetMinutes).length,
     medianBedOffset: median(beds),
     medianWakeOffset: median(wakes),
+    debtMinutes:
+      recorded.length === 0
+        ? null
+        : recorded.reduce((sum, night) => sum + Math.max(0, targetMinutes - night.minutes), 0),
+    longest: pickNight(recorded, (a, b) => a > b),
+    shortest: pickNight(recorded, (a, b) => a < b),
   };
+}
+
+/**
+ * 条件に最も当てはまる夜を返す。`nights` は古い順なので、同じ長さは後の（新しい）夜が勝つよう
+ * 「等しい」も置き換える。直近の夜のほうが、見返したときに思い当たる。
+ */
+function pickNight(
+  nights: SleepNight[],
+  better: (candidate: number, current: number) => boolean,
+): { dateKey: string; minutes: number } | null {
+  let picked: SleepNight | null = null;
+
+  for (const night of nights) {
+    if (!picked || better(night.minutes, picked.minutes) || night.minutes === picked.minutes) {
+      picked = night;
+    }
+  }
+
+  return picked ? { dateKey: picked.dateKey, minutes: picked.minutes } : null;
 }
 
 /**
