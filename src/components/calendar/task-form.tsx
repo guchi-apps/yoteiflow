@@ -72,6 +72,8 @@ const DEFAULT_PLANNED_TIME = "09:00";
 
 export type TaskDraft = {
   task?: TaskItem;
+  /** 新しく作るときのタイトルの初期値（簡易入力から引き継ぐ・issue #1313）。 */
+  title?: string;
   dueMode: DueMode;
   /** dueMode に応じて YYYY-MM-DD または YYYY-MM-DDTHH:mm */
   due: string;
