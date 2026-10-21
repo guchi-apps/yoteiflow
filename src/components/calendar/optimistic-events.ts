@@ -1,4 +1,4 @@
-import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
+import type { CalendarEventItem, TravelItem, WritableCalendar } from "@/types/calendar";
 
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -30,6 +30,15 @@ export type OptimisticEventChange =
       type: "remove";
       target: EventRef;
       ranges: TouchedRange[];
+    }
+  | {
+      /**
+       * 移動の時刻の変更（帯のドラッグ・issue #1301）。移動はDaySpanのDBが本体で、取り直しの
+       * 応答では `travels` として届く。予定と同じ通し番号・確かめ方に乗せるため同じ列へ積む。
+       */
+      type: "travel";
+      item: TravelItem;
+      ranges: TouchedRange[];
     };
 
 export type OptimisticEventOp = OptimisticEventChange & {
@@ -60,6 +69,7 @@ export function applyOptimisticEvents(
 
   let result = events;
   for (const op of ops) {
+    if (op.type === "travel") continue;
     if (op.type === "remove") {
       result = result.filter((event) => !sameEvent(event, op.target));
       continue;
@@ -71,6 +81,21 @@ export function applyOptimisticEvents(
     result = [...result, op.item];
   }
 
+  return result;
+}
+
+/** 取得済みの移動へ、まだ確かめられていない移動の変更を重ねる。重ねるものが無ければ同じ配列を返す。 */
+export function applyOptimisticTravels(
+  travels: TravelItem[],
+  ops: readonly OptimisticEventChange[],
+): TravelItem[] {
+  const travelOps = ops.filter((op) => op.type === "travel");
+  if (travelOps.length === 0) return travels;
+
+  let result = travels;
+  for (const op of travelOps) {
+    result = [...result.filter((travel) => travel.id !== op.item.id), op.item];
+  }
   return result;
 }
 

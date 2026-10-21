@@ -48,6 +48,8 @@ import {
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { planLinkedTravelShifts, type FollowEventTimes, type TravelShift } from "@/lib/travel-follow";
+import { takeReplacePending } from "@/lib/travel-replace-pending";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -73,6 +75,7 @@ import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
+import { LinkedTravelShiftDialog } from "./linked-travel-shift-dialog";
 import { ContinuousMonthView } from "./continuous-month-view";
 import {
   DEFAULT_START_MINUTES,
@@ -88,6 +91,7 @@ import { toTaskDraft } from "./task-form";
 import { TimeGridView } from "./time-grid-view";
 import {
   applyOptimisticEvents,
+  applyOptimisticTravels,
   buildOptimisticEvent,
   OPTIMISTIC_EVENT_TTL_MS,
   pendingOptimisticOps,
@@ -96,6 +100,7 @@ import {
 } from "./optimistic-events";
 import { TravelDetailDialog } from "./travel-detail-dialog";
 import { toTravelDraft } from "./travel-form";
+import { patchTravelTimes } from "./travel-time-patch";
 import {
   monthsOfRanges,
   taskRanges,
@@ -444,10 +449,14 @@ export function CalendarShell({
     ]
       .filter(Boolean)
       .join("");
+    // 予定を動かしたあとの「Yahoo!乗換案内で調べ直す」から戻ってきた共有なら、新しい移動を作らず
+    // 元の移動の編集として開く（issue #1301）。紐づくタスク・持ち物の期限・通知設定を残すため。
+    const replacing = takeReplacePending(item.eventId);
     setItemDialog({
       initialKind: "travel",
       drafts: {
         travel: {
+          ...(replacing ? { travel: replacing.travel } : {}),
           origin: link.origin,
           destination: link.destination,
           mode: link.mode,
@@ -455,7 +464,9 @@ export function CalendarShell({
           arriveAt: times.arriveAt,
           note: link.note || undefined,
           linkedEvent: { id: item.eventId, calendarId: item.calendarId, startAt: item.start, endAt: item.end },
-          notice,
+          notice: replacing
+            ? [`調べ直した経路で、元の移動「${replacing.travel.title}」を置き換えます。`, notice].filter(Boolean).join("")
+            : notice,
         },
       },
     });
@@ -535,14 +546,14 @@ export function CalendarShell({
    * ドラッグで変わった時刻を保存する。失敗しても画面の見た目は元へ戻す（再取得する）ので、
    * 保存できたつもりのまま作業が進まないようにする。
    */
-  const commitDrag = async (commit: DragCommit) => {
+  const commitDrag = async (commit: DragCommit): Promise<boolean> => {
     setDragError(null);
 
     // ドラッグ自体もオフラインでは始まらないようにしてあるが、通信が落ちるのは操作の途中でも
     // 起こる。送る直前でもう一度見て、保存できたつもりのまま画面だけ動くことを防ぐ。
     if (offline) {
       setDragError(OFFLINE_WRITE_MESSAGE);
-      return;
+      return false;
     }
 
     const startIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone);
@@ -578,6 +589,26 @@ export function CalendarShell({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+      } else if (commit.target.kind === "travel") {
+        // 移動は所要時間を保ったまま前後へずらす（issue #1301）。紐づくタスク・持ち物の期限と
+        // Googleへ書き出した予定は、サーバー側の updateTravel() が追随させる。
+        const travel = commit.target.item;
+        const endIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.endMinutes), timeZone);
+        optimisticSeq = addOptimisticEvent(
+          {
+            type: "travel",
+            item: { ...travel, start: startIso, end: endIso },
+            ranges: [
+              { start: travel.start, end: travel.end },
+              { start: startIso, end: endIso },
+            ],
+          },
+          false,
+        );
+        const message = await patchTravelTimes(travel, startIso, endIso);
+        saved = message === null;
+        if (message) setDragError(message);
+        return saved;
       } else {
         // 掴んだのが期限の枠か予定日の枠かで、書き換える日付が違う。
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
@@ -601,6 +632,7 @@ export function CalendarShell({
       // （ドラッグの成否によらず、見えている範囲全体をサーバーの真の状態へそろえるため）。
       invalidateDataRef.current?.();
     }
+    return saved;
   };
 
   /** 終日エリアのドラッグ。動かせるのは日付だけなので、日数分ずらして保存する。 */
@@ -1472,7 +1504,8 @@ function CalendarBody({
   onOpenEventForm: (draft: EventDraft) => void;
   travelCalendarId: string | null;
   onOpenStandaloneTravel: (range: { start: string; end: string }) => void;
-  onDragCommit: (commit: DragCommit) => void;
+  /** 保存できたら true。予定のときは、紐づく移動をずらすかの確認へ進む（issue #1301）。 */
+  onDragCommit: (commit: DragCommit) => Promise<boolean>;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 右下の「＋」。作れる種類と押し方で決まった種類を渡し、ひな型は呼び出し側で作る。 */
   onAdd: (available: Record<AddableKind, boolean>, kind?: AddableKind) => void;
@@ -1573,6 +1606,10 @@ function CalendarBody({
     () => applyOptimisticEvents(source.events, pendingOps),
     [source.events, pendingOps],
   );
+  const overlaidTravels = useMemo(
+    () => applyOptimisticTravels(source.travels, pendingOps),
+    [source.travels, pendingOps],
+  );
 
   const data = useMemo(
     () =>
@@ -1580,15 +1617,17 @@ function CalendarBody({
         ? {
             ...monthData,
             events: overlaidEvents,
+            travels: overlaidTravels,
             invalidate: (touched: TouchedRange[] | null) =>
               monthData.invalidate(touched === null ? null : monthsOfRanges(touched)),
           }
         : {
             ...rangeData,
             events: overlaidEvents,
+            travels: overlaidTravels,
             pendingMonths: NO_PENDING_MONTHS,
           },
-    [view, monthData, rangeData, overlaidEvents],
+    [view, monthData, rangeData, overlaidEvents, overlaidTravels],
   );
 
   // ヘッダーの再取得ボタン・ドラッグ確定後の同期など、CalendarShell 側から
@@ -1620,6 +1659,39 @@ function CalendarBody({
    * （issue #532 計画レビューG1の指摘）。
    */
   const [workDraft, setWorkDraft] = useState<WorkDraft | null>(null);
+  /** 予定を動かした直後の「紐づいている移動も変更しますか？」（issue #1301）。 */
+  const [travelFollow, setTravelFollow] = useState<{
+    eventId: string;
+    eventTitle: string;
+    shifts: TravelShift<TravelItem>[];
+  } | null>(null);
+
+  /**
+   * 予定の時刻が変わったら、紐づく移動をずらすかを確かめる。移動は自動では動かさない
+   * （電車は新しい時刻に便があるとは限らないため）。ずらす候補が無ければ何も出さない。
+   */
+  const askTravelFollow = (event: CalendarEventItem, previous: FollowEventTimes, next: FollowEventTimes) => {
+    const shifts = planLinkedTravelShifts(data.travels, event.id, previous, next);
+    if (shifts.length > 0) setTravelFollow({ eventId: event.id, eventTitle: event.title, shifts });
+  };
+
+  /** 時間グリッドのドラッグ。予定を保存できたら、紐づく移動の確認へ進む。 */
+  const handleDragCommit = async (commit: DragCommit): Promise<boolean> => {
+    const saved = await onDragCommit(commit);
+    if (saved && commit.target.kind === "event") {
+      const event = commit.target.item;
+      askTravelFollow(
+        event,
+        { start: event.start, end: event.end, allDay: event.allDay },
+        {
+          start: localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone),
+          end: localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.endMinutes), timeZone),
+          allDay: false,
+        },
+      );
+    }
+    return saved;
+  };
 
   // DayHeaderPane は memo で包んである。参照が毎回変わると日付ヘッダーが描き直しになる。
   const workRecords = data.workRecords;
@@ -1659,6 +1731,21 @@ function CalendarBody({
    * ことになり、保存のたびにその待ち時間が乗るため使わない（issue #697）。
    */
   const handleSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
+    // 編集画面で予定の時刻を変えたときも、ドラッグと同じく紐づく移動の確認へ進む（issue #1301）。
+    // 取り直しの前に、手元にある編集前の予定と比べる。新規作成（編集前が無い）は対象外。
+    if (change?.type === "upsert") {
+      const before = change.previous ?? { calendarId: change.item.calendarId, id: change.item.id };
+      const previous = data.events.find(
+        (event) => event.id === before.id && event.calendarId === before.calendarId,
+      );
+      if (previous) {
+        askTravelFollow(
+          change.item,
+          { start: previous.start, end: previous.end, allDay: previous.allDay },
+          { start: change.item.start, end: change.item.end, allDay: change.item.allDay },
+        );
+      }
+    }
     onCloseDialogs();
     setWorkDraft(null);
     // 保存した予定は、取り直しを待たずに画面へ重ねる（issue #787）。
@@ -1788,7 +1875,7 @@ function CalendarBody({
           onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onSelectRange={onSelectRange}
-          onDragCommit={onDragCommit}
+          onDragCommit={handleDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
           readOnly={offline}
@@ -1817,6 +1904,28 @@ function CalendarBody({
           workMinutesPerDay={work.minutesPerDay}
           onClose={() => setWorkDraft(null)}
           onSaved={() => handleSaved(null)}
+        />
+      )}
+
+      {travelFollow && (
+        <LinkedTravelShiftDialog
+          eventId={travelFollow.eventId}
+          eventTitle={travelFollow.eventTitle}
+          shifts={travelFollow.shifts}
+          places={placeCatalog.places}
+          timeZone={timeZone}
+          formatTime={utils.formatTime}
+          onClose={(shifted) => {
+            setTravelFollow(null);
+            if (shifted) {
+              data.invalidate(
+                travelFollow.shifts.flatMap((shift) => [
+                  { start: shift.travel.start, end: shift.travel.end },
+                  { start: shift.start, end: shift.end },
+                ]),
+              );
+            }
+          }}
         />
       )}
 

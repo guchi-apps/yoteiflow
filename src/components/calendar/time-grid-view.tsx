@@ -72,6 +72,7 @@ import {
   type DragCommit,
   type DragPreview,
   type DragTarget,
+  travelDragKey,
 } from "./use-grid-drag";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useSlotRange, type SlotRangeCommit, type SlotRangePreview } from "./use-slot-range";
@@ -650,8 +651,12 @@ const DayColumnsPane = memo(function DayColumnsPane({
           onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onStartSelect={onStartSelect}
+          // 掴んだまま別の日の列へ運んだ予定・移動は、運んだ先の列で描く（元の列からは消える）。
           events={events.filter(
-            (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
+            (event) =>
+              !event.allDay &&
+              (utils.eventCoversDay(event, dateKey) ||
+                (preview?.id === event.id && preview.dayIndex === dayIndex)),
           )}
           // 期限と予定日は別の枠として、それぞれの時刻の位置へ置く（docs/spec.md §6）。
           taskMarks={utils
@@ -663,7 +668,8 @@ const DayColumnsPane = memo(function DayColumnsPane({
           // 日をまたぐ移動は、かかっている日すべての列に置く（予定と同じ扱い）。
           travels={travels.filter(
             (travel) =>
-              utils.itemDateKey(travel.start) <= dateKey && dateKey <= utils.itemDateKey(travel.end),
+              (utils.itemDateKey(travel.start) <= dateKey && dateKey <= utils.itemDateKey(travel.end)) ||
+              (preview?.id === travelDragKey(travel.id) && preview.dayIndex === dayIndex),
           )}
         />
       ))}
@@ -743,7 +749,16 @@ function DayColumn({
   const contentLeft = laneWidth === 0 ? 0 : laneWidth + ACTIVITY_LANE_GAP;
 
   // 移動も同じ重なり計算に入れ、時間が重なる予定と横に並べる（issue #1172）。
-  const laidOut = utils.layoutOverlaps([...plainEvents, ...travels], dateKey);
+  // 別の日の列から運ばれてきた予定・移動（掴んでいる間だけこの列に来る）は、重なり計算に混ぜず
+  // 全幅で重ねる。本来の日付で計算すると、この列では一日中占めているように扱われて他が細る。
+  const coversDay = (item: CalendarEventItem | TravelItem) =>
+    utils.itemDateKey(item.start) <= dateKey && dateKey <= utils.itemDateKey(item.end);
+  const laidOut = [
+    ...utils.layoutOverlaps([...plainEvents, ...travels].filter(coversDay), dateKey),
+    ...[...plainEvents, ...travels]
+      .filter((item) => !coversDay(item))
+      .map((item) => ({ event: item, column: 0, columns: 1 })),
+  ];
   const positioned = laidOut.flatMap((entry) =>
     entry.event.kind === "event" ? [{ ...entry, event: entry.event }] : [],
   );
@@ -882,10 +897,28 @@ function DayColumn({
         背面に全幅で置くと、時間が重なる予定の裏に隠れて見えなくなるため。重ならなければ全幅のまま。
       */}
       {positionedTravels.map(({ travel, column, columns }) => {
+        const dragKey = travelDragKey(travel.id);
+        if (isDraggedAway(dragKey)) return null;
+
         const startsToday = utils.itemDateKey(travel.start) === dateKey;
         const endsToday = utils.itemDateKey(travel.end) === dateKey;
-        const startMinutes = startsToday ? utils.minutesFromMidnight(travel.start) : 0;
-        const endMinutes = endsToday ? utils.minutesFromMidnight(travel.end) : MINUTES_PER_DAY;
+        const travelPreview = previewFor(dragKey);
+        const startMinutes =
+          travelPreview?.startMinutes ?? (startsToday ? utils.minutesFromMidnight(travel.start) : 0);
+        const endMinutes =
+          travelPreview?.endMinutes ?? (endsToday ? utils.minutesFromMidnight(travel.end) : MINUTES_PER_DAY);
+
+        // 掴めるのは同じ日に収まる移動だけ（日をまたぐ予定と同じく、どの日を動かすか決まらない）。
+        // 移動は所要時間を保って前後へ動かすだけで、長さを変える端は持たせない（issue #1301）。
+        const draggable = startsToday && endsToday;
+        const geometry = {
+          dayIndex,
+          startMinutes: utils.minutesFromMidnight(travel.start),
+          endMinutes: Math.max(
+            utils.minutesFromMidnight(travel.end),
+            utils.minutesFromMidnight(travel.start) + 15,
+          ),
+        };
 
         return (
           <TravelBlock
@@ -895,7 +928,17 @@ function DayColumn({
             width={`calc((100% - ${contentLeft}px) / ${columns})`}
             top={offsetOf(startMinutes)}
             height={Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT)}
-            timeText={`${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`}
+            timeText={
+              travelPreview
+                ? `${formatMinutes(travelPreview.startMinutes)}–${formatMinutes(travelPreview.endMinutes)}`
+                : `${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`
+            }
+            dragging={travelPreview !== null}
+            onPointerDown={
+              draggable
+                ? (e) => onStartDrag(e, { kind: "travel", item: travel }, geometry)
+                : undefined
+            }
             onOpen={() => {
               if (onConsumeDragClick()) return;
               onOpenTravel(travel);
