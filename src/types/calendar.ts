@@ -51,6 +51,12 @@ export type CalendarEventItem = {
    * VERSION は上げていない）。
    */
   notification: EventNotificationOverride | null;
+  /**
+   * 勤務記録から自動生成した勤務予定か（`extendedProperties.private.dayspanSource === "work"`・
+   * docs/spec.md §46）。予定の詳細で場所が足りないときの直し方を変えるだけに使う（issue #1319）。
+   * 古い応答には無いため任意項目にし、読む側は `?? false` で受ける。
+   */
+  workGenerated?: boolean;
 };
 
 /**

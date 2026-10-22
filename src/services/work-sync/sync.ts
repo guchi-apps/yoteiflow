@@ -8,7 +8,7 @@ import {
   type ReserveOutcome,
   type ReserveStore,
 } from "@/lib/work-sync/reserve";
-import { decide, type Snapshot } from "@/lib/work-sync/decide";
+import { decide, keepSnapshotLocation, type Snapshot } from "@/lib/work-sync/decide";
 import {
   planWorkItems,
   type ExpectedItem,
@@ -73,7 +73,7 @@ const iso = (date: Date) => date.toISOString();
 
 function expectedSnapshot(item: ExpectedItem): Snapshot {
   return item.kind === "WORK"
-    ? { start: iso(item.start), end: iso(item.end), title: item.title }
+    ? { start: iso(item.start), end: iso(item.end), title: item.title, location: item.location ?? "" }
     : {
         start: iso(item.start),
         end: iso(item.end),
@@ -101,7 +101,7 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
       const start = event.start?.dateTime;
       const end = event.end?.dateTime;
       if (!start || !end) return null;
-      return { start, end, title: event.summary ?? "" };
+      return { start, end, title: event.summary ?? "", location: event.location ?? "" };
     } catch (error) {
       if (isGone(error)) return null;
       throw error;
@@ -122,6 +122,8 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
 function eventInput(item: ExpectedItem, timeZone: string, recordId: string): EventWriteInput {
   return {
     title: item.title,
+    // 空文字で送ると場所を消す（送らないと前の場所が残る）。
+    location: item.location ?? "",
     allDay: false,
     start: iso(item.start),
     end: iso(item.end),
@@ -168,6 +170,7 @@ async function reconcile(
   result: WorkSyncResult,
   skipTravel = false,
 ): Promise<void> {
+  const placesUnavailable = skipTravel;
   const isSkipped = (kind: string) => skipTravel && kind !== "WORK";
   const rows = (await db.workGenerated.findMany({ where: { userId, workRecordId } })).filter(
     (row) => !isSkipped(row.kind),
@@ -199,7 +202,13 @@ async function reconcile(
         row = null;
       }
       const current = row && row.status === "ACTIVE" ? await readCurrent(userId, row) : null;
-      const expected = item ? expectedSnapshot(item) : null;
+      let expected = item ? expectedSnapshot(item) : null;
+      // 場所DBを読めなかった回は、勤務予定の場所を控えのまま保つ（住所付きの場所を名前だけへ
+      // 巻き戻さないため。移動を触らないのと同じ理由・issue #1319）。
+      if (expected && item?.kind === "WORK" && placesUnavailable && row) {
+        expected = keepSnapshotLocation(expected, row.snapshot as Snapshot);
+        item.location = expected.location;
+      }
       const decision = decide(
         expected,
         row ? { status: row.status, snapshot: row.snapshot as Snapshot } : null,

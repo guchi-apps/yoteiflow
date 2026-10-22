@@ -137,6 +137,17 @@ export function splitNameAndAddress(text: string): { name: string; address: stri
 }
 
 /**
+ * 文字列に都道府県から始まる住所が含まれているか（issue #1319）。`名前 住所` の形と、
+ * 住所だけ（`大阪府大阪市…`）の両方を含む。
+ */
+export function containsAddress(text: string): boolean {
+  const value = text.trim();
+  if (!value) return false;
+  if (PREFECTURES.some((prefecture) => value.startsWith(prefecture))) return true;
+  return splitNameAndAddress(value) !== null;
+}
+
+/**
  * 場所欄の値から表示用の名前だけを取り出す（issue #587）。
  *
  * カレンダー上のチップ・ダイアログは幅が狭く、住所まで出すと場所名が埋もれて読みにくい。
