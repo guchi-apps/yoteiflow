@@ -200,7 +200,8 @@ export function TravelForm({
     setDestination(value);
   };
   // 帰りの移動を作るときに、予定から入った「自宅→予定の場所」を1押しで逆向きにする（issue #1323）。
-  // 経由地も逆順にし、後から届くGoogleマップの解析で入れ替えが戻されないよう3つとも触ったことにする。
+  // 経由地も逆順にする。取り込んだGoogleマップの経路（代表時間・候補）は元の向きのものなので捨て、
+  // 解析中の結果も受け取らない。日時の入力値はそのまま残し、所要時間は手入力の扱いへ戻す。
   const swapEnds = () => {
     touch("origin");
     touch("destination");
@@ -208,6 +209,12 @@ export function TravelForm({
     setOrigin(destination);
     setDestination(origin);
     setVia((current) => [...current].reverse());
+    googleRouteRequestRef.current += 1;
+    setGoogleRouteStatus({ kind: "idle" });
+    setRouteMinutes(null);
+    setRouteCandidates(null);
+    setSelectedRoute(null);
+    if (estimateSource === "GOOGLE_MAPS") setEstimateSource("MANUAL");
   };
   const editMode = (value: TravelMode) => {
     touch("mode");
