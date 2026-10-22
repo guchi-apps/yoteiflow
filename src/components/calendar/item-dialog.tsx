@@ -19,12 +19,12 @@ export type ItemKind = "event" | "task" | "reminder" | "travel";
 /**
  * カレンダーの「＋」から新しく作れる種類（docs/spec.md §15）。
  *
- * 押せば予定、長押しすればタスク（issue #1295）。種類の切り替えタブを持たない（issue #729）ため、
- * 開く種類は押し方で決め、入力が開いたあとに選び直させない。日付リマインドは専用一覧
- * （/reminders）、移動は予定の表示画面の「移動を追加」から作る。ほかに、予定の入力で保存先に移動
+ * 予定だけにしている。種類の切り替えタブを持たない（issue #729）ため、「＋」が開く入力は
+ * 1種類に決まる。タスクはタスク画面、日付リマインドは専用一覧（/reminders）、
+ * 移動は予定の表示画面の「移動を追加」から作る。ほかに、予定の入力で保存先に移動
  * カレンダーを選び直したときの入口（`TravelEntryHint`・issue #895）からも入れる。
  */
-export type AddableKind = Extract<ItemKind, "event" | "task">;
+export type AddableKind = Extract<ItemKind, "event">;
 
 /**
  * 開く対象。開く種類のひな型を1つだけ渡す（`initialKind` と同じ種類）。
@@ -68,6 +68,7 @@ export function ItemDialog({
   onSaved,
   travelCalendarId,
   onOpenTravel,
+  activityCalendarIds,
 }: {
   initialKind: ItemKind;
   drafts: ItemDrafts;
@@ -87,6 +88,8 @@ export function ItemDialog({
   /** 移動の書き出し先カレンダー。予定の入力に移動への入口を出すのに使う（issue #895）。 */
   travelCalendarId?: string | null;
   onOpenTravel?: (range: { start: string; end: string }) => void;
+  /** 活動記録の保存先カレンダー。予定の入力で終了の追従を止めるのに使う（issue #1309）。 */
+  activityCalendarIds?: ReadonlySet<string>;
 }) {
   const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
@@ -132,6 +135,7 @@ export function ItemDialog({
             weekStartsOn={weekStartsOn}
             travelCalendarId={travelCalendarId}
             onOpenTravel={onOpenTravel}
+            activityCalendarIds={activityCalendarIds}
           />
         )}
         {kind === "task" && drafts.task && (
@@ -168,7 +172,7 @@ export function ItemDialog({
 /** 開いた時点のタイトル。編集は既存の値、簡易入力からの引き継ぎは入力途中の値。 */
 function draftTitle(kind: ItemKind, drafts: ItemDrafts): string {
   if (kind === "event") return drafts.event?.event?.title ?? drafts.event?.title ?? "";
-  if (kind === "task") return drafts.task?.task?.title ?? "";
+  if (kind === "task") return drafts.task?.task?.title ?? drafts.task?.title ?? "";
   // 移動のタイトルは出発地と目的地から決まるため、切り替えで引き継ぐ文字列を持たない。
   if (kind === "travel") return "";
   return drafts.reminder?.reminder?.title ?? "";

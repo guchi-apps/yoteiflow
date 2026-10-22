@@ -40,6 +40,10 @@ export default function Loading() {
             <SkeletonBlock key={index} className="h-4 w-full" />
           ))}
         </div>
+
+        {/* 睡眠時間の推移と、睡眠負債・最長最短（issue #1303）。 */}
+        <SkeletonBlock className="h-48 w-full rounded-xl" />
+        <SkeletonBlock className="h-24 w-full rounded-xl" />
       </div>
     </div>
   );
