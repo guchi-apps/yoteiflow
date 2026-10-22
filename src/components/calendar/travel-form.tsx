@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { Bell, BellOff, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
+import { ArrowUpDown, Bell, BellOff, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
@@ -198,6 +198,23 @@ export function TravelForm({
   const editDestination = (value: string) => {
     touch("destination");
     setDestination(value);
+  };
+  // 帰りの移動を作るときに、予定から入った「自宅→予定の場所」を1押しで逆向きにする（issue #1323）。
+  // 経由地も逆順にする。取り込んだGoogleマップの経路（代表時間・候補）は元の向きのものなので捨て、
+  // 解析中の結果も受け取らない。日時の入力値はそのまま残し、所要時間は手入力の扱いへ戻す。
+  const swapEnds = () => {
+    touch("origin");
+    touch("destination");
+    touch("via");
+    setOrigin(destination);
+    setDestination(origin);
+    setVia((current) => [...current].reverse());
+    googleRouteRequestRef.current += 1;
+    setGoogleRouteStatus({ kind: "idle" });
+    setRouteMinutes(null);
+    setRouteCandidates(null);
+    setSelectedRoute(null);
+    if (estimateSource === "GOOGLE_MAPS") setEstimateSource("MANUAL");
   };
   const editMode = (value: TravelMode) => {
     touch("mode");
@@ -538,6 +555,20 @@ export function TravelForm({
             </ul>
           </div>
         )}
+
+        {/* 欄の間隔を増やさないよう、上下の欄へ食い込ませて右端に置く。 */}
+        <div className="relative z-10 -my-4 flex justify-end pr-2">
+          <button
+            type="button"
+            className="flex size-11 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-xl disabled:opacity-38"
+            aria-label="出発地と目的地を入れ替える"
+            title="出発地と目的地を入れ替える"
+            disabled={!origin.trim() && !destination.trim()}
+            onClick={swapEnds}
+          >
+            <ArrowUpDown className="size-5" aria-hidden="true" />
+          </button>
+        </div>
 
         <LocationInput
           id="travel-destination"
