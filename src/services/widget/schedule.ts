@@ -9,6 +9,7 @@ import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/even
 import { getActivityCalendarId } from "@/services/activity/settings";
 import { listEvents, toCalendarItems } from "@/services/google-calendar/events";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
+import { orderScheduleItems } from "@/services/widget/schedule-order";
 import { readWidgetCache, type WidgetFetchOptions, writeWidgetCache } from "@/services/widget/cache";
 import type { CalendarEventItem } from "@/types/calendar";
 import type { WidgetScheduleItem, WidgetSchedulePayload } from "@/types/widget";
@@ -43,7 +44,7 @@ export async function buildWidgetSchedule(
     date: dateKey,
     // 過ぎたかどうかは持ち回さずここで決める。持ち回すと、時刻が進んでも
     // 「これから」のままの予定が最大3分残る。
-    items: order(source.items, now),
+    items: orderScheduleItems(source.items, now),
     unavailable: source.unavailable,
   };
 }
@@ -203,27 +204,6 @@ async function loadEvents(
   }
 
   return { items, attempted, failed };
-}
-
-/**
- * これからのものが先、過ぎたものが後。どちらも終日を先頭に、あとは時刻順。
- *
- * 過ぎたかどうかはサーバーの `now` で決める。端末の時計がずれていると、まだ始まっていない
- * 予定が「済み」になる（記録の開始・終了の時刻をサーバーの時計で決めているのと同じ理由）。
- */
-function order(items: ScheduleSource["items"], now: Date): WidgetScheduleItem[] {
-  const withPast = items.map((item) => ({
-    ...item,
-    // 終日は一日中これからのものとして扱う。日付が変わるまでその日を指し続けるため。
-    past: item.end !== null && new Date(item.end).getTime() <= now.getTime(),
-  }));
-
-  return withPast.sort((a, b) => {
-    if (a.past !== b.past) return a.past ? 1 : -1;
-    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
-    if (a.start && b.start && a.start !== b.start) return a.start < b.start ? -1 : 1;
-    return a.title.localeCompare(b.title, "ja");
-  });
 }
 
 function minutesBetween(start: string, end: string): number {
