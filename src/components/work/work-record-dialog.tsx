@@ -13,6 +13,7 @@ import {
   WorkSegmentsEditor,
   type SegmentRow,
 } from "@/components/work/work-segments-editor";
+import { Accordion } from "@/components/ui/accordion";
 import { useWorkSyncFields } from "@/components/work/work-sync-fields";
 import { enumerateDates } from "@/lib/work-sync/plan";
 import { formatSegmentTime } from "@/lib/work-segments";
@@ -722,10 +723,10 @@ export function WorkRecordDialog({
           </div>
         )}
 
-        {segmentsAvailable &&
-          (segmentRows.length > 0 || invalidSegmentsText ? (
-            <div className="flex flex-col gap-2 rounded-xl border border-outline-variant p-3">
-              <p className="type-label-large">時間帯ごとの内訳</p>
+        {segmentsAvailable && (
+          <Accordion title="時間ごとにわける" forceOpen={Boolean(invalidSegmentsText)}>
+          {segmentRows.length > 0 || invalidSegmentsText ? (
+            <>
               <WorkSegmentsEditor
                 rows={segmentRows}
                 onChange={changeSegments}
@@ -735,7 +736,7 @@ export function WorkRecordDialog({
                 defaultDestination={destination.trim()}
                 invalidText={invalidSegmentsText}
               />
-            </div>
+            </>
           ) : (
             // 既定の入力（1日1つの勤務場所・出張）はそのまま。分けたい日だけ押して始める。
             // 初めは設定の勤務時間と昼休みで午前・午後の2つにする（「朝は在宅、昼から出張」）。
@@ -773,9 +774,11 @@ export function WorkRecordDialog({
               <Clock className="size-4" />
               時間帯ごとに分ける
             </Button>
-          ))}
+          )}
+          </Accordion>
+        )}
 
-        {workSync.node}
+        {workSync.node && <Accordion title="カレンダーへの反映">{workSync.node}</Accordion>}
 
         {capabilities.memo && (
           <Textarea
