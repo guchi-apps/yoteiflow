@@ -8,6 +8,7 @@ import {
   Bell,
   CalendarClock,
   ChevronRight,
+  CircleAlert,
   CircleDashed,
   Copy,
   ExternalLink,
@@ -31,6 +32,7 @@ import {
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { eventLeadLabel } from "@/lib/event-notification";
+import { locationIssue } from "@/lib/location-check";
 import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
 import { cn } from "@/lib/utils";
@@ -247,6 +249,15 @@ export function EventDetailDialog({
    */
   const locationLink = readOnly ? null : mapLink(event.location, placeCoordinates(event.location ?? "", places));
 
+  /*
+   * 場所が空・住所が無い予定の注意（issue #1319）。他のアプリ（Morrow など）は場所欄の文字列から
+   * 地点を引くため、名前だけでは地点が決まらない。勤務予定は勤務の入力から直す。
+   */
+  const placeIssue = locationIssue(event, places, { isActivity });
+  const placeFixHint = event.workGenerated
+    ? "勤務の入力から勤務場所の住所を登録できます"
+    : "編集で場所の候補から選ぶと住所が入ります";
+
   /** 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。 */
   const outcome = event.outcome ?? null;
 
@@ -396,7 +407,24 @@ export function EventDetailDialog({
               ) : (
                 event.location
               )}
+              {placeIssue === "no_address" && (
+                <span className="type-body-small mt-0.5 flex items-start gap-1 text-tertiary">
+                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span>住所が登録されていません。{placeFixHint}</span>
+                </span>
+              )}
             </DetailRow>
+          )}
+
+          {/* 場所の無い予定（issue #1319）。色だけに頼らず、印と文で示す。 */}
+          {placeIssue === "missing" && (
+            <div className="flex items-start gap-2 text-tertiary">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" />
+              <span className="flex min-w-0 flex-col">
+                <span>場所が登録されていません</span>
+                <span className="type-body-small text-on-surface-variant">{placeFixHint}</span>
+              </span>
+            </div>
           )}
 
           {event.attendees.length > 0 && (

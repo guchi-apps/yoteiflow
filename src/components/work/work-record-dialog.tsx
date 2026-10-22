@@ -51,6 +51,8 @@ import {
   type WorkRecordItem,
 } from "@/types/work";
 
+import { WorkPlaceAddress } from "./work-place-address";
+
 /** 記録の種類。同時には立てられないため、スイッチではなく択一で持つ。 */
 export type WorkKind = "work" | "trip" | "leave" | "holiday";
 
@@ -618,6 +620,19 @@ export function WorkRecordDialog({
             onChange={(event) => setDestination(event.target.value)}
           />
         )}
+
+        {/* 勤務場所・行き先の住所（issue #1319）。種類を切り替えても場所DBを読み直さないよう、
+            常に置いて対象が無いときは何も描かない。 */}
+        <WorkPlaceAddress
+          name={
+            businessTrip
+              ? destination
+              : workPlaceOptions.length > 0 && !isHoliday && (!isLeave || partialDay)
+                ? place
+                : ""
+          }
+          isTrip={businessTrip}
+        />
 
         <div className={cn("grid gap-2", spanned && "grid-cols-2")}>
           <Input

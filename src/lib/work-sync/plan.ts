@@ -74,6 +74,8 @@ export type ExpectedItem = {
   start: Date;
   end: Date;
   title: string;
+  /** 勤務予定の場所（Googleの予定の location・issue #1319）。移動では使わない。 */
+  location?: string;
   origin?: string;
   destination?: string;
   mode?: TravelMode;
@@ -128,6 +130,26 @@ export function tripDestination(title: string, places: PlaceItem[]): string {
 export function placeLocationText(text: string, places: PlaceItem[]): string {
   const place = matchPlaceByText(text, places);
   return place ? toLocationText(place.name, place.address) : text;
+}
+
+/**
+ * 勤務予定の場所（issue #1319）。Morrow など他のアプリが勤務の場所を読めるよう、Googleの予定の
+ * location へ入れる。在宅扱いの勤務場所は自宅（既定の出発地）にいるため自宅の場所にし、
+ * 自宅が未設定なら勤務場所の名前のまま。場所DBに当たれば `名前 住所` になる。
+ */
+export function workLocationText(
+  name: string | null,
+  isTrip: boolean,
+  settings: Pick<WorkSyncSettings, "remotePlaces" | "homeOrigin">,
+  places: PlaceItem[],
+): string | undefined {
+  const place = name?.trim();
+  if (!place) return undefined;
+  const home = settings.homeOrigin?.trim();
+  if (!isTrip && settings.remotePlaces.includes(place) && home) {
+    return placeLocationText(home, places);
+  }
+  return placeLocationText(place, places);
 }
 
 /** `YYYY-MM-DD` の並び。UTCで数える（時刻を持たない）。 */
@@ -239,6 +261,7 @@ export function planWorkItems(
 
   const label = trip ? "出張" : "勤務";
   const title = destination ? `${label}（${destination}）` : label;
+  const location = workLocationText(destination, trip, settings, places);
 
   if (workEnabled) {
     for (const day of days) {
@@ -249,6 +272,7 @@ export function planWorkItems(
         start: zonedTime(day.date, day.window.start, settings.timeZone),
         end: zonedTime(day.date, day.window.end, settings.timeZone),
         title,
+        location,
       });
     }
   }
@@ -432,6 +456,7 @@ function planSegmentedItems(
           start: zonedTime(date, segment.start, settings.timeZone),
           end: zonedTime(date, segment.end, settings.timeZone),
           title: `${segment.trip ? "出張" : "勤務"}（${name}）`,
+          location: workLocationText(name, segment.trip, settings, places),
         });
       }
 
