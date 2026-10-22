@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { classifyQuickTaskFailure, newQuickTaskClientId } from "@/lib/quick-task-create";
 import { cn } from "@/lib/utils";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -132,6 +133,11 @@ export function QuickEventSheet({
   const [pickedTravel, setPickedTravel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // タスクの作成ID（issue #1316）。シートを開いた時点で1つ決め、保存の再試行でも同じ値を送る。
+  // 作成が済んだあとに応答だけ失われても、押し直しで2件目を作らない（`POST /api/tasks` の冪等処理）。
+  const [taskClientId, setTaskClientId] = useState(newQuickTaskClientId);
+  // 前回の保存が届いたか分からず、同じIDでは作れない状態。利用者が確かめて作り直すときだけIDを変える。
+  const [taskNeedsConfirmation, setTaskNeedsConfirmation] = useState(false);
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -190,6 +196,7 @@ export function QuickEventSheet({
         [taskTarget]: value,
         done: false,
         tags: [],
+        clientId: taskClientId,
       };
 
       const response = await fetch("/api/tasks", {
@@ -199,7 +206,10 @@ export function QuickEventSheet({
       });
 
       if (!response.ok) {
-        setError(await readErrorMessage(response, "保存できませんでした。"));
+        const body = (await response.json().catch(() => null)) as Parameters<typeof classifyQuickTaskFailure>[1];
+        const failure = classifyQuickTaskFailure(response.status, body, "保存できませんでした。");
+        setError(failure.message);
+        setTaskNeedsConfirmation(failure.needsConfirmation);
         return;
       }
 
@@ -210,10 +220,18 @@ export function QuickEventSheet({
       setOpen(false);
       setTimeout(() => onSaved(touched), 150);
     } catch (cause) {
+      // 作成が届いたかは分からないが、作成IDは変えないため、もう一度保存しても二重には作らない。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
     } finally {
       setBusy(false);
     }
+  };
+
+  // 前回の保存の結果が分からないとき、タスク一覧で確かめたうえで別のタスクとして作り直す。
+  const recreateTask = () => {
+    setTaskClientId(newQuickTaskClientId());
+    setTaskNeedsConfirmation(false);
+    setError(null);
   };
 
   const save = async () => {
@@ -456,6 +474,11 @@ export function QuickEventSheet({
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
+          {isTask && taskNeedsConfirmation && (
+            <Button variant="outline" className="w-full" disabled={busy} onClick={recreateTask}>
+              新しいタスクとして作り直す
+            </Button>
+          )}
         </div>
 
         {/* 「詳細」は削除の位置（下段）に置く。ここにしか全項目の入力画面へ移る道が無いため、
@@ -464,6 +487,7 @@ export function QuickEventSheet({
           saveDisabled={
             busy ||
             !title.trim() ||
+            (isTask && taskNeedsConfirmation) ||
             (isTask ? !date : !calendarId || rangeError !== null)
           }
           onSave={save}
