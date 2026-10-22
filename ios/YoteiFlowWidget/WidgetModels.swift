@@ -84,8 +84,8 @@ extension SchedulePayload {
     var boundaries: [Date] { items.compactMap { ISODate.parse($0.end) } }
 
     /// `date` の時点で済んだかどうかを付け直して並べ直す（issue #1255）。規則はサーバーの
-    /// `order()`（src/services/widget/schedule.ts）と同じ: 終わりが `date` 以前なら済み、
-    /// これからのものが先、どちらも終日を先頭に、あとは時刻順。
+    /// `orderScheduleItems()`（src/services/widget/schedule-order.ts）と同じ: 終わりが `date` 以前なら済み、
+    /// 並びは済んだかどうかによらず時間順（終日を先頭に、あとは時刻順・issue #1325）。
     func at(_ date: Date) -> SchedulePayload {
         let shifted = items.map { item -> Item in
             var item = item
@@ -93,13 +93,15 @@ extension SchedulePayload {
             return item
         }
         let ordered = shifted.sorted { a, b in
-            if a.past != b.past { return !a.past }
             if a.allDay != b.allDay { return a.allDay }
             if let sa = a.start, let sb = b.start, sa != sb { return sa < sb }
             return a.title.compare(b.title, locale: Locale(identifier: "ja")) == .orderedAscending
         }
         return SchedulePayload(timeZone: timeZone, items: ordered, unavailable: unavailable)
     }
+
+    /// これからの予定の添字。枠に入りきらないときはこれだけを出す（issue #1325）
+    var upcomingIndices: [Int] { items.indices.filter { !items[$0].past } }
 }
 
 enum ISODate {

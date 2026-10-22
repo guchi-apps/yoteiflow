@@ -229,10 +229,15 @@ struct TodayWidgetView: View {
             if items.isEmpty {
                 Text("予定はありません").font(.caption).foregroundStyle(.secondary)
             } else {
-                FittedRowList(count: items.count, total: items.count) { index in
+                // 「今日の予定」の面と同じく、時間順のまま入りきらないときだけ済んだ予定を外す（issue #1325）
+                FittedRowList(
+                    count: items.count,
+                    total: items.count,
+                    fallback: items.indices.filter { !items[$0].past }
+                ) { index in
                     let item = items[index]
-                    HStack(spacing: 6) {
-                        Text(when(item)).monospacedDigit().foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(when(item)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                         Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
                     }
                     .font(.caption)
