@@ -69,6 +69,8 @@ enum ShareImportPhase: Equatable {
 final class ShareImportViewModel: ObservableObject {
     @Published var phase: ShareImportPhase = .loading("読み取っています…")
     @Published var item: SharedImportItem?
+    /// 移動の入力から「Yahoo!乗換案内で検索」して待っている下書き（#1330）。あればその下書きへ反映できる
+    @Published var transitSession: TransitSearchSession.Pending?
     @Published var timeZone: String?
     /// 詳細（長い経路情報）を開いているか。確認画面では最初は畳む
     @Published var detailExpanded = false
@@ -101,6 +103,8 @@ final class ShareImportViewModel: ObservableObject {
     var onManual: () -> Void = {}
     /// Googleマップ経路を、登録せずに本体アプリの移動入力で日時・発着地を直してから追加する（issue #1203）
     var onEdit: () -> Void = {}
+    /// 下書きが待っているときに、反映せず新しい移動として登録する（従来の「登録」）
+    var onRegister: () -> Void = {}
 
     /// 「編集して追加」を出すか。直接登録・予定への紐づけは変えず、Googleマップの経路だけ併設する
     var canEditInApp: Bool {
@@ -114,9 +118,16 @@ final class ShareImportViewModel: ObservableObject {
         return effectiveRegistrable && item.isRoute
     }
 
-    /// 主ボタンの文言。直接登録できるものは「登録」、それ以外は本体アプリで続ける
+    /// Yahoo!の経路（日時あり）を、待っている下書きへ反映できるか（#1330）。反映は本体で確かめてから保存する
+    var canApplyToSession: Bool {
+        guard let item, transitSession != nil else { return false }
+        return item.source == "yahoo_transit" && item.isRoute && effectiveRegistrable
+    }
+
+    /// 主ボタンの文言。下書きが待っていれば「『…』に反映」、直接登録できるものは「登録」、それ以外は本体アプリで続ける
     var primaryTitle: String {
         guard let item else { return "登録" }
+        if canApplyToSession, let label = transitSession?.label { return "「\(label)」に反映" }
         if effectiveRegistrable { return "登録" }
         return item.isRoute ? "移動の入力へ進む" : "この場所を予定に追加"
     }

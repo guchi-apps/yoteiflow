@@ -50,6 +50,7 @@ import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { planLinkedTravelShifts, type FollowEventTimes, type TravelShift } from "@/lib/travel-follow";
 import { takeReplacePending } from "@/lib/travel-replace-pending";
+import { applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -372,6 +373,27 @@ export function CalendarShell({
       return;
     }
     if (handoff.link) {
+      // 移動の入力から「Yahoo!乗換案内で検索」して戻ってきた共有は、予定を選ばせずにその下書きへ反映する（issue #1330）。
+      // 自動では保存しない。入力画面で確かめて保存し、閉じれば元の移動・下書きは変わらない。
+      const session = handoff.session ? takeTransitSession(handoff.session) : null;
+      if (session) {
+        setItemDialog({
+          initialKind: "travel",
+          drafts: {
+            travel: applySharedRoute(session, {
+              origin: handoff.origin,
+              destination: handoff.destination,
+              departAt: isoToLocalInput(handoff.link.departAt, timeZone),
+              arriveAt: isoToLocalInput(handoff.link.arriveAt, timeZone),
+              note: handoff.link.note,
+            }),
+          },
+        });
+        return;
+      }
+      if (handoff.session) {
+        window.alert("検索したときの入力が見つかりませんでした（30分を過ぎた・別の端末で検索したなど）。紐づける予定を選ぶか、やめて移動を新しく入力してください。");
+      }
       setSharedLink({ origin: handoff.origin, destination: handoff.destination, mode: handoff.mode, ...handoff.link });
       return;
     }
