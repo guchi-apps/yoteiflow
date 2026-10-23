@@ -47,6 +47,13 @@ export function checkConsistency() {
     );
   }
 
+  // Yahoo!乗換案内アプリを開いて共有で戻すブリッジ名（#1330）
+  const swiftTransitBridge = webViewModel.match(/transitBridgeName = "([^"]+)"/)?.[1];
+  const tsTransitBridge = nativeApp.match(/NATIVE_TRANSIT_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftTransitBridge || swiftTransitBridge !== tsTransitBridge) {
+    problems.push(`乗換案内のブリッジ名が一致しません: Swift=${swiftTransitBridge} / TS=${tsTransitBridge}`);
+  }
+
   // 認証シートから戻る失敗の種類（#1113）。Swiftが知らない値は auth_failed に丸められ、案内が変わる
   const parseList = (text) => (text ?? "").match(/"([^"]+)"/g)?.map((v) => v.slice(1, -1)).sort().join(",") ?? "";
   const swiftErrors = parseList(webViewModel.match(/loginErrors: Set<String> = \[([^\]]*)\]/)?.[1]);

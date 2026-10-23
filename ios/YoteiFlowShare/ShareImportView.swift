@@ -135,6 +135,16 @@ struct ShareImportView: View {
     private var actionBar: some View {
         VStack(spacing: 0) {
             Divider()
+            if model.canApplyToSession {
+                // 下書きへ反映するのが主ボタン。反映せずに別の移動として登録する道も残す（#1330）
+                Button { model.onRegister() } label: {
+                    Text("新しい移動として登録").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            }
             if model.canLinkToEvent {
                 Button { model.onLink() } label: {
                     Text("予定に紐づけて追加").frame(maxWidth: .infinity)

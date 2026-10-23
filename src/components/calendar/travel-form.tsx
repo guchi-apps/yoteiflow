@@ -2,7 +2,7 @@
 
 import { useOffline } from "next/offline";
 import { ArrowUpDown, Bell, BellOff, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,10 @@ import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
 import { travelTitle } from "@/lib/travel-title";
+import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
+import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
+import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
+import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -58,6 +62,11 @@ export type TravelDraft = {
   resolveUrl?: string;
   /** 共有拡張の確認画面で選んだ経路。再取得した候補のうち名前・距離が一致するものを選択済みにする（issue #1168）。 */
   preselectRoute?: { name: string; distance: string | null };
+  /**
+   * 通知設定の初期値。Yahoo!で検索して戻ってきた下書き（issue #1330）のように、編集中の移動の
+   * 保存済みの値ではなく、出かける前に選んでいた値を引き継ぐときだけ渡す。無ければ移動の保存済みの値。
+   */
+  notification?: EventNotificationOverride | null;
 };
 
 type GoogleRouteStatus =
@@ -109,7 +118,7 @@ export function TravelForm({
 
   // 通知設定（issue #1112）。出発時刻を基準に、予定と同じ選び方をする。
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
-    editing?.notification ?? null,
+    draft.notification !== undefined ? draft.notification : (editing?.notification ?? null),
   );
   const [editingNotification, setEditingNotification] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -131,6 +140,61 @@ export function TravelForm({
   const mapsLink = offline
     ? null
     : googleMapsDirectionsLink({ origin, destination, via, mode, places: placeCatalog.places });
+
+  // Yahoo!乗換案内アプリで検索する条件（公共交通のときだけ・issue #1330）。必須は発着地と基準側の日時だけ
+  const nativeTransit = useSyncExternalStore(() => () => {}, hasNativeTransit, () => false);
+  const [transitStatus, setTransitStatus] = useState<NativeTransitOpened | null>(null);
+  const transitCondition =
+    mode === "PUBLIC_TRANSIT" && !offline
+      ? transitSearchCondition({
+          origin: resolveYahooPlace(origin, placeCatalog.places),
+          destination: resolveYahooPlace(destination, placeCatalog.places),
+          departAt,
+          arriveAt,
+          basis,
+        })
+      : null;
+  const transitLinks = transitCondition?.ok
+    ? {
+        app: yahooTransitAppLink(transitCondition),
+        // Web版も同じ基準側の日時だけで探す（反対側の仮の値で探さない）
+        web: yahooTransitLink({
+          origin: transitCondition.origin,
+          destination: transitCondition.destination,
+          departAt: basis === "depart" ? departAt : "",
+          arriveAt: basis === "arrive" ? arriveAt : "",
+          basis,
+        }),
+      }
+    : null;
+  const chooseTransitBasis = (side: TimeBasis) => {
+    touch("basis");
+    setBasis(side);
+  };
+  /** アプリ内: 下書きを覚えてからYahoo!アプリを開く。開けなければアプリが同じ条件のWeb版を開く */
+  const searchInYahooApp = async () => {
+    if (!transitLinks?.app) return;
+    const label = `${placeDisplayName(origin)}→${placeDisplayName(destination)}`;
+    const session = rememberTransitSession(label, {
+      travel: editing,
+      origin,
+      destination,
+      via,
+      mode,
+      departAt,
+      arriveAt,
+      note,
+      linkedEvent: draft.linkedEvent ?? null,
+      notification,
+    });
+    setTransitStatus(
+      await openTransitInNativeApp({
+        appUrl: transitLinks.app,
+        webUrl: transitLinks.web,
+        session: { id: session.id, label: session.label, expiresAt: session.expiresAt },
+      }),
+    );
+  };
 
   // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
   const [lengthMinutes, setLengthMinutes] = useState<number | null>(null);
@@ -470,6 +534,9 @@ export function TravelForm({
         exports?: { status: string; reason?: string }[];
         travels?: { id: string }[];
       };
+      // Yahoo!で検索して待っていた下書きは、保存したら用済み（あとの共有を古い下書きへ反映させない・issue #1330）
+      clearTransitSession();
+      clearTransitInNativeApp();
 
       // 通知設定は移動の保存後に送る（予定と同じベストエフォート。移動は保存できているため、
       // 失敗してもここでは止めない）。新規作成は往路（先頭）だけが対象で、復路は詳細から設定する。
@@ -660,6 +727,83 @@ export function TravelForm({
               : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
           </p>
         </div>
+
+        {/* 公共交通は、入れた発着地と基準側の日時でYahoo!乗換案内を開き、選んだ経路を共有で戻す（issue #1330）。
+            実際の列車・発着時刻はYahoo!で選んだ結果を採る。ここで決めるのは検索の条件だけ。 */}
+        {transitCondition && (
+          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Yahoo!乗換案内で探す基準">
+              {(["depart", "arrive"] as const).map((side) => (
+                <Button
+                  key={side}
+                  type="button"
+                  role="radio"
+                  aria-checked={basis === side}
+                  variant={basis === side ? "secondary" : "outline"}
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => chooseTransitBasis(side)}
+                >
+                  {side === "depart" ? "出発時刻で探す" : "到着時刻で探す"}
+                </Button>
+              ))}
+            </div>
+            {transitCondition.ok ? (
+              <p className="type-body-small text-on-surface-variant">
+                検索条件: {transitConditionSummary(transitCondition)}
+                {via.length > 0 && "（経由地はYahoo!へ渡しません）"}
+              </p>
+            ) : (
+              <p className="type-body-small text-on-surface-variant" role="status">
+                Yahoo!乗換案内で探すには、{transitCondition.missing.join("・")}を入力してください。
+              </p>
+            )}
+            {nativeTransit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={!transitLinks?.app}
+                onClick={() => void searchInYahooApp()}
+              >
+                <ExternalLink />
+                Yahoo!乗換案内で検索
+              </Button>
+            ) : (
+              transitLinks && (
+                <div className="flex flex-wrap gap-2">
+                  {/* 素の <a>。アプリ未導入の端末でブラウザが警告を出すため、Web版を自動では試さず並べて選ばせる */}
+                  {transitLinks.app && (
+                    <a
+                      href={transitLinks.app}
+                      className="type-label-large hidden items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-on-surface pointer-coarse:inline-flex"
+                    >
+                      <ExternalLink className="size-4" aria-hidden />
+                      アプリで検索
+                    </a>
+                  )}
+                  <a
+                    href={transitLinks.web}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="type-label-large inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-on-surface"
+                  >
+                    <ExternalLink className="size-4" aria-hidden />
+                    Yahoo!乗換案内（Web版）で検索
+                  </a>
+                </div>
+              )
+            )}
+            {nativeTransit && (
+              <p className="text-xs text-muted-foreground" role={transitStatus ? "status" : undefined}>
+                {transitStatus === "failed"
+                  ? "Yahoo!乗換案内を開けませんでした。"
+                  : `${transitStatus === "web" ? "アプリを開けなかったため、Web版で開きました。" : ""}経路を選んで共有ボタンからYoteiFlowを選び、「…に反映」を押すと、この入力へ戻ります（30分以内）。戻した経路は確かめてから保存してください。`}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Googleマップの共有URLは、現在選んでいる交通手段によらず貼り付けられる。
             読めた交通手段へ切り替えるため、公共交通から車の経路を貼る場合も入口を隠さない。 */}
