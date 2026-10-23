@@ -216,7 +216,7 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 見た目は M3 Expressive（2025）の流儀に寄せ、M3 のロール・トークンの構成は変えない（issue #705） | デザイン案3つ（M3 Expressive・iOSネイティブ調・ミニマル）を比べ、M3 Expressive を採った。ほかの2案はカラーロールそのものを作り替えることになり、この表の決定事項（予定の14%の面と色帯・tertiary の日付リマインド・`error` のロール・`--radius-item` など）の多くを見直す必要が出る。Expressive はロールの名前と構成をそのまま残し、値と形だけを変えれば済む。変えたのは次のとおり。(1) シード色を既定のベースライン紫 `#6750a4` からインディゴ `#4b44b5` にし、`--md-*` をライト・ダークとも作り直した（トーンはCIELABのL*、色相はOKLCHで固定。Labのままだと青紫は暗いトーンほど青へ流れ、on-container が別の色に見える）。primary と白のコントラスト比は6.4:1のまま。(2) 見出し（`type-headline-small` / `type-title-large`）を太字にし、経過時間用に `type-display-small`（36px）を足した。日本語は400だと細く、見出しが字の大きさだけに頼ることになるため。(3) `--radius-2xl` を24pxに、`--radius-item` を6pxにし、カード（`Card`）の影をやめた。(4) ボタン・FABは、押している間に角丸が詰まる（シェイプモーフ）。形でも手応えを返す。下部ナビの記録の円は、選択中も円・同じ色のまま（issue #1305。画面ごとにフッターの見た目がずれるため、現在地はラベルの色で示す）。隣接させた枠で排他の選択を示すセグメンテッドボタンは `active:rounded-none` で形を変えない（押すと枠の一部だけ丸くなるため）。**カレンダー本体を白いカードに載せる案は見送った**。月表示・時間グリッドは画面いっぱいの幅を前提に横スワイプの帯（`registerTrack`）の幅と位置を決めており、外側に余白と角丸を足すとその計算まで触ることになる |
 | アプリアイコンの色は `src/lib/app-icon-glyph.tsx` に集約する | 背景色は favicon・apple-icon・PWAの192/512・`manifest.ts` の `background_color` の5箇所で使う（`theme_color` はヘッダーの色へ移した・issue #696）。各ファイルに直接書くと、一部だけ変えたときに端末によって違う色のアイコンが出る |
 | 表示名は `DaySpan` から `Koyomio` へ変更したが、本番ドメイン（`dayspan.gucchii.com`）・内部識別子（Cookie名・HTTPヘッダー名・`console.error("[dayspan] ...")` プレフィックス・User-Agent文字列等）は変えていない（issue #872） | Issue本文の「前提・制約」は内部識別子の改名を明記して対象外としていたが、後続コメントでリポジトリ名・本番ドメインも含めるよう指示があった。本番ドメインの変更はApache設定（別リポジトリの`vps`）・DNS・Google OAuthのリダイレクトURI・Supabase Authの設定変更を伴い、GitHubリポジトリ名の変更もCI参照・issue-deck連携・他worktreeへの影響調査が要るため、実装エージェントのセッションからは対応できず、別途の対応とした（AskUserQuestionでユーザーに確認済み）。次にこの領域を触るときは、UIが"Koyomio"でもコード中のコメント・識別子が"dayspan"のままであるのはこの理由による。GitHubリポジトリ名だけは issue #886 で `guchi-apps/koyomio` へ変更した（旧URLはGitHubが自動でリダイレクトする。ローカルのディレクトリ名 `~/apps/dayspan`・VPSの配置先・1Passwordの `apps/dayspan` は変えていない） |
-| 表示名は `Koyomio` から `YoteiFlow` へ再変更した（issue #890）。アイコンはFlow Ribbon案、ワードマークはSoft Flow案 | kurashioと聞き分けやすく、予定と時間の流れが伝わる名前にするため。内部識別子・本番ドメイン・GitHubリポジトリ名の扱いは #872 の行と同じ理由で、リポジトリ名は `guchi-apps/yoteiflow` へ**マージ後に**利用者が改名する（`scripts/start-issue.sh`・`sync-github-secrets.sh` はリポジトリ名を固定せず `gh repo view` から求め、改名の前後どちらでも動く）。アイコンは `assets/brand/yoteiflow-icon.svg` が原本で、影とグラデーションを含み `ImageResponse`（satori）では再現できないため、`scripts/generate-brand-assets.sh` が `rsvg-convert` で描画済みPNGを作る。`public/icon-192.png`・`icon-512.png`（any）と、円形マスクの安全域（中心80%）へ縮めた `icon-maskable-*.png` は `public/` へ置く（本番の成果物は `.next` と `public` しか固めず、`assets/` や `src/` は実行時に読めない）。favicon・apple-touch-icon は `icon.ts`・`apple-icon.ts`（ファイル規約を保つ＝`<link>` の出力とURLが変わらない）が `src/lib/brand/icon-png.ts` のbase64を返す。maskable のURLは `public/sw.js` の `REVALIDATED_ASSETS` にも足している。ワードマーク（`src/components/brand/wordmark.tsx`）の文字は、アウトライン化の道具・丸ゴシック体が環境に無いため、全体に同梱済みのNoto Sans JP（太字）を使う。ホーム画面へ追加済みの端末の名前・アイコンは、追加し直すまで旧い状態のまま（#872の行と同じ）。Scriptable台本・過去に書き出した移動のGoogle予定の説明・作成済みのNotion DBの名前は旧名のまま残る |
+| 表示名は `Koyomio` から `YoteiFlow` へ再変更した（issue #890）。アイコンはFlow Ribbon案、ワードマークはSoft Flow案 | kurashioと聞き分けやすく、予定と時間の流れが伝わる名前にするため。内部識別子・本番ドメイン・GitHubリポジトリ名の扱いは #872 の行と同じ理由で、リポジトリ名は `guchi-apps/yoteiflow` へ**マージ後に**利用者が改名する（`sync-github-secrets.sh` はリポジトリ名を固定せず `gh repo view` から求め、改名の前後どちらでも動く）。アイコンは `assets/brand/yoteiflow-icon.svg` が原本で、影とグラデーションを含み `ImageResponse`（satori）では再現できないため、`scripts/generate-brand-assets.sh` が `rsvg-convert` で描画済みPNGを作る。`public/icon-192.png`・`icon-512.png`（any）と、円形マスクの安全域（中心80%）へ縮めた `icon-maskable-*.png` は `public/` へ置く（本番の成果物は `.next` と `public` しか固めず、`assets/` や `src/` は実行時に読めない）。favicon・apple-touch-icon は `icon.ts`・`apple-icon.ts`（ファイル規約を保つ＝`<link>` の出力とURLが変わらない）が `src/lib/brand/icon-png.ts` のbase64を返す。maskable のURLは `public/sw.js` の `REVALIDATED_ASSETS` にも足している。ワードマーク（`src/components/brand/wordmark.tsx`）の文字は、アウトライン化の道具・丸ゴシック体が環境に無いため、全体に同梱済みのNoto Sans JP（太字）を使う。ホーム画面へ追加済みの端末の名前・アイコンは、追加し直すまで旧い状態のまま（#872の行と同じ）。Scriptable台本・過去に書き出した移動のGoogle予定の説明・作成済みのNotion DBの名前は旧名のまま残る |
 | 狭い画面のカレンダーヘッダーは月だけ出す | 1日・3日表示で「8月16日 – 18日」まで並べると、スマートフォンでは操作の並んだヘッダーに収まらず `truncate` で切れ、いま見ている期間そのものが読めなくなる。日と曜日は列ヘッダーに出ているため、狭いときは月（月をまたぐときは「8月 – 9月」）に落とす。表示中の幅で文字列を選ぶとサーバーとブラウザで結果が変わるため、長短の両方を描いてCSSで隠す |
 | ウィジェットの認証は専用トークンにする | ウィジェットの更新は利用者が操作していない時点でiOSが走らせる。Scriptableはブラウザのログインセッションを持てず、Supabaseのセッションでは認証できない。できるのは読み取りだけに絞り、書き込みの経路は持たせない |
 | ネイティブ版ウィジェットの一覧は枠の高さに入るだけ並べ、Scriptable版は固定行数のままにする（issue #969） | 中サイズ3件の固定だと余白があるのに「ほか」へ回っていた。ネイティブ版は `FittedRowList` が `GeometryReader` の高さから行数を決める（行の高さは Dynamic Type に追従）。Scriptable版は描いた高さを台本から測れず、変えると貼り替えも要るため据え置き。APIの最大件数は30（`MAX_ITEMS`）で、Scriptable側は自前で切るため表示は変わらない。実機では未確認（Xcode無し） |
@@ -640,8 +640,8 @@ Node 24（`.github/workflows/ci.yml` と揃えている）なら `node --test` �
   従わないブランチはすべて対象外になる
 - worktreeは本体リポジトリの外（`~/apps/dayspan-worktrees/<ブランチ名>/`）に作成する。
   本体 `~/apps/dayspan` は `develop` の最新チェックアウトとして空けておく
-- 開発サーバーのポートは `scripts/start-issue.sh` が `.env.local` に `PORT=6000 + Issue番号` を設定する
-  （例: issue-12 → 6012）。issue-deck（`4000 + Issue番号`）や本番ポート3113・dev既定の3000と重ならない
+- 開発サーバーのポートは issue-deck の汎用ランチャー（`generic-start-issue.sh`）が割り当て、`.env.local` の
+  `PORT` に設定する。起動時に渡される指示ファイルに書かれたポートを使う（本番ポート3113・dev既定の3000とは重ならない）
 
 ## Issueの進捗
 
@@ -735,7 +735,7 @@ GraphQLエラーで落ちることがあるため、コメントだけを読む�
 
 人の判断を待つときは `AskUserQuestion` で聞く。それで済まない相談は Issue コメントに残し、
 `00.check-user`＋`01.check-blocked`（手作業・入力待ちは `01.check-input`）を付けてから止める。
-同じ規則を起動プロンプト（`scripts/prompts/implementation-agent.md`）にも書いている。
+同じ規則は issue-deck の汎用テンプレート（`generic-implementation-agent.md`）にも書かれている。
 仕組み側で拾う対応（`Stop` の時点での判定）は issue-deck の担当で、DaySpan側では持たない。
 
 ## develop向けPRは作成直後にマージされうる
@@ -766,18 +766,16 @@ GraphQLエラーで落ちることがあるため、コメントだけを読む�
   closeしない運用のため）
 - 実装内容
 - テスト内容
-- 確認方法（画面に関わる変更では `http://localhost:<6000 + Issue番号>` とアクセス手順）
+- 確認方法（画面に関わる変更では 指示ファイルに書かれた開発サーバーのURL とアクセス手順）
 - 注意点
 
 ## ローカルからの起動
 
-```bash
-scripts/start-issue.sh <issue番号> [issue番号...]
-```
-
-worktree作成・`.env.local` のコピー・ポート割り当て・`pnpm install`・開発サーバーの自動起動までを行い、
-実装エージェント用のClaude Codeセッションを起動する（プロンプトは `scripts/prompts/implementation-agent.md`）。
-Windows側からは `scripts/start-issue.ps1` を使う。
+issue-deck の「ローカルで開始」（汎用ランチャー `generic-start-issue.sh`）で起動する。worktree作成・`.env.local` のコピー・
+ポート割り当て・`pnpm install`・実装エージェント用セッションの起動までを行う。プロンプトは issue-deck の
+`generic-implementation-agent.md` で、このリポジトリは自前のひな形（`scripts/prompts/implementation-agent.md`）を
+持たない（持つと汎用テンプレートより優先され、`21.plan-required` や `25.artifact-required` の指示が古いまま残る。
+issue #1324）。DaySpan固有の指示はこの `CLAUDE.md` に書く。
 
 **`.env.local` のコピー元は本体チェックアウト（`~/apps/dayspan`）の `.env.local` で、本体に無ければ
 worktreeへは何も配られない**（issue-deck の `supply_env_files` も同じ作り）。配られないまま起動すると

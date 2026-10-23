@@ -58,7 +58,7 @@ Googleログインを通すには、共有Supabaseプロジェクトの Redirect
 
 ### 本体チェックアウトの `.env.local` は worktree の前提
 
-**Issueごとのworktree・確認環境へ配られる `.env.local` の元は、本体チェックアウト（`~/apps/dayspan`）の `.env.local` です。** `scripts/start-issue.sh` と issue-deck の `supply_env_files` はどちらも本体側のファイルをコピーする作りで、本体に無ければworktreeへは何も配りません。
+**Issueごとのworktree・確認環境へ配られる `.env.local` の元は、本体チェックアウト（`~/apps/dayspan`）の `.env.local` です。** issue-deck の汎用ランチャー（`supply_env_files`）は本体側のファイルをコピーする作りで、本体に無ければworktreeへは何も配りません。
 
 配られないまま起動すると、`src/proxy.ts` の `updateSession()` が毎リクエストで `createServerClient()` を呼ぶため、`/login` を含む**全ページが500**になります（`Your project's URL and Key are required to create a Supabase client!`）。画面には出ず、原因が読めるのはサーバーログだけです。
 
@@ -85,7 +85,7 @@ bash scripts/setup-db.sh   # ローカルMariaDBにDB・ユーザーを作成（
 
 `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` は開発用のOAuthクライアントで1Passwordには無く、空のままで構いません。空だとカレンダー連携の接続だけができず、画面は開きます。VAPID鍵も同様に任意です。
 
-すでに作成済みのworktreeには、`scripts/start-issue.sh <issue番号>`（または issue-deck の「ローカルで開始」）をもう一度通すと配られます。手で置く場合は本体の `.env.local` をコピーし、`PORT` を `6000 + Issue番号` に直します。
+すでに作成済みのworktreeには、issue-deck の「ローカルで開始」をもう一度通すと配られます。手で置く場合は本体の `.env.local` をコピーし、`PORT` を割り当てられたポートに直します。
 
 ### スマートフォンからの確認
 
