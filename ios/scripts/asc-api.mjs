@@ -67,12 +67,30 @@ export function pickApiCreatedDevCertificates(certs) {
   );
 }
 
-class AscClient {
-  constructor(env) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 再試行してよい失敗か。Apple側の一時障害（5xx・429）だけを数え、4xx（指定の誤り・認証）は再試行しない。
+ *  v4.24.0 の配布で、処理待ちのポーリング中の1回のHTTP 500（UNEXPECTED_ERROR）だけで配布全体が失敗した（#1334）。 */
+export function isRetryableStatus(status) {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+/** 再試行の待ち時間（ミリ秒）。合計約3分半で、30秒間隔の処理待ちより十分長く、Apple側の短い障害を越えられる。 */
+export const RETRY_DELAYS_MS = [10_000, 30_000, 60_000, 120_000];
+
+/** 1回の要求の上限。#1334 では HTTP 500 が返るまで約5分かかっており、待ちっぱなしにしない。 */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+export class AscClient {
+  constructor(env, { fetchImpl = fetch, sleepImpl = sleep, retryDelaysMs = RETRY_DELAYS_MS, log = console.log } = {}) {
     for (const k of ["ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_P8"]) {
       if (!env[k]) throw new Error(`${k} が未設定です（ios/README.md の初期設定を参照）`);
     }
     this.env = env;
+    this.fetchImpl = fetchImpl;
+    this.sleepImpl = sleepImpl;
+    this.retryDelaysMs = retryDelaysMs;
+    this.log = log;
   }
   token() {
     return createJwt({
@@ -81,25 +99,47 @@ class AscClient {
       privateKeyPem: Buffer.from(this.env.ASC_KEY_P8, "base64").toString("utf8"),
     });
   }
+  /** GET だけを再試行する。POST（グループ割当て）・DELETE（証明書の失効）は、届いていたのに応答だけ失われた場合に
+   *  2回目が別の結果（409・404）になるため、従来どおり1回で判定する。 */
   async request(method, path, body) {
-    const res = await fetch(`${API}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.token()}`,
-        "Content-Type": "application/json",
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(
-        `App Store Connect APIの認証に失敗しました（HTTP ${res.status}）。APIキーが失効・権限不足の可能性があります。ios/README.md の「キーの失効」を参照`
-      );
+    const delays = method === "GET" ? this.retryDelaysMs : [];
+    for (let attempt = 0; ; attempt++) {
+      let res;
+      try {
+        res = await this.fetchImpl(`${API}${path}`, {
+          method,
+          headers: {
+            Authorization: `Bearer ${this.token()}`,
+            "Content-Type": "application/json",
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch (e) {
+        // 通信不達・タイムアウト
+        if (attempt < delays.length) {
+          this.log(`  再試行: ${method} ${path} が通信エラー（${e.name}）。${delays[attempt] / 1000}秒後にもう一度試します`);
+          await this.sleepImpl(delays[attempt]);
+          continue;
+        }
+        throw new Error(`App Store Connect API ${method} ${path} に接続できませんでした（${e.name}: ${e.message}）`);
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          `App Store Connect APIの認証に失敗しました（HTTP ${res.status}）。APIキーが失効・権限不足の可能性があります。ios/README.md の「キーの失効」を参照`
+        );
+      }
+      const text = await res.text();
+      if (!res.ok) {
+        if (isRetryableStatus(res.status) && attempt < delays.length) {
+          this.log(`  再試行: ${method} ${path} が HTTP ${res.status}。${delays[attempt] / 1000}秒後にもう一度試します`);
+          await this.sleepImpl(delays[attempt]);
+          continue;
+        }
+        throw new Error(`App Store Connect API ${method} ${path} が HTTP ${res.status}: ${text.slice(0, 400)}`);
+      }
+      return text ? JSON.parse(text) : {};
     }
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`App Store Connect API ${method} ${path} が HTTP ${res.status}: ${text.slice(0, 400)}`);
-    }
-    return text ? JSON.parse(text) : {};
   }
 }
 
@@ -116,8 +156,6 @@ async function findBuild(client, appId, version, build) {
     `&filter[preReleaseVersion.version]=${encodeURIComponent(version)}&limit=1`;
   return (await client.request("GET", q)).data?.[0] ?? null;
 }
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitFor(label, fn, { timeoutMs, intervalMs = 30_000 }) {
   const started = Date.now();

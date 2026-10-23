@@ -95,6 +95,7 @@ ios/scripts/remote-build-check.sh         # 署名なしでMacへ送り、コミ
 
 - 判定は `ios/scripts/ios-changes.mjs`。配布物（`YoteiFlow/`・`YoteiFlowWidget/`・`YoteiFlowShare/`・`YoteiFlowIntents/`・`Shared/`・`Config/`・`AppInfo.plist`・`YoteiFlow.xcodeproj/`。README・scripts・版番号の行だけの差分は除く）に、最後の配布印（タグ `ios-testflight/<ビルド番号>`）以降の変更があるときだけ配布する。印は配布し終えたときだけ進むので、失敗した配布の変更は次の判定にも残る
 - ビルド番号は `run_number*100+run_attempt`。**手動の `upload-testflight.sh`（日時 `YYYYMMDDHHMM`）より小さくなる**ため、同じ版番号で手動のあとに自動配信すると App Store Connect が「ビルド番号が小さい」として拒否する。自動配信へ移したあとは手動アップロードを使わないか、`IOS_BUILD_NUMBER` で自動側より大きい値を指定する
+- App Store Connect API は処理待ちのポーリング中に一時的な HTTP 500（`UNEXPECTED_ERROR`）を返すことがあり、応答まで数分かかることもある（#1334 で v4.24.0 の配布がこの1回で失敗した）。`asc-api.mjs` は **GET に限り** 5xx・429・通信エラー・タイムアウト（1回60秒）を10秒→30秒→60秒→120秒の間隔で再試行する。POST（グループ割当て）・DELETE（証明書の失効）は、届いていたのに応答だけ失われると2回目が409・404になるため再試行しない。再試行しきっても失敗したら、Apple側の障害が長引いているので時間を置いて配布し直す
 - 手動実行: `gh workflow run ios-testflight.yml -f sha=<main上のコミット> [-f dry_run=true]`。`dry_run` は判定だけ行いビルドしない
 - 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
 - ビルドは GitHub ホストの `xcode-27` ランナー。**subpc には Xcode が無く、ワークフローの実行・署名・App Store Connect との疎通は未確認**。初回は `dry_run` → 本番の順に確かめてください
