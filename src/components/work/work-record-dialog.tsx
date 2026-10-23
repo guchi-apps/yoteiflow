@@ -13,6 +13,7 @@ import {
   WorkSegmentsEditor,
   type SegmentRow,
 } from "@/components/work/work-segments-editor";
+import { Accordion } from "@/components/ui/accordion";
 import { useWorkSyncFields } from "@/components/work/work-sync-fields";
 import { enumerateDates } from "@/lib/work-sync/plan";
 import { formatSegmentTime } from "@/lib/work-segments";
@@ -50,6 +51,8 @@ import {
   type WorkCapabilities,
   type WorkRecordItem,
 } from "@/types/work";
+
+import { WorkPlaceAddress } from "./work-place-address";
 
 /** 記録の種類。同時には立てられないため、スイッチではなく択一で持つ。 */
 export type WorkKind = "work" | "trip" | "leave" | "holiday";
@@ -619,6 +622,19 @@ export function WorkRecordDialog({
           />
         )}
 
+        {/* 勤務場所・行き先の住所（issue #1319）。種類を切り替えても場所DBを読み直さないよう、
+            常に置いて対象が無いときは何も描かない。 */}
+        <WorkPlaceAddress
+          name={
+            businessTrip
+              ? destination
+              : workPlaceOptions.length > 0 && !isHoliday && (!isLeave || partialDay)
+                ? place
+                : ""
+          }
+          isTrip={businessTrip}
+        />
+
         <div className={cn("grid gap-2", spanned && "grid-cols-2")}>
           <Input
             id="work-start-date"
@@ -707,10 +723,10 @@ export function WorkRecordDialog({
           </div>
         )}
 
-        {segmentsAvailable &&
-          (segmentRows.length > 0 || invalidSegmentsText ? (
-            <div className="flex flex-col gap-2 rounded-xl border border-outline-variant p-3">
-              <p className="type-label-large">時間帯ごとの内訳</p>
+        {segmentsAvailable && (
+          <Accordion title="時間ごとにわける" forceOpen={Boolean(invalidSegmentsText)}>
+          {segmentRows.length > 0 || invalidSegmentsText ? (
+            <>
               <WorkSegmentsEditor
                 rows={segmentRows}
                 onChange={changeSegments}
@@ -720,7 +736,7 @@ export function WorkRecordDialog({
                 defaultDestination={destination.trim()}
                 invalidText={invalidSegmentsText}
               />
-            </div>
+            </>
           ) : (
             // 既定の入力（1日1つの勤務場所・出張）はそのまま。分けたい日だけ押して始める。
             // 初めは設定の勤務時間と昼休みで午前・午後の2つにする（「朝は在宅、昼から出張」）。
@@ -758,9 +774,11 @@ export function WorkRecordDialog({
               <Clock className="size-4" />
               時間帯ごとに分ける
             </Button>
-          ))}
+          )}
+          </Accordion>
+        )}
 
-        {workSync.node}
+        {workSync.node && <Accordion title="カレンダーへの反映">{workSync.node}</Accordion>}
 
         {capabilities.memo && (
           <Textarea

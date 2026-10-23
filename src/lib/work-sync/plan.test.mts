@@ -385,3 +385,51 @@ test("内訳の移動で既定の移動時間が無い組は推測せず挙げ�
   assert.deepEqual(off.missingRoutes, []);
   assert.deepEqual(off.items.map((item) => item.kind), ["WORK", "WORK"]);
 });
+
+// --- 勤務予定の場所（issue #1319） ---
+
+test("勤務予定の場所: 場所DBに当たれば名前と住所、当たらなければ名前、在宅は自宅", () => {
+  const places = [
+    { id: "h", name: "自宅", address: "大阪府吹田市1-1", tags: [], coordinates: null, station: null },
+    { id: "r", name: "栗東", address: "滋賀県栗東市2-2", tags: [], coordinates: null, station: null },
+  ];
+  const work = (patch: Partial<WorkRecordItem>, set = settings) =>
+    planWorkItems(record(patch), set, places, lookup).items.find((item) => item.kind === "WORK")!;
+
+  assert.equal(work({}).location, "栗東 滋賀県栗東市2-2");
+  assert.equal(work({ place: "門真" }).location, "門真");
+  assert.equal(work({ place: "在宅" }).location, "自宅 大阪府吹田市1-1");
+  // 自宅が未設定なら在宅の場所名のまま。
+  assert.equal(work({ place: "在宅" }, { ...settings, homeOrigin: null }).location, "在宅");
+  assert.equal(work({ place: null }).location, undefined);
+  // 出張は行き先で引く。移動には location を付けない。
+  assert.equal(work({ businessTrip: true, title: "栗東", place: null }).location, "栗東 滋賀県栗東市2-2");
+  const outbound = planWorkItems(record({}), settings, places, lookup).items.find(
+    (item) => item.kind === "OUTBOUND",
+  )!;
+  assert.equal(outbound.location, undefined);
+});
+
+test("勤務予定の場所: 時間帯の内訳でも区切りごとに入る", () => {
+  const places = [
+    { id: "h", name: "自宅", address: "大阪府吹田市1-1", tags: [], coordinates: null, station: null },
+  ];
+  const { items } = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "大阪",
+      place: null,
+      segments: [
+        { date: null, start: 525, end: 720, place: "在宅", trip: false, destination: null },
+        { date: null, start: 780, end: 1035, place: null, trip: true, destination: null },
+      ],
+    }),
+    settings,
+    places,
+    segmentLookup,
+  );
+  assert.deepEqual(
+    items.filter((item) => item.kind === "WORK").map((item) => item.location),
+    ["自宅 大阪府吹田市1-1", "大阪"],
+  );
+});

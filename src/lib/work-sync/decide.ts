@@ -11,6 +11,8 @@ export type Snapshot = {
   start: string;
   end: string;
   title?: string;
+  /** 勤務予定の場所（issue #1319）。控えに無い旧い行は「場所なし」と同じに扱う。 */
+  location?: string;
   origin?: string;
   destination?: string;
 };
@@ -24,9 +26,19 @@ export function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
     new Date(a.start).getTime() === new Date(b.start).getTime() &&
     new Date(a.end).getTime() === new Date(b.end).getTime() &&
     (a.title ?? "") === (b.title ?? "") &&
+    (a.location ?? "") === (b.location ?? "") &&
     (a.origin ?? "") === (b.origin ?? "") &&
     (a.destination ?? "") === (b.destination ?? "")
   );
+}
+
+/**
+ * 場所DBを読めなかった回の勤務予定の期待値（issue #1319）。場所は控えの値のまま保つ。
+ * 名前だけの場所で住所付きの予定を更新すると、復旧後にもう一度更新が走り Google への
+ * 書き込みが無駄に増えるため。控えが無い（新規）ときは期待値のまま。
+ */
+export function keepSnapshotLocation(expected: Snapshot, row: Snapshot | null): Snapshot {
+  return row ? { ...expected, location: row.location ?? "" } : expected;
 }
 
 /**

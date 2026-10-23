@@ -166,6 +166,7 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
     url: event.htmlLink ?? null,
     outcome: null,
     notification: null,
+    workGenerated: event.extendedProperties?.private?.dayspanSource === "work",
   };
 }
 

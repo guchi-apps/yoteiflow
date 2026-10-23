@@ -98,13 +98,17 @@ struct FittedRowList<Row: View>: View {
     let count: Int
     /// 全体の件数（取得上限を超えたぶんも含め「ほか」に出す）
     let total: Int
+    /// 全件が入らないときに代わりに並べる行の添字（今日の予定の「これからの予定」・issue #1325）。
+    /// 「ほか」もこの中の残りだけを数える。nil か空なら全件の先頭から並べる
+    let fallback: [Int]?
     let row: (Int) -> Row
 
     /// 行は `@ViewBuilder` で受ける。付けないと `let item = …` を挟んだ複数文のクロージャが
     /// `()` を返すものと推論され、`Row: View` を満たせずビルドが落ちる（#989）
-    init(count: Int, total: Int, @ViewBuilder row: @escaping (Int) -> Row) {
+    init(count: Int, total: Int, fallback: [Int]? = nil, @ViewBuilder row: @escaping (Int) -> Row) {
         self.count = count
         self.total = total
+        self.fallback = fallback
         self.row = row
     }
 
@@ -113,21 +117,29 @@ struct FittedRowList<Row: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let shown = visibleCount(height: proxy.size.height)
+            let visible = visibleRows(height: proxy.size.height)
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(0..<shown, id: \.self) { row($0) }
-                if total > shown {
-                    Text("ほか \(total - shown)件").font(.caption2).foregroundStyle(.secondary)
+                ForEach(visible.shown, id: \.self) { row($0) }
+                if visible.rest > 0 {
+                    Text("ほか \(visible.rest)件").font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
-    private func visibleCount(height: CGFloat) -> Int {
+    /// 並べる行の添字と「ほか」に回す件数
+    private func visibleRows(height: CGFloat) -> (shown: [Int], rest: Int) {
         let all = Int(height / rowHeight)
-        if total <= all && count >= total { return min(count, total) }
-        return max(1, min(count, Int((height - footerHeight) / rowHeight)))
+        if total <= all && count >= total { return (Array(0..<min(count, total)), 0) }
+        let withFooter = Int((height - footerHeight) / rowHeight)
+        if let fallback, !fallback.isEmpty {
+            if fallback.count <= all { return (fallback, 0) }
+            let shown = max(1, min(fallback.count, withFooter))
+            return (Array(fallback.prefix(shown)), fallback.count - shown)
+        }
+        let shown = max(1, min(count, withFooter))
+        return (Array(0..<shown), total - shown)
     }
 }
 
@@ -289,14 +301,20 @@ struct ScheduleWidgetView: View {
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 if family != .accessoryRectangular { Header(title: "今日の予定", trailing: "\(upcoming.count)件") }
+                // 時間順のまま並べ、入りきらないときだけ済んだ予定を外す（issue #1325）
                 if isAccessory {
+                    let rows = payload.items.count > rowLimit(family) && !upcoming.isEmpty ? upcoming : payload.items
                     RowList(
-                        rows: payload.items.map { scheduleRow($0, payload) },
-                        total: payload.items.count,
+                        rows: rows.map { scheduleRow($0, payload) },
+                        total: rows.count,
                         limit: rowLimit(family)
                     )
                 } else {
-                    FittedRowList(count: payload.items.count, total: payload.items.count) {
+                    FittedRowList(
+                        count: payload.items.count,
+                        total: payload.items.count,
+                        fallback: payload.upcomingIndices
+                    ) {
                         scheduleRow(payload.items[$0], payload)
                     }
                 }
@@ -309,8 +327,9 @@ struct ScheduleWidgetView: View {
     private var isAccessory: Bool { family == .accessoryRectangular }
 
     private func scheduleRow(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> some View {
-        HStack(spacing: 6) {
-            Text(whenText(item, payload)).monospacedDigit().foregroundStyle(.secondary)
+        // 時刻は一回り小さくし、タイトルへ幅を回す（issue #1325）
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(whenText(item, payload)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             if item.kind == "travel", let origin = item.origin, let destination = item.destination {
                 Image(systemName: travelSymbol(item.mode)).foregroundStyle(.tint)
                 Text("\(origin)→\(destination)").lineLimit(1)

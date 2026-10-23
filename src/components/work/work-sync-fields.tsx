@@ -226,8 +226,7 @@ export function useWorkSyncFields({
         </div>
       );
       return (
-        <div className="flex flex-col gap-3 rounded-xl border border-outline-variant p-3">
-          <p className="type-label-large">カレンダーへの反映</p>
+        <div className="flex flex-col gap-3">
           {toggle("work", "勤務予定", "workEnabled")}
           {toggle("out", "往路（自宅から・場所の移動）", "outEnabled")}
           {toggle("back", "復路（自宅へ）", "backEnabled")}
@@ -240,8 +239,7 @@ export function useWorkSyncFields({
     }
 
     return (
-      <div className="flex flex-col gap-3 rounded-xl border border-outline-variant p-3">
-        <p className="type-label-large">カレンダーへの反映</p>
+      <div className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
           <Switch
             aria-label="勤務予定をカレンダーへ反映"

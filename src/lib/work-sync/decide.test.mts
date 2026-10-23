@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decide, type RowState, type Snapshot } from "@/lib/work-sync/decide";
+import { decide, keepSnapshotLocation, type RowState, type Snapshot } from "@/lib/work-sync/decide";
 
 const snap = (start = "2026-10-05T00:00:00.000Z"): Snapshot => ({
   start,
@@ -31,4 +31,23 @@ test("手動扱いは以後も触らない", () => {
   const manual: RowState = { status: "MANUAL", snapshot: snap() };
   assert.equal(decide(snap("2026-10-05T01:00:00.000Z"), manual, snap()), "keep");
   assert.equal(decide(null, manual, snap()), "forget");
+});
+
+test("勤務予定の場所（issue #1319）: 旧い控え（場所なし）は空の場所と同じに扱い、場所が入るなら更新する", () => {
+  const withLocation = { ...snap(), location: "本社 大阪府大阪市1-1" };
+  // 旧い控え・Googleの予定とも場所なし → 手を入れていない扱いで、場所を入れる更新になる。
+  assert.equal(decide(withLocation, active(), { ...snap(), location: "" }), "update");
+  // 利用者がGoogleで場所を直していれば手動扱い。
+  assert.equal(decide(withLocation, active(), { ...snap(), location: "カフェ" }), "markManual");
+  assert.equal(decide(withLocation, active(withLocation), withLocation), "keep");
+});
+
+test("場所DBを読めなかった回は控えの場所を保ち、更新しない（issue #1319）", () => {
+  const stored = { ...snap(), location: "本社 大阪府大阪市1-1" };
+  const nameOnly = { ...snap(), location: "本社" };
+  const expected = keepSnapshotLocation(nameOnly, stored);
+  assert.equal(expected.location, "本社 大阪府大阪市1-1");
+  assert.equal(decide(expected, active(stored), stored), "keep");
+  // 新規（控えなし）は期待値のまま。
+  assert.equal(keepSnapshotLocation(nameOnly, null).location, "本社");
 });
