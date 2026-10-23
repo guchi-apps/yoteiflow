@@ -14,12 +14,15 @@ export type TravelSettings = {
   defaultMode: TravelMode;
   /** Googleカレンダーへの書き出し先。null は「予定作成の既定の保存先へ入れる」。 */
   calendarId: string | null;
+  /** 予定前の公共交通を探すとき、予定の開始の何分前に着くか（issue #1331）。検索ごとに変えられる */
+  arriveMarginMinutes: number;
 };
 
 export const DEFAULT_TRAVEL_SETTINGS: TravelSettings = {
   defaultOrigin: null,
   defaultMode: "PUBLIC_TRANSIT",
   calendarId: null,
+  arriveMarginMinutes: 15,
 };
 
 export async function getTravelSettings(userId: string): Promise<TravelSettings> {
@@ -29,6 +32,7 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
       travelDefaultOrigin: true,
       travelDefaultMode: true,
       travelCalendarId: true,
+      travelArriveMarginMinutes: true,
     },
   });
 
@@ -38,6 +42,7 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
     defaultOrigin: setting.travelDefaultOrigin,
     defaultMode: setting.travelDefaultMode,
     calendarId: setting.travelCalendarId,
+    arriveMarginMinutes: setting.travelArriveMarginMinutes,
   };
 }
 
@@ -71,6 +76,7 @@ export async function updateTravelSettings(
       ? { travelDefaultMode: input.defaultMode }
       : {}),
     ...(input.calendarId !== undefined ? { travelCalendarId: input.calendarId } : {}),
+    ...(input.arriveMarginMinutes !== undefined ? { travelArriveMarginMinutes: input.arriveMarginMinutes } : {}),
   };
 
   await db.uiSetting.upsert({

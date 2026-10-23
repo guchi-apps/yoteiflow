@@ -70,6 +70,8 @@ export async function POST(request: Request) {
       note: body.note ?? null,
       estimated: body.estimated ?? false,
       estimateSource: body.estimateSource,
+      searchPurpose: body.searchPurpose,
+      searchMarginMinutes: body.searchMarginMinutes,
       linkedEventId: body.linkedEventId ?? null,
       linkedCalendarId: body.linkedCalendarId ?? null,
     });

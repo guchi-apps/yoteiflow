@@ -813,7 +813,20 @@ export function CalendarShell({
             timeZone,
           ),
           arriveAt: isoToLocalInput(event.start, timeZone),
-          linkedEvent: { id: event.id, calendarId: event.calendarId, startAt: event.start, endAt: event.end },
+          linkedEvent: {
+            id: event.id,
+            calendarId: event.calendarId,
+            startAt: event.start,
+            endAt: event.end,
+            title: event.title,
+            location: event.location,
+          },
+          // 公共交通なら、予定前の移動として周辺の予定から検索条件を提案する（issue #1331）
+          searchPurpose: "BEFORE_EVENT",
+          searchMarginMinutes: travelSettings.arriveMarginMinutes,
+          defaultArriveMargin: travelSettings.arriveMarginMinutes,
+          home: travelSettings.defaultOrigin,
+          autoSuggest: true,
         },
       },
     });

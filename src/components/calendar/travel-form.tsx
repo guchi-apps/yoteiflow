@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
@@ -19,14 +20,23 @@ import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
+import {
+  suggestTransitSearch,
+  transitRouteWarnings,
+  type ContextEvent,
+  type ContextTravel,
+  type TransitSuggestion,
+} from "@/lib/transit-suggest";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
   TRAVEL_MODE_LABELS,
   type EventNotificationOverride,
   type TravelEstimateSource,
+  MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
   type TravelItem,
   type TravelMode,
+  type TravelSearchPurpose,
 } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
@@ -53,7 +63,15 @@ export type TravelDraft = {
    * 元になった予定。移動と予定の紐づけに使う。時刻は持ち物の期限を予定前の移動へ自動で付けるかの
    * 判断に渡す（issue #1137）。「＋」から作った移動には無い。
    */
-  linkedEvent?: { id: string; calendarId: string; startAt: string; endAt: string } | null;
+  linkedEvent?: {
+    id: string;
+    calendarId: string;
+    startAt: string;
+    endAt: string;
+    /** 予定前後の提案に使う予定の名前と場所（issue #1331）。予定の「移動を追加」からだけ渡る */
+    title?: string;
+    location?: string | null;
+  } | null;
   /** 入力欄の上に添える案内（共有拡張から紐づけて作るときの日付・メモの断り。issue #1128）。 */
   notice?: string;
   /** 所要時間の出どころの初期値（共有で受けたAIの目安など。issue #1142）。無ければ手入力。 */
@@ -67,7 +85,18 @@ export type TravelDraft = {
    * 保存済みの値ではなく、出かける前に選んでいた値を引き継ぐときだけ渡す。無ければ移動の保存済みの値。
    */
   notification?: EventNotificationOverride | null;
+  /** 探した意図と余裕分（issue #1331）。予定の「移動を追加」・Yahoo!から戻った下書きで渡る */
+  searchPurpose?: TravelSearchPurpose | null;
+  searchMarginMinutes?: number | null;
+  /** 「予定前」に切り替えたときの余裕分（設定 ▸ 移動の「予定の何分前に着くか」） */
+  defaultArriveMargin?: number;
+  /** 周辺に候補が無いときの出発地・目的地（設定の既定の出発地＝自宅） */
+  home?: string | null;
+  /** 開いた直後に、まだ触っていない欄を提案で埋めるか。予定の「移動を追加」から新しく作るときだけ */
+  autoSuggest?: boolean;
 };
+
+type TransitContext = { events: ContextEvent[]; travels: ContextTravel[]; partial: boolean };
 
 type GoogleRouteStatus =
   | { kind: "idle" }
@@ -103,7 +132,8 @@ export function TravelForm({
   const [arriveAt, setArriveAt] = useState(draft.arriveAt);
   const [note, setNote] = useState(draft.note ?? "");
   // 時刻の基準（利用者が固定する側）。出発基準は到着＝出発＋所要時間、到着基準は出発＝到着−所要時間（issue #1203）
-  const [basis, setBasis] = useState<TimeBasis>("depart");
+  // 予定前の移動として開いたときは、到着を基準にする（issue #1331）
+  const [basis, setBasis] = useState<TimeBasis>(draft.searchPurpose === "BEFORE_EVENT" ? "arrive" : "depart");
   // Googleマップの経路（選んだ候補）の代表時間（分）。未取得・手入力で時間帯を決めたときは null
   const [routeMinutes, setRouteMinutes] = useState<number | null>(null);
   // 利用者が直した項目。あとから届く解析結果で無断で上書きしない
@@ -171,6 +201,146 @@ export function TravelForm({
     touch("basis");
     setBasis(side);
   };
+  // 予定の前後の移動として探す（issue #1331）。対象の予定の名前・場所が分かっているときだけ（予定の「移動を追加」から）
+  const linked = draft.linkedEvent;
+  const suggestTarget =
+    linked && linked.title !== undefined
+      ? {
+          id: linked.id,
+          title: linked.title,
+          start: linked.startAt,
+          end: linked.endAt,
+          allDay: !linked.startAt.includes("T"),
+          location: linked.location ?? null,
+        }
+      : null;
+  const defaultArriveMargin = draft.defaultArriveMargin ?? 15;
+  const [purpose, setPurpose] = useState<TravelSearchPurpose | null>(
+    draft.searchPurpose ?? editing?.searchPurpose ?? null,
+  );
+  const [marginText, setMarginText] = useState(
+    String(draft.searchMarginMinutes ?? editing?.searchMarginMinutes ?? (purpose === "AFTER_EVENT" ? 0 : defaultArriveMargin)),
+  );
+  const marginMinutes = (() => {
+    const value = Number(marginText);
+    return Number.isInteger(value) && value >= 0 && value <= MAX_TRAVEL_SEARCH_MARGIN_MINUTES ? value : null;
+  })();
+  const [transitContext, setTransitContext] = useState<TransitContext | "loading" | "error" | null>(null);
+  const formatClock = (iso: string) => isoToLocalInput(iso, timeZone).slice(11, 16).replace(/^0/, "");
+  const buildSuggestion = (
+    nextPurpose: TravelSearchPurpose,
+    nextMargin: number,
+    context: TransitContext | null,
+  ): TransitSuggestion | null =>
+    suggestTarget
+      ? suggestTransitSearch({
+          target: suggestTarget,
+          purpose: nextPurpose,
+          marginMinutes: nextMargin,
+          events: context?.events ?? [],
+          travels: context?.travels ?? [],
+          home: draft.home ?? null,
+          excludeTravelId: editing?.id ?? null,
+          formatTime: formatClock,
+        })
+      : null;
+  const loadedContext = typeof transitContext === "object" ? transitContext : null;
+  const suggestion =
+    mode === "PUBLIC_TRANSIT" && purpose && marginMinutes !== null
+      ? buildSuggestion(purpose, marginMinutes, loadedContext)
+      : null;
+
+  /**
+   * 提案を入力欄へ入れる。地点は利用者がまだ触っていない欄だけ（届くのが遅れても入力を上書きしない）。
+   * 基準の日時は、予定前後・余裕分を利用者が選び直したとき（force）と、まだ時刻を触っていないときに入れる。
+   */
+  const applySuggestion = (next: TransitSuggestion | null, options: { force?: boolean; places?: boolean } = {}) => {
+    if (!next) return;
+    const touched = touchedRef.current;
+    if (next.at && (options.force || !touched.has("times"))) {
+      const at = isoToLocalInput(next.at, timeZone);
+      const currentMs = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
+      const lengthMs = Number.isFinite(currentMs) && currentMs > 0 ? currentMs : 30 * 60_000;
+      const shift = (local: string, delta: number) => new Date(new Date(`${local}:00Z`).getTime() + delta).toISOString().slice(0, 16);
+      if (next.basis === "arrive") {
+        setArriveAt(at);
+        setDepartAt(shift(at, -lengthMs));
+      } else {
+        setDepartAt(at);
+        setArriveAt(shift(at, lengthMs));
+      }
+    }
+    if (options.force || !touched.has("basis")) setBasis(next.basis);
+    if (!options.places) return;
+    const before = next.purpose === "BEFORE_EVENT";
+    const eventSide = before ? "destination" : "origin";
+    const otherSide = before ? "origin" : "destination";
+    const setSide = (side: "origin" | "destination", value: string) => (side === "origin" ? setOrigin(value) : setDestination(value));
+    if (next.eventPlace && !touched.has(eventSide)) setSide(eventSide, next.eventPlace);
+    if (next.candidates[0] && !touched.has(otherSide)) setSide(otherSide, next.candidates[0].text);
+  };
+
+  // 周辺の予定・移動は、予定の前後として探せる公共交通のときに1回だけ取る（表示中の範囲に依存しない）
+  const contextRequestedRef = useRef(false);
+  const loadTransitContext = (nextPurpose: TravelSearchPurpose | null) => {
+    if (!suggestTarget || contextRequestedRef.current || suggestTarget.allDay) return;
+    contextRequestedRef.current = true;
+    setTransitContext("loading");
+    const query = new URLSearchParams({ start: suggestTarget.start, end: suggestTarget.end });
+    fetch(`/api/travels/context?${query.toString()}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        const context = (await response.json()) as TransitContext;
+        setTransitContext(context);
+        // 開いた直後の提案（新しく作るときだけ）。届くまでに触った欄はそのまま
+        if (draft.autoSuggest && nextPurpose && marginMinutes !== null) {
+          applySuggestion(buildSuggestion(nextPurpose, marginMinutes, context), { places: true });
+        }
+      })
+      .catch(() => {
+        setTransitContext("error");
+        // 周辺が読めなくても、基準の日時と自宅の候補までは入れる
+        if (draft.autoSuggest && nextPurpose && marginMinutes !== null) {
+          applySuggestion(buildSuggestion(nextPurpose, marginMinutes, null), { places: true });
+        }
+      });
+  };
+  useEffect(() => {
+    if (mode === "PUBLIC_TRANSIT") loadTransitContext(purpose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 開いたとき（と公共交通へ切り替えたとき）に1回だけ取る
+  }, [mode]);
+
+  /** 予定前／予定後を選び直す。余裕分はその向きの既定へ戻し、基準の日時を求め直す */
+  const choosePurpose = (next: TravelSearchPurpose) => {
+    const margin = next === "BEFORE_EVENT" ? defaultArriveMargin : 0;
+    setPurpose(next);
+    setMarginText(String(margin));
+    applySuggestion(buildSuggestion(next, margin, loadedContext), { force: true, places: loadedContext !== null });
+  };
+  const changeMargin = (text: string) => {
+    setMarginText(text);
+    const value = Number(text);
+    if (!purpose || text.trim() === "" || !Number.isInteger(value) || value < 0 || value > MAX_TRAVEL_SEARCH_MARGIN_MINUTES) return;
+    applySuggestion(buildSuggestion(purpose, value, loadedContext), { force: true });
+  };
+  const chooseCandidate = (text: string) => {
+    if (purpose === "BEFORE_EVENT") editOrigin(text);
+    else editDestination(text);
+  };
+  const routeWarnings =
+    suggestion && suggestTarget && departAt && arriveAt
+      ? transitRouteWarnings({
+          target: suggestTarget,
+          purpose: suggestion.purpose,
+          marginMinutes: marginMinutes ?? 0,
+          departAt: localInputToIso(departAt, timeZone),
+          arriveAt: localInputToIso(arriveAt, timeZone),
+          nextEvent: suggestion.nextEvent,
+          previousEvent: suggestion.previousEvent,
+          formatTime: formatClock,
+        })
+      : [];
+
   /** アプリ内: 下書きを覚えてからYahoo!アプリを開く。開けなければアプリが同じ条件のWeb版を開く */
   const searchInYahooApp = async () => {
     if (!transitLinks?.app) return;
@@ -186,6 +356,10 @@ export function TravelForm({
       note,
       linkedEvent: draft.linkedEvent ?? null,
       notification,
+      searchPurpose: purpose,
+      searchMarginMinutes: marginMinutes,
+      defaultArriveMargin: draft.defaultArriveMargin,
+      home: draft.home,
     });
     setTransitStatus(
       await openTransitInNativeApp({
@@ -501,6 +675,10 @@ export function TravelForm({
         arriveAt: arriveIso,
         note: note.trim() || null,
         estimateSource,
+        // 予定の前後として探した移動だけ、その意図と余裕分を残す（#1332 の再提案が使う・issue #1331）
+        ...(suggestTarget && mode === "PUBLIC_TRANSIT" && purpose
+          ? { searchPurpose: purpose, searchMarginMinutes: marginMinutes ?? 0 }
+          : {}),
         ...(editing
           ? {}
           : {
@@ -730,6 +908,107 @@ export function TravelForm({
 
         {/* 公共交通は、入れた発着地と基準側の日時でYahoo!乗換案内を開き、選んだ経路を共有で戻す（issue #1330）。
             実際の列車・発着時刻はYahoo!で選んだ結果を採る。ここで決めるのは検索の条件だけ。 */}
+        {/* 予定の前後の移動として、周辺の予定の場所と余裕分から検索条件を提案する（issue #1331）。
+            地点は候補から選ぶか欄で直す。提案は検索の基準で、実際の便はYahoo!で選んだものを採る。 */}
+        {suggestTarget && mode === "PUBLIC_TRANSIT" && (
+          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            <span className="type-label-small text-on-surface-variant">「{suggestTarget.title}」の</span>
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="予定の前後どちらの移動か">
+              {(["BEFORE_EVENT", "AFTER_EVENT"] as const).map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={purpose === option}
+                  variant={purpose === option ? "secondary" : "outline"}
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => choosePurpose(option)}
+                >
+                  {option === "BEFORE_EVENT" ? "予定前（行き）" : "予定後（帰り・次へ）"}
+                </Button>
+              ))}
+            </div>
+            {purpose && (
+              <Input
+                id="travel-search-margin"
+                label={purpose === "BEFORE_EVENT" ? "予定の何分前に着くか（分）" : "予定の終了から何分後に出るか（分）"}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={MAX_TRAVEL_SEARCH_MARGIN_MINUTES}
+                value={marginText}
+                onChange={(e) => changeMargin(e.target.value)}
+              />
+            )}
+            {purpose && marginMinutes === null && (
+              <p className="type-body-small text-destructive">0〜{MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。</p>
+            )}
+            {suggestion?.at && (
+              <p className="type-body-small text-on-surface-variant">
+                {purpose === "BEFORE_EVENT"
+                  ? `おすすめの検索: ${formatClock(suggestion.at)} 到着（開始 ${formatClock(suggestTarget.start)} の${marginMinutes}分前）`
+                  : `おすすめの検索: ${formatClock(suggestion.at)} 出発（終了 ${formatClock(suggestTarget.end)}${marginMinutes ? ` の${marginMinutes}分後` : ""}）`}
+              </p>
+            )}
+            {suggestion?.nextEvent && (
+              <p className="type-body-small text-on-surface-variant">
+                次の予定「{suggestion.nextEvent.title}」は {formatClock(suggestion.nextEvent.start)} 開始です。
+              </p>
+            )}
+            {suggestion && suggestion.candidates.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="type-label-small text-on-surface-variant">
+                  {purpose === "BEFORE_EVENT" ? "出発地の候補" : "目的地の候補"}
+                </span>
+                <ul className="flex flex-col gap-1">
+                  {suggestion.candidates.map((candidate) => {
+                    const selected = (purpose === "BEFORE_EVENT" ? origin : destination).trim() === candidate.text;
+                    return (
+                      <li key={candidate.text}>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => chooseCandidate(candidate.text)}
+                          className={`flex w-full min-w-0 flex-col rounded-lg border px-3 py-1.5 text-left ${selected ? "border-primary bg-primary/10" : "border-outline-variant"}`}
+                        >
+                          <span className="type-label-large truncate">{placeDisplayName(candidate.text)}</span>
+                          <span className="type-body-small text-on-surface-variant">{candidate.reason}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {transitContext === "loading" && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+                <LoaderCircle className="size-4 animate-spin" />
+                前後の予定を確かめています…
+              </p>
+            )}
+            {transitContext === "error" && (
+              <p className="text-xs text-muted-foreground" role="status">
+                前後の予定を読めなかったため、自宅だけを候補にしています。地点を確かめてください。
+              </p>
+            )}
+            {loadedContext?.partial && (
+              <p className="text-xs text-muted-foreground">一部のカレンダーを読めなかったため、候補が欠けていることがあります。</p>
+            )}
+            {suggestion?.notes.map((note) => (
+              <p key={note} className="type-body-small text-on-surface-variant">
+                {note}
+              </p>
+            ))}
+            {routeWarnings.map((warning) => (
+              <p key={warning} className="flex items-start gap-1.5 type-body-small text-destructive" role="alert">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                {warning}
+              </p>
+            ))}
+          </div>
+        )}
+
         {transitCondition && (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
             <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Yahoo!乗換案内で探す基準">

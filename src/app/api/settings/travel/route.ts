@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { updateTravelSettings } from "@/services/travel/settings";
-import { isTravelMode } from "@/types/calendar";
+import { isTravelMode, MAX_TRAVEL_SEARCH_MARGIN_MINUTES } from "@/types/calendar";
 
 type Body = {
   defaultOrigin?: string | null;
   defaultMode?: string;
   calendarId?: string | null;
+  arriveMarginMinutes?: number;
 };
 
 /**
@@ -30,12 +31,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "calendarId must be a string or null" }, { status: 400 });
   }
 
+  if (
+    body.arriveMarginMinutes !== undefined &&
+    (!Number.isInteger(body.arriveMarginMinutes) ||
+      body.arriveMarginMinutes < 0 ||
+      body.arriveMarginMinutes > MAX_TRAVEL_SEARCH_MARGIN_MINUTES)
+  ) {
+    return NextResponse.json(
+      { error: "invalid_margin", message: `0〜${MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。` },
+      { status: 400 },
+    );
+  }
+
   const result = await updateTravelSettings(userId, {
     ...(body.defaultOrigin !== undefined ? { defaultOrigin: body.defaultOrigin } : {}),
     ...(body.defaultMode !== undefined && isTravelMode(body.defaultMode)
       ? { defaultMode: body.defaultMode }
       : {}),
     ...(body.calendarId !== undefined ? { calendarId: body.calendarId } : {}),
+    ...(body.arriveMarginMinutes !== undefined ? { arriveMarginMinutes: body.arriveMarginMinutes } : {}),
   });
 
   if (!result.ok) {

@@ -306,6 +306,20 @@ export function isTravelMode(value: unknown): value is TravelMode {
 }
 
 /**
+ * 移動を探したときの意図（issue #1331・Prismaの enum TravelSearchPurpose と同じ値）。
+ * 予定の前に着くための移動か、予定のあとに出る移動か。往路・復路（returnLeg）とは別物。
+ */
+export const TRAVEL_SEARCH_PURPOSES = ["BEFORE_EVENT", "AFTER_EVENT"] as const;
+export type TravelSearchPurpose = (typeof TRAVEL_SEARCH_PURPOSES)[number];
+
+export function isTravelSearchPurpose(value: unknown): value is TravelSearchPurpose {
+  return typeof value === "string" && (TRAVEL_SEARCH_PURPOSES as readonly string[]).includes(value);
+}
+
+/** 余裕分の上限（分）。予定前の到着・予定後の出発をずらす幅で、3時間を超える値は打ち間違いとみなす。 */
+export const MAX_TRAVEL_SEARCH_MARGIN_MINUTES = 180;
+
+/**
  * 所要時間の出どころ。Prismaの TravelEstimateSource と同じ並びにする。
  *
  * TRANSIT は旧trainroute経由で引いた経路検索の結果（撤去済み。issue #591）。既存の移動に
@@ -356,6 +370,12 @@ export type TravelItem = {
   linkedEventId: string | null;
   /** @deprecated 互換用。表示・判定には使わず、予定との前後は日時から決める（issue #1137）。 */
   returnLeg: boolean;
+  /**
+   * 探したときの意図と余裕分（issue #1331）。予定変更後の再提案（#1332）が使う。null＝不明（旧データ・手入力）。
+   * Service Workerに残る古い応答には無いため省略可能にする。
+   */
+  searchPurpose?: TravelSearchPurpose | null;
+  searchMarginMinutes?: number | null;
   /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
   exported: boolean;
   /**

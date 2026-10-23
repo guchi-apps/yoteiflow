@@ -264,6 +264,8 @@ model UiSetting {
   travelRoundTrip     Boolean    @default(true)
   // 移動をGoogle Calendarへ書き出す先。未設定なら予定作成の既定の保存先へ入れる。
   travelCalendarId    String?
+  // 予定前の公共交通を探すとき、予定の開始の何分前に着くか（issue #1331）。検索ごとに変えられる
+  travelArriveMarginMinutes Int @default(15)
 
   // 勤務記録から勤務予定・通勤/出張移動を自動生成する設定（docs/spec.md §46）。
   // 既存の利用者の予定が突然増えないよう、既定はオフ（オプトイン）。
@@ -384,6 +386,13 @@ enum TravelEstimateSource {
   GOOGLE_MAPS
 }
 
+// 移動を探したときの意図（issue #1331）。予定の前に着くための移動か、予定のあとに出る移動か。
+// 往路・復路（returnLeg）とは別物で、保存した移動の向きは決めない（#1137）。予定変更後の再提案（#1332）が使う。
+enum TravelSearchPurpose {
+  BEFORE_EVENT
+  AFTER_EVENT
+}
+
 model TravelPlan {
   id     String @id @default(cuid())
   userId String
@@ -399,6 +408,10 @@ model TravelPlan {
 
   note           String?              @db.Text
   estimateSource TravelEstimateSource @default(MANUAL)
+
+  // 検索したときの意図と余裕分（issue #1331）。実際に選んだ便の早着とは区別する。null＝不明（旧データ・手入力）
+  searchPurpose       TravelSearchPurpose?
+  searchMarginMinutes Int?
 
   // 元になった予定。往路・復路の2件が同じ予定を指す。予定側から移動の有無を引くために持つ。
   linkedEventId    String?
