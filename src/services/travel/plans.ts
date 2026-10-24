@@ -6,9 +6,12 @@ import { parseVia, serializeVia } from "@/lib/travel-via";
 import {
   isTravelEstimateSource,
   isTravelMode,
+  isTravelSearchPurpose,
+  MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
   type TravelEstimateSource,
   type TravelItem,
   type TravelMode,
+  type TravelSearchPurpose,
 } from "@/types/calendar";
 
 import {
@@ -51,6 +54,9 @@ export type TravelWriteInput = {
    * 日時から決める（issue #1137）。通常の登録は省略（false）。
    */
   returnLeg?: boolean;
+  /** 探したときの意図と余裕分（issue #1331）。項目ごと省くと触らない（編集で消さない） */
+  searchPurpose?: TravelSearchPurpose | null;
+  searchMarginMinutes?: number | null;
 };
 
 /**
@@ -64,6 +70,15 @@ export function validateTravelInput(body: Partial<TravelWriteInput>): string | n
   if (!body.destination?.trim()) return "目的地を入力してください。";
   if (!isTravelMode(body.mode)) return "交通手段を選んでください。";
   if (!body.departAt || !body.arriveAt) return "出発時刻と到着時刻を入力してください。";
+  if (body.searchPurpose != null && !isTravelSearchPurpose(body.searchPurpose)) return "探した意図の値が正しくありません。";
+  if (
+    body.searchMarginMinutes != null &&
+    (!Number.isInteger(body.searchMarginMinutes) ||
+      body.searchMarginMinutes < 0 ||
+      body.searchMarginMinutes > MAX_TRAVEL_SEARCH_MARGIN_MINUTES)
+  ) {
+    return `余裕分は0〜${MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。`;
+  }
   return null;
 }
 
@@ -99,6 +114,8 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
     estimateSource: plan.estimateSource,
     linkedEventId: plan.linkedEventId,
     returnLeg: plan.returnLeg,
+    searchPurpose: plan.searchPurpose,
+    searchMarginMinutes: plan.searchMarginMinutes,
     exported: Boolean(plan.googleEventId),
     color,
   };
@@ -293,6 +310,9 @@ function toWriteData(input: TravelWriteInput) {
     // setTravelLink の入口だけが行う。
     ...(input.linkedEventId !== undefined ? { linkedEventId: input.linkedEventId } : {}),
     ...(input.linkedCalendarId !== undefined ? { linkedCalendarId: input.linkedCalendarId } : {}),
+    // 探した意図も、渡されなかったときは触らない（意図を知らない経路の編集で消さない・issue #1331）
+    ...(input.searchPurpose !== undefined ? { searchPurpose: input.searchPurpose } : {}),
+    ...(input.searchMarginMinutes !== undefined ? { searchMarginMinutes: input.searchMarginMinutes } : {}),
   };
 }
 

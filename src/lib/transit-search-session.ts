@@ -12,7 +12,7 @@
  * 別の日の共有を黙ってこの下書きへの反映に化けさせない。保持するのは直近の1件だけ。
  */
 
-import type { EventNotificationOverride, TravelItem, TravelMode } from "@/types/calendar";
+import type { EventNotificationOverride, TravelItem, TravelMode, TravelSearchPurpose } from "@/types/calendar";
 
 const STORAGE_KEY = "dayspan_transit_search_session";
 export const TRANSIT_SEARCH_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -29,8 +29,20 @@ export type TransitSearchDraft = {
   departAt: string;
   arriveAt: string;
   note?: string;
-  linkedEvent?: { id: string; calendarId: string; startAt: string; endAt: string } | null;
+  linkedEvent?: {
+    id: string;
+    calendarId: string;
+    startAt: string;
+    endAt: string;
+    title?: string;
+    location?: string | null;
+  } | null;
   notification?: EventNotificationOverride | null;
+  /** 予定の前後として探した意図と余裕分（issue #1331）。戻ってきた確認画面で注意を出すのに使う */
+  searchPurpose?: TravelSearchPurpose | null;
+  searchMarginMinutes?: number | null;
+  defaultArriveMargin?: number;
+  home?: string | null;
 };
 
 export type TransitSearchSession = {

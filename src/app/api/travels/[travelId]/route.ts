@@ -35,6 +35,8 @@ export async function PATCH(
       note: body.note ?? null,
       estimated: body.estimated ?? false,
       estimateSource: body.estimateSource,
+      searchPurpose: body.searchPurpose,
+      searchMarginMinutes: body.searchMarginMinutes,
     });
 
     // 他人の移動を指されても解決できないよう、取得は必ずuserIdで絞っている。

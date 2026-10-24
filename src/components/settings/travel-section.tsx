@@ -5,6 +5,7 @@ import { useState } from "react";
 import { LocationInput } from "@/components/calendar/location-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -16,7 +17,12 @@ import {
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TravelSettings } from "@/services/travel/settings";
-import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type WritableCalendar } from "@/types/calendar";
+import {
+  MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
+  TRAVEL_MODES,
+  TRAVEL_MODE_LABELS,
+  type WritableCalendar,
+} from "@/types/calendar";
 
 /** 書き出し先を選ぶ欄で「指定しない」を表す値。Radixのセレクトは空文字を値にできない。 */
 const DEFAULT_CALENDAR_VALUE = "__default__";
@@ -41,6 +47,17 @@ export function TravelSection({
   // 出発地は入力中の文字列を持つ。保存した値（value.defaultOrigin）とは別に持たないと、
   // 送信中に欄が巻き戻る。
   const [origin, setOrigin] = useState(settings.defaultOrigin ?? "");
+  // 余裕分も入力中の文字列を持ち、欄から離れたときに保存する（打っている途中を送らない）
+  const [margin, setMargin] = useState(String(settings.arriveMarginMinutes));
+  const commitMargin = () => {
+    const next = Number(margin);
+    if (!Number.isInteger(next) || next < 0 || next > MAX_TRAVEL_SEARCH_MARGIN_MINUTES) {
+      setError(`予定の何分前に着くかは、0〜${MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。`);
+      setMargin(String(value.arriveMarginMinutes));
+      return;
+    }
+    if (next !== value.arriveMarginMinutes) void send({ arriveMarginMinutes: next });
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +156,23 @@ export function TravelSection({
               </Button>
             ))}
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Input
+            id="travel-arrive-margin"
+            label="予定の何分前に着くか（分）"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={MAX_TRAVEL_SEARCH_MARGIN_MINUTES}
+            value={margin}
+            onChange={(e) => setMargin(e.target.value)}
+            onBlur={commitMargin}
+          />
+          <p className="type-body-small text-on-surface-variant">
+            予定の前の電車・バスを探すとき、予定の開始からこの分だけ早い到着時刻で検索します。移動の入力で、検索ごとに変えられます。
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
