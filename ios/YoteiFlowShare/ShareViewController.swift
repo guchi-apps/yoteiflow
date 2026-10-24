@@ -42,6 +42,11 @@ final class ShareViewController: UIViewController {
             if let item = self?.model.item { self?.handOffToApp(item) }
         }
 
+        model.onRegister = { [weak self] in
+            guard let self, let item = self.model.item, self.model.effectiveRegistrable else { return }
+            Task { await self.registerRoute(item) }
+        }
+
         model.onManual = { [weak self] in
             if let item = self?.model.item { self?.handOffToApp(item, manual: true) }
         }
@@ -80,6 +85,7 @@ final class ShareViewController: UIViewController {
         }
         model.item = item
         model.timeZone = response["timeZone"] as? String
+        model.transitSession = TransitSearchSession.current()
         model.phase = .ready
     }
 
@@ -88,6 +94,11 @@ final class ShareViewController: UIViewController {
     private func primaryAction() {
         guard let item = model.item else { return }
         if model.hasCandidateChoice && model.selectedCandidate == nil { return }
+        // 移動の入力から検索して戻ってきた経路は、その下書きへ反映する（本体で確かめてから保存・#1330）
+        if model.canApplyToSession, let session = model.transitSession {
+            handOffToApp(item, link: true, session: session.id)
+            return
+        }
         if model.effectiveRegistrable {
             Task { await registerRoute(item) }
         } else {
@@ -127,7 +138,7 @@ final class ShareViewController: UIViewController {
     }
 
     /// 本体アプリを開いて入力を引き継ぐ。開けないときはURLをコピーして案内する
-    private func handOffToApp(_ item: SharedImportItem, link: Bool = false, manual: Bool = false) {
+    private func handOffToApp(_ item: SharedImportItem, link: Bool = false, manual: Bool = false, session: String? = nil) {
         var query: [String: String] = [:]
         if item.isRoute {
             query["newTravel"] = "1"
@@ -152,6 +163,7 @@ final class ShareViewController: UIViewController {
                 query["link"] = "1"
                 query["departAt"] = startAt
                 query["arriveAt"] = endAt
+                query["session"] = session
                 // 経路詳細は通常の登録と同じ生成規則のメモ（preview の detail）を丸ごと渡す。切り捨てない
                 if let note = item.detail, !note.isEmpty {
                     guard note.count <= SharedConfig.handoffNoteLimit else {
@@ -173,6 +185,8 @@ final class ShareViewController: UIViewController {
 
         openHostApp(url) { [weak self] opened in
             if opened {
+                // 同じ下書きへ2回反映しない（本体もlocalStorageの下書きを取り出したら消す）
+                if session != nil { TransitSearchSession.clear() }
                 self?.complete()
             } else {
                 UIPasteboard.general.url = item.sourceUrl.flatMap(URL.init(string:))

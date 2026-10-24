@@ -78,11 +78,3 @@ export function shiftAmountLabel(deltaMs: number): string {
   const parts = [days ? `${days}日` : "", hours ? `${hours}時間` : "", minutes ? `${minutes}分` : ""].join("");
   return `${parts || "0分"}${deltaMs < 0 ? "まえ" : "あと"}`;
 }
-
-/**
- * Yahoo!乗換案内で探すときの基準。予定後の移動は「予定の終わりから出る」ので出発時刻、
- * それ以外は「予定の開始までに着く」ので到着時刻で探す。
- */
-export function researchBasis(relation: TravelRelation): "depart" | "arrive" {
-  return relation === "after" ? "depart" : "arrive";
-}

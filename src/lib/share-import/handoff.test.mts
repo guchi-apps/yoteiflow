@@ -19,7 +19,7 @@ test("範囲外の座標・http・長すぎる文字列は捨てる", () => {
 test("移動の引き継ぎ", () => {
   assert.deepEqual(parseShareHandoff("?newTravel=1&origin=A&destination=B&mode=WALK&minutes=12"), {
     kind: "travel", origin: "A", destination: "B", via: [], mode: "WALK", minutes: 12, estimated: false, url: null, resolve: false,
-    route: null, link: null,
+    route: null, link: null, session: null,
   });
   // resolve=1 は元のGoogleマップURLがあるときだけ有効（issue #1160）
   const base = "?newTravel=1&origin=A&destination=B&mode=CAR&resolve=1";
@@ -102,4 +102,16 @@ test("選んだ経路（名前・距離）を引き継ぎ、無ければ null（
 test("経由地は改行区切りの via で受け、順番を保つ（issue #1197）", () => {
   const handoff = parseShareHandoff("?newTravel=1&origin=A&destination=D&mode=CAR&via=B%0AC");
   assert.deepEqual(handoff?.kind === "travel" ? handoff.via : null, ["B", "C"]);
+});
+
+test("session は発着時刻つきの紐づけのときだけ受け、形の違う値は捨てる（issue #1330）", () => {
+  const base = "?newTravel=1&origin=A&destination=B&mode=PUBLIC_TRANSIT";
+  const times = "&link=1&departAt=2026-10-06T00:00:00.000Z&arriveAt=2026-10-06T00:30:00.000Z";
+  const id = "0b8f3c2e-1111-4222-8333-944445555666";
+  const ok = parseShareHandoff(`${base}${times}&session=${id}`);
+  assert.equal(ok?.kind === "travel" ? ok.session : "x", id);
+  const noLink = parseShareHandoff(`${base}&session=${id}`);
+  assert.equal(noLink?.kind === "travel" ? noLink.session : "x", null);
+  const bad = parseShareHandoff(`${base}${times}&session=${encodeURIComponent("<script>")}`);
+  assert.equal(bad?.kind === "travel" ? bad.session : "x", null);
 });

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { planLinkedTravelShifts, researchBasis, shiftAmountLabel } from "@/lib/travel-follow";
-import { matchReplacePending } from "@/lib/travel-replace-pending";
+import { planLinkedTravelShifts, shiftAmountLabel } from "@/lib/travel-follow";
 import { yahooTransitLink } from "@/lib/yahoo-transit-link";
 
 const previous = { start: "2026-10-10T10:00:00.000Z", end: "2026-10-10T11:00:00.000Z", allDay: false };
@@ -46,29 +45,11 @@ describe("planLinkedTravelShifts", () => {
   });
 });
 
-describe("shiftAmountLabel / researchBasis", () => {
+describe("shiftAmountLabel", () => {
   it("ずれの量を日本語で言う", () => {
     assert.equal(shiftAmountLabel(30 * 60_000), "30分あと");
     assert.equal(shiftAmountLabel(-75 * 60_000), "1時間15分まえ");
     assert.equal(shiftAmountLabel(24 * 60 * 60_000), "1日あと");
-  });
-  it("予定後の移動だけ出発時刻で探す", () => {
-    assert.equal(researchBasis("after"), "depart");
-    assert.equal(researchBasis("before"), "arrive");
-    assert.equal(researchBasis("related"), "arrive");
-  });
-});
-
-describe("matchReplacePending", () => {
-  const raw = JSON.stringify({ eventId: "e", travel: { id: "t" }, expiresAt: 1000 });
-  it("同じ予定で期限内なら返す", () => {
-    assert.equal(matchReplacePending(raw, "e", 999)?.travel.id, "t");
-  });
-  it("別の予定・期限切れ・壊れた値は返さない", () => {
-    assert.equal(matchReplacePending(raw, "other", 999), null);
-    assert.equal(matchReplacePending(raw, "e", 1000), null);
-    assert.equal(matchReplacePending("{", "e", 0), null);
-    assert.equal(matchReplacePending(null, "e", 0), null);
   });
 });
 

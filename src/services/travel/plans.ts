@@ -6,9 +6,12 @@ import { parseVia, serializeVia } from "@/lib/travel-via";
 import {
   isTravelEstimateSource,
   isTravelMode,
+  isTravelSearchPurpose,
+  MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
   type TravelEstimateSource,
   type TravelItem,
   type TravelMode,
+  type TravelSearchPurpose,
 } from "@/types/calendar";
 
 import {
@@ -51,7 +54,22 @@ export type TravelWriteInput = {
    * 日時から決める（issue #1137）。通常の登録は省略（false）。
    */
   returnLeg?: boolean;
+  /** 探したときの意図と余裕分（issue #1331）。項目ごと省くと触らない（編集で消さない） */
+  searchPurpose?: TravelSearchPurpose | null;
+  searchMarginMinutes?: number | null;
+  /**
+   * 探したときの紐づく予定の開始・終了・場所（issue #1332）。予定が後で変わったかを比べる相手。
+   * 項目ごと省くと触らない。渡したときは「今は変更しない」の印も消す（新しい検索で見直したため）。
+   */
+  searchEvent?: { start: string; end: string; location: string | null } | null;
 };
+
+/** 共有から戻した経路で元の移動を更新しようとしたが、その間に紐づけが外れていた（issue #1332）。 */
+export class TravelLinkChangedError extends Error {
+  constructor() {
+    super("元の移動の紐づけが変わっています。");
+  }
+}
 
 /**
  * 入力の検証。作成・更新のどちらの経路でも同じ条件で断る。
@@ -64,6 +82,27 @@ export function validateTravelInput(body: Partial<TravelWriteInput>): string | n
   if (!body.destination?.trim()) return "目的地を入力してください。";
   if (!isTravelMode(body.mode)) return "交通手段を選んでください。";
   if (!body.departAt || !body.arriveAt) return "出発時刻と到着時刻を入力してください。";
+  if (body.searchPurpose != null && !isTravelSearchPurpose(body.searchPurpose)) return "探した意図の値が正しくありません。";
+  if (
+    body.searchMarginMinutes != null &&
+    (!Number.isInteger(body.searchMarginMinutes) ||
+      body.searchMarginMinutes < 0 ||
+      body.searchMarginMinutes > MAX_TRAVEL_SEARCH_MARGIN_MINUTES)
+  ) {
+    return `余裕分は0〜${MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。`;
+  }
+  if (body.searchEvent != null) {
+    const { start, end, location } = body.searchEvent;
+    if (
+      typeof start !== "string" ||
+      typeof end !== "string" ||
+      Number.isNaN(Date.parse(start)) ||
+      Number.isNaN(Date.parse(end)) ||
+      (location != null && typeof location !== "string")
+    ) {
+      return "探したときの予定の値が正しくありません。";
+    }
+  }
   return null;
 }
 
@@ -99,6 +138,17 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
     estimateSource: plan.estimateSource,
     linkedEventId: plan.linkedEventId,
     returnLeg: plan.returnLeg,
+    searchPurpose: plan.searchPurpose,
+    searchMarginMinutes: plan.searchMarginMinutes,
+    searchEvent:
+      plan.searchEventStart && plan.searchEventEnd
+        ? {
+            start: plan.searchEventStart.toISOString(),
+            end: plan.searchEventEnd.toISOString(),
+            location: plan.searchEventLocation,
+          }
+        : null,
+    followDismissedKey: plan.followDismissedKey,
     exported: Boolean(plan.googleEventId),
     color,
   };
@@ -186,9 +236,12 @@ export async function updateTravel(
   userId: string,
   travelId: string,
   input: TravelWriteInput,
+  /** 共有から戻した経路での更新。紐づく予定が変わっていたら書かずに断る（issue #1332） */
+  expect?: { linkedEventId: string },
 ): Promise<TravelSaveResult | null> {
   const existing = await getTravel(userId, travelId);
   if (!existing) return null;
+  if (expect && existing.linkedEventId !== expect.linkedEventId) throw new TravelLinkChangedError();
 
   const updated = await db.travelPlan.update({
     where: { id: existing.id },
@@ -220,6 +273,18 @@ export async function updateTravel(
     ],
     exports: [exported],
   };
+}
+
+/**
+ * 「今は変更しない」を押した変更の印を残す（issue #1332）。移動の中身・Googleの予定は触らない。
+ * 同じ変更（印が同じ）では再提案を出さず、予定がさらに変われば印が変わってまた出る。
+ */
+export async function dismissTravelFollow(userId: string, travelId: string, key: string): Promise<boolean> {
+  const result = await db.travelPlan.updateMany({
+    where: { id: travelId, userId },
+    data: { followDismissedKey: key.slice(0, 512) },
+  });
+  return result.count > 0;
 }
 
 /**
@@ -293,6 +358,17 @@ function toWriteData(input: TravelWriteInput) {
     // setTravelLink の入口だけが行う。
     ...(input.linkedEventId !== undefined ? { linkedEventId: input.linkedEventId } : {}),
     ...(input.linkedCalendarId !== undefined ? { linkedCalendarId: input.linkedCalendarId } : {}),
+    // 探した意図も、渡されなかったときは触らない（意図を知らない経路の編集で消さない・issue #1331）
+    ...(input.searchPurpose !== undefined ? { searchPurpose: input.searchPurpose } : {}),
+    ...(input.searchMarginMinutes !== undefined ? { searchMarginMinutes: input.searchMarginMinutes } : {}),
+    ...(input.searchEvent !== undefined
+      ? {
+          searchEventStart: input.searchEvent ? new Date(input.searchEvent.start) : null,
+          searchEventEnd: input.searchEvent ? new Date(input.searchEvent.end) : null,
+          searchEventLocation: input.searchEvent?.location?.trim() || null,
+          followDismissedKey: null,
+        }
+      : {}),
   };
 }
 

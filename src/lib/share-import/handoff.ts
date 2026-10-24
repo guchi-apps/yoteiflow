@@ -7,6 +7,7 @@
  * （`SharedConfig.handoffURL`）と許可キーを揃えること（`check-consistency.mjs`が照合する）。
  */
 
+import { isTransitSessionId } from "@/lib/transit-search-session";
 import { normalizeVia } from "@/lib/travel-via";
 import { isTravelMode, type TravelMode } from "@/types/calendar";
 
@@ -35,6 +36,11 @@ export type ShareHandoff =
       route: { name: string; distance: string | null } | null;
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
       link: { departAt: string; arriveAt: string; note: string } | null;
+      /**
+       * 移動の入力から「Yahoo!乗換案内で検索」したときの下書きのID（issue #1330）。共有拡張の
+       * 「『…』に反映」から戻ったときだけ付く。`link`（発着時刻）があるときに限る。
+       */
+      session: string | null;
     };
 
 function text(value: string | null): string | null {
@@ -129,6 +135,7 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
       resolve: params.get("resolve") === "1" && googleMapsUrl(params.get("url")) !== null && link === null,
       link,
       route: routeName ? { name: routeName, distance: text(params.get("routeDistance")) } : null,
+      session: link && isTransitSessionId(params.get("session")) ? params.get("session") : null,
     };
   }
   return null;
@@ -142,7 +149,7 @@ export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "plac
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
-export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "via", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance"] as const;
+export const HANDOFF_QUERY_KEYS = ["newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "via", "mode", "minutes", "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance", "session"] as const;
 
 /** 共有の引き継ぎ（未処理）がURLに載っているか。URL同期などが先にクエリを消さないための判定（issue #1143）。 */
 export function hasHandoffQuery(search: string): boolean {

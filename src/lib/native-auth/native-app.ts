@@ -46,3 +46,9 @@ export const NATIVE_HEALTH_BRIDGE = "yoteiflowHealth";
  * `ios/YoteiFlow/WebViewModel.swift` の `liveActivityBridgeName` と揃える（check-consistency.mjs が照合する）。
  */
 export const NATIVE_LIVE_ACTIVITY_BRIDGE = "yoteiflowLiveActivity";
+
+/**
+ * 移動の入力からYahoo!乗換案内アプリを開き、共有で戻すまでの下書きを共有拡張へ知らせるブリッジ（issue #1330）。
+ * `ios/YoteiFlow/WebViewModel.swift` の `transitBridgeName` と揃える（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_TRANSIT_BRIDGE = "yoteiflowTransit";

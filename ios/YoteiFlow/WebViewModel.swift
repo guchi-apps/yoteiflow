@@ -68,6 +68,11 @@ final class WebViewModel: NSObject, ObservableObject {
             HealthBridgeHandler(model: self), contentWorld: .page, name: Self.healthBridgeName
         )
 
+        // 移動の入力からYahoo!乗換案内アプリを開き、共有で戻す下書きを拡張へ知らせるブリッジ（#1330）
+        webView.configuration.userContentController.addScriptMessageHandler(
+            TransitBridgeHandler(), contentWorld: .page, name: Self.transitBridgeName
+        )
+
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -325,6 +330,8 @@ private final class PushBridgeHandler: NSObject, WKScriptMessageHandlerWithReply
 extension WebViewModel {
     /// Web側の `NATIVE_HEALTH_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
     static let healthBridgeName = "yoteiflowHealth"
+    /// Web側の `NATIVE_TRANSIT_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える（#1330・TransitBridge.swift）
+    static let transitBridgeName = "yoteiflowTransit"
 
     /// 画面（Web）からの `sync`。返事は必ず返す（画面が固まらないように）
     fileprivate func handleHealthBridge(_ body: Any) async -> [String: Any] {
