@@ -217,8 +217,9 @@ export function attachTaskLinks(
  * 「使用」がオフのカレンダーでも取得する。紐づけはGoogleへ書き込まないため、
  * resolveGoogleAccountForCalendar() の書き込み判定を通す必要が無い。見たいだけの
  * カレンダー（共有された予定表）に対しても、その予定に合わせたタスクは置ける。
+ * 予定変更後の再提案で、戻した経路を採用する前に予定の今の状態を確かめるのにも使う（issue #1332）。
  */
-async function fetchLinkedEvent(
+export async function fetchLinkedEvent(
   userId: string,
   calendarId: string,
   eventId: string,

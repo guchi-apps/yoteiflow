@@ -49,6 +49,7 @@ describe("applySharedRoute", () => {
     assert.equal(draft.linkedEvent?.id, "e1");
     assert.deepEqual(draft.notification, { enabled: true, leadMinutes: [10] });
     assert.equal(draft.travel, undefined);
+    assert.equal(draft.adoptCheck, false);
     assert.match(draft.notice, /確かめてから保存/);
   });
 
@@ -56,6 +57,8 @@ describe("applySharedRoute", () => {
     const travel = { id: "t1", title: "自宅→本社" } as TravelItem;
     const draft = applySharedRoute({ ...session, draft: { ...session.draft, travel } }, route);
     assert.equal(draft.travel?.id, "t1");
+    // 紐づく予定のある元の移動の更新は、保存前に予定の今の状態と紐づけを確かめる（issue #1332）
+    assert.equal(draft.adoptCheck, true);
     assert.match(draft.notice, /移動「自宅→本社」を更新します/);
   });
 

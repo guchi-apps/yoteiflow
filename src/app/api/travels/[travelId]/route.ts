@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import {
   deleteTravel,
+  TravelLinkChangedError,
   updateTravel,
   validateTravelInput,
   type TravelWriteInput,
@@ -17,7 +18,8 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { travelId } = await params;
-  const body = (await request.json()) as Partial<TravelWriteInput>;
+  const body = (await request.json()) as Partial<TravelWriteInput> & { expectLinkedEventId?: unknown };
+  const expectLinkedEventId = typeof body.expectLinkedEventId === "string" ? body.expectLinkedEventId : null;
 
   const invalid = validateTravelInput(body);
   if (invalid) {
@@ -37,13 +39,17 @@ export async function PATCH(
       estimateSource: body.estimateSource,
       searchPurpose: body.searchPurpose,
       searchMarginMinutes: body.searchMarginMinutes,
-    });
+      searchEvent: body.searchEvent,
+    }, expectLinkedEventId ? { linkedEventId: expectLinkedEventId } : undefined);
 
     // 他人の移動を指されても解決できないよう、取得は必ずuserIdで絞っている。
     if (!result) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof TravelLinkChangedError) {
+      return NextResponse.json({ error: "link_changed", message: error.message }, { status: 409 });
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] travel update failed:", message);
     return NextResponse.json({ error: "travel_update_failed", message }, { status: 400 });

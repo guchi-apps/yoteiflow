@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Keyboard,
   Plus,
+  TrainFront,
 } from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
@@ -48,8 +49,8 @@ import {
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
-import { planLinkedTravelShifts, type FollowEventTimes, type TravelShift } from "@/lib/travel-follow";
-import { takeReplacePending } from "@/lib/travel-replace-pending";
+import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
+import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
 import { applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
@@ -76,7 +77,8 @@ import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
-import { LinkedTravelShiftDialog } from "./linked-travel-shift-dialog";
+import { LinkedTravelShiftDialog, type TransitFollowItem } from "./linked-travel-shift-dialog";
+import { useNowIso } from "./use-clock";
 import { ContinuousMonthView } from "./continuous-month-view";
 import {
   DEFAULT_START_MINUTES,
@@ -467,14 +469,10 @@ export function CalendarShell({
     ]
       .filter(Boolean)
       .join("");
-    // 予定を動かしたあとの「Yahoo!乗換案内で調べ直す」から戻ってきた共有なら、新しい移動を作らず
-    // 元の移動の編集として開く（issue #1301）。紐づくタスク・持ち物の期限・通知設定を残すため。
-    const replacing = takeReplacePending(item.eventId);
     setItemDialog({
       initialKind: "travel",
       drafts: {
         travel: {
-          ...(replacing ? { travel: replacing.travel } : {}),
           origin: link.origin,
           destination: link.destination,
           mode: link.mode,
@@ -482,9 +480,7 @@ export function CalendarShell({
           arriveAt: times.arriveAt,
           note: link.note || undefined,
           linkedEvent: { id: item.eventId, calendarId: item.calendarId, startAt: item.start, endAt: item.end },
-          notice: replacing
-            ? [`調べ直した経路で、元の移動「${replacing.travel.title}」を置き換えます。`, notice].filter(Boolean).join("")
-            : notice,
+          notice,
         },
       },
     });
@@ -1325,6 +1321,7 @@ export function CalendarShell({
         onOpenEventForm={openEventForm}
         onOpenTaskForm={openTaskForm}
         travelCalendarId={travelSettings.calendarId}
+        travelSettings={travelSettings}
         onOpenStandaloneTravel={openStandaloneTravel}
         onDragCommit={commitDrag}
         onAllDayDragCommit={commitAllDayDrag}
@@ -1437,6 +1434,7 @@ function CalendarBody({
   onOpenEventForm,
   onOpenTaskForm,
   travelCalendarId,
+  travelSettings,
   onOpenStandaloneTravel,
   onDragCommit,
   onAllDayDragCommit,
@@ -1530,6 +1528,8 @@ function CalendarBody({
   onOpenEventForm: (draft: EventDraft) => void;
   onOpenTaskForm: (draft: TaskDraft) => void;
   travelCalendarId: string | null;
+  /** 予定変更後に公共交通の検索条件を出し直すときの既定の出発地・余裕分（issue #1332） */
+  travelSettings: TravelSettings;
   onOpenStandaloneTravel: (range: { start: string; end: string }) => void;
   /** 保存できたら true。予定のときは、紐づく移動をずらすかの確認へ進む（issue #1301）。 */
   onDragCommit: (commit: DragCommit) => Promise<boolean>;
@@ -1686,34 +1686,100 @@ function CalendarBody({
    * （issue #532 計画レビューG1の指摘）。
    */
   const [workDraft, setWorkDraft] = useState<WorkDraft | null>(null);
-  /** 予定を動かした直後の「紐づいている移動も変更しますか？」（issue #1301）。 */
+  /** 予定が変わったあとの「紐づいている移動も変更しますか？」（issue #1301・#1332）。 */
   const [travelFollow, setTravelFollow] = useState<{
-    eventId: string;
-    eventTitle: string;
+    title: string;
+    description: string;
     shifts: TravelShift<TravelItem>[];
+    follows: TransitFollowItem[];
   } | null>(null);
+  // 「今は変更しない」を押した変更（取り直しが届くまで一覧に戻さない）
+  const [dismissedFollows, setDismissedFollows] = useState<ReadonlySet<string>>(() => new Set());
+  const formatFollowAt = (iso: string) => {
+    const local = isoToLocalInput(iso, timeZone);
+    return `${Number(local.slice(5, 7))}/${Number(local.slice(8, 10))} ${utils.formatTime(iso)}`;
+  };
+  const followEvent = (event: CalendarEventItem, state: FollowEventState) => ({
+    id: event.id,
+    calendarId: event.calendarId,
+    title: event.title,
+    ...state,
+  });
 
   /**
-   * 予定の時刻が変わったら、紐づく移動をずらすかを確かめる。移動は自動では動かさない
-   * （電車は新しい時刻に便があるとは限らないため）。ずらす候補が無ければ何も出さない。
+   * 予定の時刻・場所が変わったら、紐づく移動の扱いを確かめる。移動は自動では動かさない。
+   * 公共交通は探し直す条件を出し（電車は新しい時刻に便があるとは限らないため、ずらさない）、
+   * それ以外はずらす候補を出す。どちらも無ければ何も出さない。
    */
-  const askTravelFollow = (event: CalendarEventItem, previous: FollowEventTimes, next: FollowEventTimes) => {
-    const shifts = planLinkedTravelShifts(data.travels, event.id, previous, next);
-    if (shifts.length > 0) setTravelFollow({ eventId: event.id, eventTitle: event.title, shifts });
+  const askTravelFollow = (event: CalendarEventItem, previous: FollowEventState, next: FollowEventState) => {
+    const shifts = planLinkedTravelShifts(
+      data.travels.filter((travel) => travel.mode !== "PUBLIC_TRANSIT"),
+      event.id,
+      previous,
+      next,
+    );
+    const follows = data.travels.flatMap((travel) => {
+      if (travel.linkedEventId !== event.id) return [];
+      const follow = detectTransitFollow({
+        travel,
+        previous,
+        current: next,
+        defaultMarginMinutes: travelSettings.arriveMarginMinutes,
+        formatAt: formatFollowAt,
+      });
+      return follow ? [{ travel, follow, event: followEvent(event, next) }] : [];
+    });
+    if (shifts.length === 0 && follows.length === 0) return;
+    setTravelFollow({
+      title: "紐づいている移動も変更しますか？",
+      description: `「${event.title}」を変えました。紐づくタスクは自動で合わせています。移動はまだ変えていません。`,
+      shifts,
+      follows,
+    });
   };
+
+  /**
+   * Googleカレンダー側などで予定が変わった公共交通の移動（issue #1332）。取り直したデータから
+   * 移動に保存した「探したときの予定の状態」と比べて拾うだけで、自動では開かず書き込みもしない。
+   * もう出発した移動は対象外。現在時刻はブラウザでだけ決まる（サーバー描画では出さない）。
+   */
+  const nowIso = useNowIso();
+  const pendingFollows = useMemo(() => {
+    if (!nowIso) return [];
+    const now = Date.parse(nowIso);
+    return data.travels.flatMap((travel): TransitFollowItem[] => {
+      if (travel.mode !== "PUBLIC_TRANSIT" || !travel.linkedEventId || Date.parse(travel.start) < now) return [];
+      const event = data.events.find((item) => item.id === travel.linkedEventId);
+      if (!event) return [];
+      const current = { start: event.start, end: event.end, allDay: event.allDay, location: event.location ?? null };
+      const follow = detectTransitFollow({
+        travel,
+        current,
+        defaultMarginMinutes: travelSettings.arriveMarginMinutes,
+        formatAt: (iso) => {
+          const local = isoToLocalInput(iso, timeZone);
+          return `${Number(local.slice(5, 7))}/${Number(local.slice(8, 10))} ${utils.formatTime(iso)}`;
+        },
+      });
+      if (!follow || dismissedFollows.has(`${travel.id}|${follow.key}`)) return [];
+      return [{ travel, follow, event: { id: event.id, calendarId: event.calendarId, title: event.title, ...current } }];
+    });
+  }, [nowIso, data.travels, data.events, dismissedFollows, travelSettings.arriveMarginMinutes, timeZone, utils]);
 
   /** 時間グリッドのドラッグ。予定を保存できたら、紐づく移動の確認へ進む。 */
   const handleDragCommit = async (commit: DragCommit): Promise<boolean> => {
     const saved = await onDragCommit(commit);
     if (saved && commit.target.kind === "event") {
       const event = commit.target.item;
+      const location = event.location ?? null;
       askTravelFollow(
         event,
-        { start: event.start, end: event.end, allDay: event.allDay },
+        { start: event.start, end: event.end, allDay: event.allDay, location },
         {
           start: localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone),
           end: localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.endMinutes), timeZone),
           allDay: false,
+          location,
         },
       );
     }
@@ -1758,7 +1824,7 @@ function CalendarBody({
    * ことになり、保存のたびにその待ち時間が乗るため使わない（issue #697）。
    */
   const handleSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
-    // 編集画面で予定の時刻を変えたときも、ドラッグと同じく紐づく移動の確認へ進む（issue #1301）。
+    // 編集画面で予定の時刻・場所を変えたときも、ドラッグと同じく紐づく移動の確認へ進む（issue #1301）。
     // 取り直しの前に、手元にある編集前の予定と比べる。新規作成（編集前が無い）は対象外。
     if (change?.type === "upsert") {
       const before = change.previous ?? { calendarId: change.item.calendarId, id: change.item.id };
@@ -1768,8 +1834,8 @@ function CalendarBody({
       if (previous) {
         askTravelFollow(
           change.item,
-          { start: previous.start, end: previous.end, allDay: previous.allDay },
-          { start: change.item.start, end: change.item.end, allDay: change.item.allDay },
+          { start: previous.start, end: previous.end, allDay: previous.allDay, location: previous.location ?? null },
+          { start: change.item.start, end: change.item.end, allDay: change.item.allDay, location: change.item.location ?? null },
         );
       }
     }
@@ -1854,6 +1920,24 @@ function CalendarBody({
         </div>
       )}
 
+      {!travelFollow && pendingFollows.length > 0 && (
+        <button
+          type="button"
+          onClick={() =>
+            setTravelFollow({
+              title: "予定が変わった移動があります",
+              description: "紐づく予定の時刻・場所が、移動を探したときから変わっています。移動はまだ変えていません。",
+              shifts: [],
+              follows: pendingFollows,
+            })
+          }
+          className="flex shrink-0 items-center gap-1.5 bg-tertiary-container px-3 py-2 text-left text-xs text-on-tertiary-container"
+        >
+          <TrainFront className="size-4 shrink-0" aria-hidden />
+          <span>予定が変わった公共交通の移動が{pendingFollows.length}件あります。条件を確かめる</span>
+        </button>
+      )}
+
       {view === "month" ? (
         <ContinuousMonthView
           weeks={weeks}
@@ -1934,12 +2018,19 @@ function CalendarBody({
 
       {travelFollow && (
         <LinkedTravelShiftDialog
-          eventId={travelFollow.eventId}
-          eventTitle={travelFollow.eventTitle}
+          title={travelFollow.title}
+          description={travelFollow.description}
           shifts={travelFollow.shifts}
+          follows={travelFollow.follows}
           places={placeCatalog.places}
           timeZone={timeZone}
+          home={travelSettings.defaultOrigin}
+          defaultArriveMargin={travelSettings.arriveMarginMinutes}
           formatTime={utils.formatTime}
+          onDismissed={(item) => {
+            setDismissedFollows((prev) => new Set(prev).add(`${item.travel.id}|${item.follow.key}`));
+            data.invalidate([{ start: item.travel.start, end: item.travel.end }]);
+          }}
           onClose={(shifted) => {
             setTravelFollow(null);
             if (shifted) {

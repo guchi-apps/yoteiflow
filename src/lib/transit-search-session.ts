@@ -137,7 +137,7 @@ export type SharedTransitRoute = {
 export function applySharedRoute(
   session: TransitSearchSession,
   route: SharedTransitRoute,
-): TransitSearchDraft & { notice: string } {
+): TransitSearchDraft & { notice: string; adoptCheck: boolean } {
   const { draft } = session;
   const previousNote = (draft.note ?? "").trim();
   const routeNote = route.note.trim();
@@ -161,6 +161,8 @@ export function applySharedRoute(
     arriveAt: route.arriveAt,
     note,
     notice,
+    // 元の移動を更新するときは、保存の前に予定の今の状態と紐づけを確かめる（issue #1332）
+    adoptCheck: Boolean(draft.travel && draft.linkedEvent),
   };
 }
 

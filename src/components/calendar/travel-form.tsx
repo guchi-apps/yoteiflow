@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
@@ -94,7 +95,19 @@ export type TravelDraft = {
   home?: string | null;
   /** 開いた直後に、まだ触っていない欄を提案で埋めるか。予定の「移動を追加」から新しく作るときだけ */
   autoSuggest?: boolean;
+  /**
+   * Yahoo!で調べ直して共有で戻した経路で、元の移動を更新する下書き（issue #1332）。保存の前に予定の今の状態を
+   * 確かめ（調べたあとにまた変わった・消えたなら確認を求める）、更新は紐づけが変わっていないときだけにする。
+   */
+  adoptCheck?: boolean;
 };
+
+type AdoptCheck =
+  | { kind: "checking" }
+  | { kind: "same" }
+  | { kind: "changed"; message: string }
+  | { kind: "missing" }
+  | { kind: "error"; message: string };
 
 type TransitContext = { events: ContextEvent[]; travels: ContextTravel[]; partial: boolean };
 
@@ -122,7 +135,10 @@ export function TravelForm({
   timeZone: string;
   onSaved: (touched: TouchedRange[] | null) => void;
 }) {
-  const editing = draft.travel;
+  // 元の移動が消えた・紐づけが外れていたとき、更新をやめて新しい移動として保存する（issue #1332）
+  const [asNew, setAsNew] = useState(false);
+  const [targetLost, setTargetLost] = useState(false);
+  const editing = asNew ? undefined : draft.travel;
 
   const [origin, setOrigin] = useState(draft.origin);
   const [destination, setDestination] = useState(draft.destination);
@@ -201,8 +217,64 @@ export function TravelForm({
     touch("basis");
     setBasis(side);
   };
+  // 戻した経路を採用する前の予定の確かめ（issue #1332）。調べたときの予定（下書き）と今の予定を比べる
+  const adoptBase = draft.adoptCheck && draft.travel && draft.linkedEvent ? draft.linkedEvent : null;
+  const [adopt, setAdopt] = useState<AdoptCheck | null>(adoptBase ? { kind: "checking" } : null);
+  const [adoptLive, setAdoptLive] = useState<{ start: string; end: string; location: string | null } | null>(null);
+  const [adoptAcknowledged, setAdoptAcknowledged] = useState(false);
+  useEffect(() => {
+    if (!adoptBase) return;
+    let cancelled = false;
+    const query = new URLSearchParams({ calendarId: adoptBase.calendarId });
+    fetch(`/api/events/${encodeURIComponent(adoptBase.id)}?${query.toString()}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readErrorMessage(response, "予定を確かめられませんでした。"));
+        return (await response.json()) as {
+          event: { start: string; end: string; allDay: boolean; location: string | null } | null;
+        };
+      })
+      .then(({ event }) => {
+        if (cancelled) return;
+        if (!event) {
+          setAdopt({ kind: "missing" });
+          return;
+        }
+        const at = (iso: string) => {
+          const local = isoToLocalInput(iso, timeZone);
+          return `${Number(local.slice(5, 7))}/${Number(local.slice(8, 10))} ${local.slice(11, 16).replace(/^0/, "")}`;
+        };
+        const reasons = [
+          Date.parse(event.start) !== Date.parse(adoptBase.startAt) ? `開始 ${at(adoptBase.startAt)} → ${at(event.start)}` : null,
+          Date.parse(event.end) !== Date.parse(adoptBase.endAt) ? `終了 ${at(adoptBase.endAt)} → ${at(event.end)}` : null,
+          (event.location ?? "").trim() !== (adoptBase.location ?? "").trim()
+            ? `場所 ${(adoptBase.location ?? "").trim() || "（なし）"} → ${(event.location ?? "").trim() || "（なし）"}`
+            : null,
+        ].filter((reason): reason is string => reason !== null);
+        if (reasons.length === 0) {
+          setAdopt({ kind: "same" });
+          return;
+        }
+        setAdoptLive({ start: event.start, end: event.end, location: event.location });
+        setAdopt({
+          kind: "changed",
+          message: `Yahoo!で調べたあとに予定が変わりました（${reasons.join("・")}）。選んだ経路が今の予定に合うか確かめてください。`,
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setAdopt({ kind: "error", message: cause instanceof Error ? cause.message : "予定を確かめられませんでした。" });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 開いたときに1回だけ確かめる
+  }, []);
+
   // 予定の前後の移動として探す（issue #1331）。対象の予定の名前・場所が分かっているときだけ（予定の「移動を追加」から）
-  const linked = draft.linkedEvent;
+  // 戻した経路の採用時に予定がまた変わっていれば、今の予定を基準に注意を出し直す（issue #1332）
+  const linked =
+    draft.linkedEvent && adoptLive
+      ? { ...draft.linkedEvent, startAt: adoptLive.start, endAt: adoptLive.end, location: adoptLive.location }
+      : draft.linkedEvent;
   const suggestTarget =
     linked && linked.title !== undefined
       ? {
@@ -676,9 +748,16 @@ export function TravelForm({
         note: note.trim() || null,
         estimateSource,
         // 予定の前後として探した移動だけ、その意図と余裕分を残す（#1332 の再提案が使う・issue #1331）
+        // 探したときの予定の状態も残し、あとで予定が変わったら再提案する（issue #1332）
         ...(suggestTarget && mode === "PUBLIC_TRANSIT" && purpose
-          ? { searchPurpose: purpose, searchMarginMinutes: marginMinutes ?? 0 }
+          ? {
+              searchPurpose: purpose,
+              searchMarginMinutes: marginMinutes ?? 0,
+              searchEvent: { start: suggestTarget.start, end: suggestTarget.end, location: suggestTarget.location },
+            }
           : {}),
+        // 戻した経路での更新は、紐づけが変わっていないときだけ（外れていたら409で断られる・issue #1332）
+        ...(editing && adoptBase ? { expectLinkedEventId: adoptBase.id } : {}),
         ...(editing
           ? {}
           : {
@@ -704,6 +783,16 @@ export function TravelForm({
       );
 
       if (!response.ok) {
+        if (editing && adoptBase && (response.status === 404 || response.status === 409)) {
+          // 元の移動を誤って置き換えない。選んだ経路は残し、新しい移動として保存するかを選ばせる
+          setTargetLost(true);
+          setError(
+            response.status === 404
+              ? "元の移動が削除されていたため、更新しませんでした。"
+              : "元の移動の予定との紐づけが変わっていたため、更新しませんでした。",
+          );
+          return;
+        }
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
@@ -1181,6 +1270,43 @@ export function TravelForm({
 
         {draft.notice && <p className="px-4 text-sm text-on-surface-variant">{draft.notice}</p>}
 
+        {adopt?.kind === "checking" && (
+          <p className="flex items-center gap-1.5 px-4 text-sm text-on-surface-variant">
+            <LoaderCircle className="size-4 animate-spin" aria-hidden />
+            予定の今の時刻・場所を確かめています…
+          </p>
+        )}
+        {adopt?.kind === "error" && <p className="px-4 text-sm text-on-surface-variant">{adopt.message}（確かめずに保存できます）</p>}
+        {(adopt?.kind === "changed" || adopt?.kind === "missing") && (
+          <div className="flex flex-col gap-2 rounded-item border border-error px-4 py-3">
+            <p className="flex items-start gap-1.5 text-sm text-error">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              {adopt.kind === "changed"
+                ? adopt.message
+                : "紐づく予定が見つかりません（削除された・別のカレンダーへ移した可能性があります）。"}
+            </p>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={adoptAcknowledged} onCheckedChange={(value) => setAdoptAcknowledged(value === true)} />
+              確かめたうえで、この経路で元の移動を更新する
+            </label>
+          </div>
+        )}
+        {targetLost && !asNew && (
+          <div className="px-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAsNew(true);
+                setError(null);
+              }}
+            >
+              新しい移動として保存する
+            </Button>
+          </div>
+        )}
+
         <Textarea
           id="travel-note"
           label="メモ"
@@ -1227,7 +1353,14 @@ export function TravelForm({
         <ItemFormActions saveLabel="閉じる" onSave={() => onSaved(exportNotice.touched)} />
       ) : (
         <ItemFormActions
-          saveDisabled={busy || offline || inputError !== null}
+          saveDisabled={
+            busy ||
+            offline ||
+            inputError !== null ||
+            (targetLost && !asNew) ||
+            adopt?.kind === "checking" ||
+            ((adopt?.kind === "changed" || adopt?.kind === "missing") && !adoptAcknowledged && !asNew)
+          }
           onSave={save}
           onDelete={editing ? () => setConfirmingDelete(true) : undefined}
           deleteDisabled={busy || offline}
