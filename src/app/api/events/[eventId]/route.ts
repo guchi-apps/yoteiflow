@@ -17,7 +17,40 @@ import {
   moveEventNotificationSetting,
 } from "@/services/calendar/event-notification-settings";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
-import { dropLinksForEvent, syncLinksForEvent } from "@/services/task-links/links";
+import {
+  dropLinksForEvent,
+  fetchLinkedEvent,
+  syncLinksForEvent,
+  TaskLinkExternalError,
+} from "@/services/task-links/links";
+
+/**
+ * 予定の今の状態（時刻・場所）を1件だけ返す（issue #1332）。Yahoo!で調べ直した経路を元の移動へ採用する前に、
+ * 調べたあとで予定がまた変わっていないか・消えていないかを確かめる。見つからなければ `event: null`。
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ eventId: string }> },
+) {
+  const userId = await requireUserId();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const { eventId } = await params;
+  const calendarId = new URL(request.url).searchParams.get("calendarId");
+  if (!calendarId) return NextResponse.json({ error: "calendarId is required" }, { status: 400 });
+
+  try {
+    const event = await fetchLinkedEvent(userId, calendarId, eventId);
+    return NextResponse.json({
+      event: event
+        ? { title: event.title, start: event.start, end: event.end, allDay: event.allDay, location: event.location ?? null }
+        : null,
+    });
+  } catch (error) {
+    if (error instanceof TaskLinkExternalError) return externalApiError(error.source, error.operation, error.cause);
+    throw error;
+  }
+}
 
 type Body = Partial<EventWriteInput> & { calendarId?: string; previousCalendarId?: string };
 

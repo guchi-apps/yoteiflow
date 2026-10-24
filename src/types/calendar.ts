@@ -376,6 +376,10 @@ export type TravelItem = {
    */
   searchPurpose?: TravelSearchPurpose | null;
   searchMarginMinutes?: number | null;
+  /** 探したときの紐づく予定の状態（issue #1332）。予定変更後の再提案が比べる相手。null＝不明 */
+  searchEvent?: { start: string; end: string; location: string | null } | null;
+  /** 「今は変更しない」を押した変更の印（issue #1332） */
+  followDismissedKey?: string | null;
   /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
   exported: boolean;
   /**

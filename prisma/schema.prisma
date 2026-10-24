@@ -412,6 +412,13 @@ model TravelPlan {
   // 検索したときの意図と余裕分（issue #1331）。実際に選んだ便の早着とは区別する。null＝不明（旧データ・手入力）
   searchPurpose       TravelSearchPurpose?
   searchMarginMinutes Int?
+  // 検索（保存）したときの紐づく予定の開始・終了・場所。予定が後で変わったか（Google側の変更を含む）を
+  // 比べる相手（issue #1332）。null＝予定の前後として探していない・旧データ
+  searchEventStart    DateTime?
+  searchEventEnd      DateTime?
+  searchEventLocation String?   @db.Text
+  // 「今は変更しない」を押した変更の印（同じ変更で再提案を繰り返さない・issue #1332）
+  followDismissedKey  String?   @db.VarChar(512)
 
   // 元になった予定。往路・復路の2件が同じ予定を指す。予定側から移動の有無を引くために持つ。
   linkedEventId    String?
