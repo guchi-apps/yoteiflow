@@ -2164,6 +2164,7 @@ function CalendarBody({
           onOpenTask={onOpenTaskForEvent}
           onLinked={handleSaved}
           weekStartsOn={weekStartsOn}
+          places={placeCatalog.places}
           linkedEventTitle={
             data.events.find((event) => event.id === viewingTravel.linkedEventId)?.title ?? null
           }
