@@ -48,6 +48,12 @@ export type WorkRecordOverride = {
   workEnabled?: boolean;
   startMinutes?: number | null;
   endMinutes?: number | null;
+  /**
+   * 期間の記録で日ごとに指定する勤務時間帯（YYYY-MM-DD → 0時からの分・issue #1342）。
+   * 指定した日は `startMinutes`/`endMinutes` より優先する。記録の期間外の日付は無視する。
+   * 往路は初日、復路は最終日の時間帯に合わせる。時間帯の内訳のある日は区切りが優先で使わない。
+   */
+  days?: Record<string, { start: number; end: number }>;
   outbound?: WorkLegOverride;
   return?: WorkLegOverride;
 };
@@ -234,6 +240,7 @@ export function planWorkItems(
   if (record.segments.length > 0 && canHaveSegments(record)) {
     return planSegmentedItems(record, settings, places, lookup, {
       window: workWindow(record, effective),
+      dayWindows: override?.days ?? null,
       workEnabled,
       outboundEnabled,
       returnEnabled,
@@ -253,7 +260,7 @@ export function planWorkItems(
   const window = explicitWindow ?? workWindow(record, effective);
 
   const days = enumerateDates(record.startDate, record.endDate)
-    .map((date) => ({ date, window }))
+    .map((date) => ({ date, window: dayWindow(window, override?.days, date) }))
     .filter((day): day is { date: string; window: { start: number; end: number } } =>
       day.window !== null,
     );
@@ -340,9 +347,21 @@ export function planWorkItems(
   return { items, missingRoutes };
 }
 
+/** その日の勤務時間帯。日ごとの指定（`days`）があればそれを、無ければ記録全体の時間帯を使う。 */
+function dayWindow(
+  base: { start: number; end: number } | null,
+  days: WorkRecordOverride["days"] | null | undefined,
+  date: string,
+): { start: number; end: number } | null {
+  const own = days?.[date];
+  return own && own.end > own.start ? own : base;
+}
+
 type SegmentFlags = {
   /** 内訳の無い日（期間の出張の途中の日）に使う、記録全体の勤務時間帯。 */
   window: { start: number; end: number } | null;
+  /** 日ごとの指定（内訳の無い日だけ使う）。 */
+  dayWindows: WorkRecordOverride["days"] | null;
   workEnabled: boolean;
   outboundEnabled: boolean;
   returnEnabled: boolean;
@@ -431,12 +450,13 @@ function planSegmentedItems(
   for (const date of enumerateDates(record.startDate, record.endDate)) {
     let segments = segmentsOn(record, date);
     // 期間の出張で内訳を入れていない日は、従来どおり記録の行き先で1日を通す。
-    if (segments.length === 0 && record.businessTrip && flags.window) {
+    const window = dayWindow(flags.window, flags.dayWindows, date);
+    if (segments.length === 0 && record.businessTrip && window) {
       segments = [
         {
           date,
-          start: flags.window.start,
-          end: flags.window.end,
+          start: window.start,
+          end: window.end,
           place: null,
           trip: true,
           destination: null,

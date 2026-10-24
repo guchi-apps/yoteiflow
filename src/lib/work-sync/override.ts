@@ -75,6 +75,30 @@ export function parseWorkOverride(raw: unknown): OverrideParse {
     return { ok: false, message: "勤務終了は開始より後にしてください。" };
   }
 
+  if (body.days !== undefined && body.days !== null) {
+    if (typeof body.days !== "object" || Array.isArray(body.days)) {
+      return { ok: false, message: "日ごとの勤務時間の指定が正しくありません。" };
+    }
+    const entries = Object.entries(body.days as Record<string, unknown>);
+    if (entries.length > 31) return { ok: false, message: "日ごとの勤務時間は31日までです。" };
+    const days: NonNullable<WorkRecordOverride["days"]> = {};
+    for (const [date, value] of entries) {
+      const range = value as { start?: unknown; end?: unknown } | null;
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !range ||
+        typeof range !== "object" ||
+        !isMinutes(range.start) ||
+        !isMinutes(range.end) ||
+        range.end <= range.start
+      ) {
+        return { ok: false, message: "日ごとの勤務時間は、開始より後に終わる時刻で入力してください。" };
+      }
+      days[date] = { start: range.start, end: range.end };
+    }
+    if (Object.keys(days).length > 0) override.days = days;
+  }
+
   const outbound = parseLeg(body.outbound, "往路");
   if (typeof outbound === "string") return { ok: false, message: outbound };
   const back = parseLeg(body.return, "復路");

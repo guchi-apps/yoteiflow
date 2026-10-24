@@ -433,3 +433,66 @@ test("勤務予定の場所: 時間帯の内訳でも区切りごとに入る", 
     ["自宅 大阪府吹田市1-1", "大阪"],
   );
 });
+
+test("期間の出張は日ごとの時間帯を使い、往路は初日の開始・復路は最終日の終了に合わせる（issue #1342）", () => {
+  const result = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null, startDate: "2026-10-27", endDate: "2026-10-29" }),
+    settings,
+    [],
+    lookup,
+    {
+      override: {
+        days: {
+          "2026-10-27": { start: 10 * 60, end: 17 * 60 },
+          "2026-10-29": { start: 9 * 60, end: 15 * 60 },
+          "2026-11-30": { start: 1, end: 2 }, // 期間外は無視
+        },
+      },
+    },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), [
+    "10:00-17:00",
+    "08:45-17:15",
+    "09:00-15:00",
+  ]);
+  const out = result.items.find((item) => item.kind === "OUTBOUND")!;
+  assert.equal(hhmm(out.end), "10:00");
+  const back = result.items.find((item) => item.kind === "RETURN")!;
+  assert.equal(hhmm(back.start), "15:00");
+});
+
+test("日ごとの指定は開始・終了の共通指定より優先する", () => {
+  const result = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null, startDate: "2026-10-27", endDate: "2026-10-28" }),
+    settings,
+    [],
+    lookup,
+    { override: { startMinutes: 9 * 60, endMinutes: 18 * 60, days: { "2026-10-28": { start: 8 * 60, end: 12 * 60 } } } },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), ["09:00-18:00", "08:00-12:00"]);
+});
+
+test("内訳の無い日だけ日ごとの時間帯を使い、内訳のある日は区切りが優先する", () => {
+  const result = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "門真",
+      place: null,
+      startDate: "2026-10-27",
+      endDate: "2026-10-28",
+      segments: [{ date: "2026-10-27", start: 600, end: 720, place: null, trip: true, destination: null }],
+    }),
+    settings,
+    [],
+    lookup,
+    {
+      override: {
+        days: { "2026-10-27": { start: 1, end: 2 }, "2026-10-28": { start: 9 * 60, end: 11 * 60 } },
+      },
+    },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), ["10:00-12:00", "09:00-11:00"]);
+});

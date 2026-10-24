@@ -7,10 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   applyOverride,
+  checkDays,
   checkForm,
   commutes,
+  dayEditsFromOverride,
   defaultForm,
   describePlan,
+  type DayEdits,
   rebase,
   resolveKey,
   type SyncConfig,
@@ -18,7 +21,7 @@ import {
   type SyncField,
   type SyncForm,
 } from "@/lib/work-sync/form";
-import type { WorkRecordOverride } from "@/lib/work-sync/plan";
+import { enumerateDates, type WorkRecordOverride } from "@/lib/work-sync/plan";
 
 const FIELD_LABELS: Record<SyncField, string> = {
   workEnabled: "勤務予定の反映",
@@ -119,7 +122,18 @@ export function useWorkSyncFields({
     setKept((current) => current.filter((field) => !(field in patch)));
   };
 
+  // 期間の出張の日ごとの勤務時間（issue #1342）。内訳（時間帯）を使う間は区切りが決める。
+  const [dayEdited, setDayEdited] = useState<DayEdits | null>(null);
+  const dayEdits = dayEdited ?? dayEditsFromOverride(config?.override ?? null);
+  const daysEnabled = isTrip && endDate > startDate && !segmented;
+  const changeDay = (date: string, patch: Partial<{ start: string; end: string }>) => {
+    if (!form) return;
+    const current = dayEdits[date] ?? { start: form.start, end: form.end };
+    setDayEdited({ ...dayEdits, [date]: { ...current, ...patch } });
+  };
+
   const reset = () => {
+    setDayEdited(null);
     setEdited(null);
     setTouched(new Set());
     setKept([]);
@@ -141,11 +155,17 @@ export function useWorkSyncFields({
       };
     }
     const result = checkForm(form, config, context, { fullDayOff });
-    return result.ok ? { payload: result.payload } : { error: result.message };
+    if (!result.ok) return { error: result.message };
+    if (!daysEnabled) return { payload: result.payload };
+    const days = checkDays(dayEdits, form, { startDate, endDate });
+    if (!days.ok) return { error: days.message };
+    return {
+      payload: Object.keys(days.days).length > 0 ? { ...result.payload, days: days.days } : result.payload,
+    };
   };
 
   const withCommute = config ? commutes(config, context) : false;
-  const lines = config && form && !fullDayOff ? describePlan(form, config, context, { startDate, endDate }) : [];
+  const lines = config && form && !fullDayOff ? describePlan(form, config, context, { startDate, endDate }, daysEnabled ? dayEdits : {}) : [];
 
   const node = (() => {
     if (!config) {
@@ -252,6 +272,37 @@ export function useWorkSyncFields({
           {timeInput("work-sync-start", "勤務開始", "start", true)}
           {timeInput("work-sync-end", "勤務終了", "end", true)}
         </div>
+        {daysEnabled && (
+          <div className="flex flex-col gap-2">
+            <p className="type-label-medium text-on-surface-variant">日ごとの勤務時間（変える日だけ直す）</p>
+            {enumerateDates(startDate, endDate).map((date, index, all) => {
+              const value = dayEdits[date] ?? { start: form.start, end: form.end };
+              const role = index === 0 ? "初日" : index === all.length - 1 ? "最終日" : "途中";
+              return (
+                <div key={date} className="flex items-center gap-2">
+                  <span className="type-body-small w-20 shrink-0">
+                    {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))} {role}
+                  </span>
+                  <Input
+                    aria-label={`${date}の勤務開始`}
+                    type="time"
+                    className="min-w-0 flex-1"
+                    value={value.start}
+                    onChange={(event) => changeDay(date, { start: event.target.value })}
+                  />
+                  <span>〜</span>
+                  <Input
+                    aria-label={`${date}の勤務終了`}
+                    type="time"
+                    className="min-w-0 flex-1"
+                    value={value.end}
+                    onChange={(event) => changeDay(date, { end: event.target.value })}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
         {withCommute && (
           <div className="flex flex-col gap-2">
             {leg("往路", "outEnabled", "outMinutes")}
