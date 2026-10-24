@@ -3,11 +3,13 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { Bell, CalendarClock, ChevronRight, CloudOff, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { eventLeadLabel } from "@/lib/event-notification";
+import { mapLink } from "@/lib/map-link";
 import { placeDisplayName } from "@/lib/place-text";
+import type { PlaceItem } from "@/services/notion/places";
 import { TRAVEL_RELATION_LABELS, travelRelation } from "@/lib/travel-relation";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +30,7 @@ import {
 } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { placeCoordinates } from "./location-input";
 import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
@@ -54,6 +57,7 @@ export function TravelDetailDialog({
   linkedEventTitle,
   linkedEventRange,
   weekStartsOn = 0,
+  places = [],
 }: {
   travel: TravelItem;
   timeZone: string;
@@ -75,6 +79,8 @@ export function TravelDetailDialog({
   /** 紐づく予定の日時。取れないとき（表示範囲外など）は前後を断定しない（issue #1137）。 */
   linkedEventRange?: { start: string; end: string; allDay: boolean } | null;
   weekStartsOn?: number;
+  /** 場所DB。座標を持つ地点は座標でGoogleマップを開く。 */
+  places?: PlaceItem[];
 }) {
   // 既存の予定を後から結ぶ・外す（issue #1105）。
   const [linkingEvent, setLinkingEvent] = useState(false);
@@ -215,8 +221,12 @@ export function TravelDetailDialog({
 
           <DetailRow icon={<MapPin className="size-4" />}>
             <span className="flex flex-col">
-              <span>出発地: {placeDisplayName(travel.origin)}</span>
-              <span>目的地: {placeDisplayName(travel.destination)}</span>
+              <span>
+                出発地: <PlaceLink text={travel.origin} places={places} readOnly={readOnly} />
+              </span>
+              <span>
+                目的地: <PlaceLink text={travel.destination} places={places} readOnly={readOnly} />
+              </span>
             </span>
           </DetailRow>
 
@@ -313,6 +323,28 @@ export function TravelDetailDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 出発地・目的地。Googleマップを開くリンクにする（予定の場所と同じ見た目）。
+ * オフライン中は地図もアプリも開けないため文字のままにする（docs/spec.md §21）。
+ */
+function PlaceLink({ text, places, readOnly }: { text: string; places: PlaceItem[]; readOnly: boolean }) {
+  const label = placeDisplayName(text);
+  const href = readOnly ? null : mapLink(text, placeCoordinates(text, places));
+  if (!href) return <>{label}</>;
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded-xs text-primary underline decoration-primary/40 underline-offset-3 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      {label}
+      <ExternalLink className="ml-1 inline size-3 shrink-0 align-[-1px]" />
+    </a>
   );
 }
 
