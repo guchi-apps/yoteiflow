@@ -20,17 +20,16 @@ type Direction = "out" | "back";
 export function WorkTrains({
   trains: initial,
   home,
-  destinations,
+  place,
 }: {
   trains: WorkTrainItem[];
   home: string | null;
-  /** 行き先の候補（勤務場所・出張先）。 */
-  destinations: string[];
+  /** この電車の一覧が属する勤務先・出張先。往路は自宅 → place、復路は place → 自宅。 */
+  place: string;
 }) {
   const [trains, setTrains] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
   const [direction, setDirection] = useState<Direction>("out");
-  const [place, setPlace] = useState("");
   const [label, setLabel] = useState("");
   const [depart, setDepart] = useState("");
   const [arrive, setArrive] = useState("");
@@ -71,7 +70,6 @@ export function WorkTrains({
   const startEdit = (train: WorkTrainItem) => {
     setEditing(train.id);
     setDirection(train.origin === home ? "out" : "back");
-    setPlace(train.origin === home ? train.destination : train.origin);
     setLabel(train.label);
     setDepart(toTime(train.departMinutes));
     setArrive(toTime((train.departMinutes + train.durationMinutes) % 1440));
@@ -111,8 +109,7 @@ export function WorkTrains({
 
   const save = async () => {
     if (!home) return setError("先に設定の「移動」で既定の出発地を入れてください。");
-    const target = place.trim();
-    if (!target) return setError("行き先を入力してください。");
+    const target = place;
     const departMinutes = fromTime(depart);
     const arriveMinutes = fromTime(arrive);
     if (departMinutes === null || arriveMinutes === null) {
@@ -141,19 +138,25 @@ export function WorkTrains({
     }
   };
 
+  const shown = trains.filter(
+    (train) =>
+      (train.origin === home && train.destination === place) ||
+      (train.origin === place && train.destination === home),
+  );
+
   return (
-    <div className="flex flex-col gap-3">
-      <Label>よく使う電車</Label>
+    <div className="flex flex-col gap-3 border-t border-dashed border-outline-variant pt-3">
+      <Label>電車</Label>
       <p className="type-body-small text-on-surface-variant">
-        出張などで使う電車を登録しておくと、勤務の入力で往路・復路に選べます。選ぶと、勤務開始からの
+        この場所で使う電車を登録しておくと、勤務の入力で往路・復路に選べます。選ぶと、勤務開始からの
         逆算ではなく、ここの出発時刻でカレンダーに移動を作ります。時刻表は取得しないので、時刻は
         自分で入れてください。
       </p>
 
-      {trains.length === 0 && (
+      {shown.length === 0 && (
         <p className="type-body-small text-on-surface-variant">まだ登録がありません。</p>
       )}
-      {trains.map((train) => {
+      {shown.map((train) => {
         const out = train.origin === home;
         const arriveAt = (train.departMinutes + train.durationMinutes) % 1440;
         return (
@@ -223,23 +226,9 @@ export function WorkTrains({
           ))}
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor="train-place">行き先（出張先・勤務先）</Label>
-          <Input
-            id="train-place"
-            list="train-place-options"
-            value={place}
-            onChange={(event) => setPlace(event.target.value)}
-          />
-          <datalist id="train-place-options">
-            {destinations.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="train-paste">Yahoo!乗換案内の経路（任意）</Label>
+          <Label htmlFor={`train-paste-${place}`}>Yahoo!乗換案内の経路（任意）</Label>
           <Textarea
-            id="train-paste"
+            id={`train-paste-${place}`}
             rows={3}
             placeholder="Yahoo!乗換案内の共有 ▸ コピーで得た経路をここに貼り付けると、時刻と詳細が入ります"
             value={pasted}
@@ -248,22 +237,22 @@ export function WorkTrains({
           {pasteInfo && <p className="type-body-small text-on-surface-variant">{pasteInfo}</p>}
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor="train-label">名前（例: のぞみ）</Label>
-          <Input id="train-label" value={label} onChange={(event) => setLabel(event.target.value)} />
+          <Label htmlFor={`train-label-${place}`}>名前（例: のぞみ）</Label>
+          <Input id={`train-label-${place}`} value={label} onChange={(event) => setLabel(event.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="train-depart">出発時刻</Label>
-            <Input id="train-depart" type="time" value={depart} onChange={(event) => setDepart(event.target.value)} />
+            <Label htmlFor={`train-depart-${place}`}>出発時刻</Label>
+            <Input id={`train-depart-${place}`} type="time" value={depart} onChange={(event) => setDepart(event.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="train-arrive">到着時刻</Label>
-            <Input id="train-arrive" type="time" value={arrive} onChange={(event) => setArrive(event.target.value)} />
+            <Label htmlFor={`train-arrive-${place}`}>到着時刻</Label>
+            <Input id={`train-arrive-${place}`} type="time" value={arrive} onChange={(event) => setArrive(event.target.value)} />
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor="train-note">詳細（乗換・路線・運賃など）</Label>
-          <Textarea id="train-note" rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
+          <Label htmlFor={`train-note-${place}`}>詳細（乗換・路線・運賃など）</Label>
+          <Textarea id={`train-note-${place}`} rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
         </div>
         <label className="type-body-medium flex items-center gap-2">
           <input type="checkbox" checked={isDefault} onChange={(event) => setIsDefault(event.target.checked)} />
