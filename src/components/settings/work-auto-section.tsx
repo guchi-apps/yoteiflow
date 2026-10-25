@@ -19,6 +19,8 @@ import {
   type WorkPlaceDefaultRow,
   type WorkRouteRow,
 } from "@/components/settings/work-place-defaults";
+import { WorkTrains } from "@/components/settings/work-trains";
+import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import { cn } from "@/lib/utils";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
@@ -42,6 +44,7 @@ export function WorkAutoSection({
   settings,
   routes,
   placeDefaults,
+  trains,
   tripPlaces,
   calendars,
   placeNames,
@@ -49,6 +52,7 @@ export function WorkAutoSection({
   settings: WorkAutoSettings;
   routes: WorkRouteRow[];
   placeDefaults: WorkPlaceDefaultRow[];
+  trains: WorkTrainItem[];
   /** 出張扱いの勤務場所。既定値の一覧では出張先として並べる。 */
   tripPlaces: string[];
   calendars: WritableCalendar[];
@@ -209,6 +213,14 @@ export function WorkAutoSection({
           home={home}
           commonStart={value.startMinutes}
           commonEnd={value.endMinutes}
+        />
+
+        <WorkTrains
+          trains={trains}
+          home={home}
+          destinations={[...new Set([...placeNames, ...tripPlaces, ...routes.map((r) => r.destination)])].filter(
+            (name) => name !== home,
+          )}
         />
       </CardContent>
     </Card>

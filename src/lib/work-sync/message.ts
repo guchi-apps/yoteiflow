@@ -5,6 +5,8 @@ export type SyncSummary = {
   /** 手で調整済みとして触らなかった数。 */
   manual?: number;
   missingRoutes?: Array<{ origin: string | null; destination: string }>;
+  /** 選ばれていたが見つからなかった電車の数。 */
+  missingTrains?: number;
 } | null | undefined;
 
 export function describeSync(sync: SyncSummary): string | null {
@@ -20,6 +22,11 @@ export function describeSync(sync: SyncSummary): string | null {
   if (places.length > 0) {
     parts.push(
       `${places.join("・")}への既定の移動時間が未設定のため、移動は作っていません。設定の「勤務」で設定できます。`,
+    );
+  }
+  if (sync.missingTrains && sync.missingTrains > 0) {
+    parts.push(
+      "選んだ電車が見つからないため、その移動は所要時間から作りました。勤務の入力で電車を選び直せます。",
     );
   }
   if (sync.errors && sync.errors.length > 0) {

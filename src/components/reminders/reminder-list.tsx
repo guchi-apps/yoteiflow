@@ -16,6 +16,7 @@ import {
 } from "@/components/calendar/item-layout";
 import { toReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
+import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { OfflineNotice } from "@/components/offline/offline-notice";
@@ -204,13 +205,16 @@ export function ReminderList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
+        className="elevation-3 fixed right-4 bottom-[calc(7.5rem_+_env(safe-area-inset-bottom))] z-20 md:bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
         aria-label="日付リマインドを追加"
         disabled={offline}
         onClick={openAdd}
       >
         <Plus className="size-6" />
       </Button>
+
+      {/* スマホ幅では下部ナビを下端に固定する（issue #1348）。追加ボタンはそのぶん上げている。 */}
+      <SettingsBottomNav />
 
       {itemDialog && (
         <ItemDialog

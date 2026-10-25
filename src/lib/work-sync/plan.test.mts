@@ -433,3 +433,184 @@ test("勤務予定の場所: 時間帯の内訳でも区切りごとに入る", 
     ["自宅 大阪府吹田市1-1", "大阪"],
   );
 });
+
+test("期間の出張は日ごとの時間帯を使い、往路は初日の開始・復路は最終日の終了に合わせる（issue #1342）", () => {
+  const result = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null, startDate: "2026-10-27", endDate: "2026-10-29" }),
+    settings,
+    [],
+    lookup,
+    {
+      override: {
+        days: {
+          "2026-10-27": { start: 10 * 60, end: 17 * 60 },
+          "2026-10-29": { start: 9 * 60, end: 15 * 60 },
+          "2026-11-30": { start: 1, end: 2 }, // 期間外は無視
+        },
+      },
+    },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), [
+    "10:00-17:00",
+    "08:45-17:15",
+    "09:00-15:00",
+  ]);
+  const out = result.items.find((item) => item.kind === "OUTBOUND")!;
+  assert.equal(hhmm(out.end), "10:00");
+  const back = result.items.find((item) => item.kind === "RETURN")!;
+  assert.equal(hhmm(back.start), "15:00");
+});
+
+test("日ごとの指定は開始・終了の共通指定より優先する", () => {
+  const result = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null, startDate: "2026-10-27", endDate: "2026-10-28" }),
+    settings,
+    [],
+    lookup,
+    { override: { startMinutes: 9 * 60, endMinutes: 18 * 60, days: { "2026-10-28": { start: 8 * 60, end: 12 * 60 } } } },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), ["09:00-18:00", "08:00-12:00"]);
+});
+
+test("内訳の無い日だけ日ごとの時間帯を使い、内訳のある日は区切りが優先する", () => {
+  const result = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "門真",
+      place: null,
+      startDate: "2026-10-27",
+      endDate: "2026-10-28",
+      segments: [{ date: "2026-10-27", start: 600, end: 720, place: null, trip: true, destination: null }],
+    }),
+    settings,
+    [],
+    lookup,
+    {
+      override: {
+        days: { "2026-10-27": { start: 1, end: 2 }, "2026-10-28": { start: 9 * 60, end: 11 * 60 } },
+      },
+    },
+  );
+  const work = result.items.filter((item) => item.kind === "WORK");
+  assert.deepEqual(work.map((item) => `${hhmm(item.start)}-${hhmm(item.end)}`), ["10:00-12:00", "09:00-11:00"]);
+});
+
+// --- よく使う電車（issue #1347） ---
+
+const nozomi = {
+  id: "t1",
+  origin: "自宅",
+  destination: "門真",
+  label: "のぞみ",
+  departMinutes: 7 * 60 + 30,
+  durationMinutes: 140,
+};
+const nozomiBack = {
+  id: "t2",
+  origin: "門真",
+  destination: "自宅",
+  label: "のぞみ",
+  departMinutes: 17 * 60 + 20,
+  durationMinutes: 140,
+};
+const trains = (id: string) => [nozomi, nozomiBack].find((train) => train.id === id) ?? null;
+
+test("電車を選んだ往路・復路は、勤務開始/終了からの逆算ではなく電車の時刻で作る", () => {
+  const { items, missingTrains } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "t1" }, return: { trainId: "t2" } }, trains },
+  );
+  assert.deepEqual(missingTrains, []);
+  const by = Object.fromEntries(items.map((item) => [item.kind, item]));
+  assert.equal(hhmm(by.OUTBOUND.start), "07:30");
+  assert.equal(hhmm(by.OUTBOUND.end), "09:50");
+  assert.equal(by.OUTBOUND.mode, "PUBLIC_TRANSIT");
+  assert.equal(hhmm(by.RETURN.start), "17:20");
+  assert.equal(hhmm(by.RETURN.end), "19:40");
+  // 勤務予定は変わらない。
+  assert.equal(hhmm(by.WORK.start), "08:45");
+});
+
+test("電車は往路を初日、復路を最終日に置く", () => {
+  const { items } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null, endDate: "2026-10-07" }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "t1" }, return: { trainId: "t2" } }, trains },
+  );
+  assert.equal(items.find((item) => item.kind === "OUTBOUND")?.date, "2026-10-05");
+  assert.equal(items.find((item) => item.kind === "RETURN")?.date, "2026-10-07");
+});
+
+test("夜をまたぐ到着は出発 + 所要分で表す", () => {
+  const night = { ...nozomiBack, id: "t3", departMinutes: 22 * 60, durationMinutes: 180 };
+  const { items } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { return: { trainId: "t3" } }, trains: (id) => (id === "t3" ? night : null) },
+  );
+  const back = items.find((item) => item.kind === "RETURN")!;
+  assert.equal(back.end.getTime() - back.start.getTime(), 180 * 60_000);
+  assert.equal(hhmm(back.end), "01:00");
+});
+
+test("電車が見つからないときは所要時間で作り、missingTrains に挙げる", () => {
+  const { items, missingTrains } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "gone" } }, trains },
+  );
+  assert.deepEqual(missingTrains, ["gone"]);
+  const out = items.find((item) => item.kind === "OUTBOUND")!;
+  // 門真への既定は50分。勤務開始 08:45 から逆算。
+  assert.equal(hhmm(out.start), "07:55");
+});
+
+test("区間が合わない電車（復路の電車を往路に指定）は見つからない扱い", () => {
+  const { missingTrains } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "t2" } }, trains },
+  );
+  assert.deepEqual(missingTrains, ["t2"]);
+});
+
+test("反映オフの項目の電車は使わない・missingTrains にも挙げない", () => {
+  const { items, missingTrains } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { enabled: false, trainId: "gone" } }, trains },
+  );
+  assert.deepEqual(missingTrains, []);
+  assert.equal(items.some((item) => item.kind === "OUTBOUND"), false);
+});
+
+test("時間帯の内訳のある記録では電車を使わない", () => {
+  const result = planWorkItems(
+    record({
+      businessTrip: true,
+      title: "門真",
+      place: null,
+      segments: [{ date: "2026-10-05", start: 540, end: 1020, place: null, trip: true, destination: null }],
+    } as Partial<WorkRecordItem>),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "t1" } }, trains },
+  );
+  assert.deepEqual(result.missingTrains, []);
+});

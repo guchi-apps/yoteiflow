@@ -26,3 +26,25 @@ test("終了が開始以前・時刻が範囲外は断る", () => {
   assert.equal(parseWorkOverride({ startMinutes: 2000 }).ok, false);
   assert.equal(parseWorkOverride("x").ok, false);
 });
+
+test("日ごとの勤務時間を検証する（issue #1342）", () => {
+  const ok = parseWorkOverride({ days: { "2026-10-27": { start: 600, end: 1020 } } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.ok && ok.override.days, { "2026-10-27": { start: 600, end: 1020 } });
+  assert.equal(parseWorkOverride({ days: { "10/27": { start: 600, end: 1020 } } }).ok, false);
+  assert.equal(parseWorkOverride({ days: { "2026-10-27": { start: 700, end: 700 } } }).ok, false);
+  assert.equal(parseWorkOverride({ days: [] }).ok, false);
+});
+
+test("電車の指定（trainId）は通り、反映オフの項目では持たない（issue #1347）", () => {
+  const ok = parseWorkOverride({ outbound: { enabled: true, trainId: "abc" }, return: { enabled: false, trainId: "def" } });
+  assert.ok(ok.ok);
+  assert.equal(ok.override.outbound?.trainId, "abc");
+  assert.equal(ok.override.return?.trainId, undefined);
+});
+
+test("電車の指定が文字列でない・空は断る", () => {
+  assert.equal(parseWorkOverride({ outbound: { trainId: 1 } }).ok, false);
+  assert.equal(parseWorkOverride({ outbound: { trainId: "" } }).ok, false);
+  assert.ok(parseWorkOverride({ outbound: { trainId: null } }).ok);
+});

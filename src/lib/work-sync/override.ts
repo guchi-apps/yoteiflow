@@ -14,7 +14,7 @@ const isLegMinutes = (value: unknown): value is number =>
 function parseLeg(raw: unknown, label: string): WorkLegOverride | string {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== "object") return `${label}の指定が正しくありません。`;
-  const { enabled, minutes } = raw as Record<string, unknown>;
+  const { enabled, minutes, trainId } = raw as Record<string, unknown>;
   const leg: WorkLegOverride = {};
   if (enabled !== undefined) {
     if (typeof enabled !== "boolean") return `${label}の反映の指定が正しくありません。`;
@@ -31,6 +31,15 @@ function parseLeg(raw: unknown, label: string): WorkLegOverride | string {
     }
   } else if (minutes === null) {
     leg.minutes = null;
+  }
+  if (trainId !== undefined && trainId !== null) {
+    if (typeof trainId !== "string" || trainId.length === 0 || trainId.length > 191) {
+      return `${label}の電車の指定が正しくありません。`;
+    }
+    // 反映をオフにした項目の電車は持たない。
+    if (enabled !== false) leg.trainId = trainId;
+  } else if (trainId === null) {
+    leg.trainId = null;
   }
   return leg;
 }
@@ -73,6 +82,30 @@ export function parseWorkOverride(raw: unknown): OverrideParse {
     override.endMinutes <= override.startMinutes
   ) {
     return { ok: false, message: "勤務終了は開始より後にしてください。" };
+  }
+
+  if (body.days !== undefined && body.days !== null) {
+    if (typeof body.days !== "object" || Array.isArray(body.days)) {
+      return { ok: false, message: "日ごとの勤務時間の指定が正しくありません。" };
+    }
+    const entries = Object.entries(body.days as Record<string, unknown>);
+    if (entries.length > 31) return { ok: false, message: "日ごとの勤務時間は31日までです。" };
+    const days: NonNullable<WorkRecordOverride["days"]> = {};
+    for (const [date, value] of entries) {
+      const range = value as { start?: unknown; end?: unknown } | null;
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !range ||
+        typeof range !== "object" ||
+        !isMinutes(range.start) ||
+        !isMinutes(range.end) ||
+        range.end <= range.start
+      ) {
+        return { ok: false, message: "日ごとの勤務時間は、開始より後に終わる時刻で入力してください。" };
+      }
+      days[date] = { start: range.start, end: range.end };
+    }
+    if (Object.keys(days).length > 0) override.days = days;
   }
 
   const outbound = parseLeg(body.outbound, "往路");

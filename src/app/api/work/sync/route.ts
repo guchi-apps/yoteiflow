@@ -43,7 +43,14 @@ export async function POST(request: Request) {
     return externalApiError("notion", "勤務記録の取得", error);
   }
 
-  const total = { created: 0, updated: 0, deleted: 0, manual: 0, errors: [] as string[] };
+  const total = {
+    created: 0,
+    updated: 0,
+    deleted: 0,
+    manual: 0,
+    missingTrains: 0,
+    errors: [] as string[],
+  };
   const missing = new Map<string, { origin: string | null; destination: string }>();
   let disabled = false;
   // 場所DBは記録ごとではなく1回だけ読む（Notionへの往復を月の件数ぶん積まない）。
@@ -58,6 +65,7 @@ export async function POST(request: Request) {
     total.updated += result.updated;
     total.deleted += result.deleted;
     total.manual += result.manual;
+    total.missingTrains += result.missingTrains;
     total.errors.push(...result.errors);
     for (const route of result.missingRoutes) {
       missing.set(`${route.origin}\n${route.destination}`, route);

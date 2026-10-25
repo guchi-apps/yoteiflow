@@ -7,8 +7,10 @@ import { CircleAlert, MapPin } from "lucide-react";
 
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { Button } from "@/components/ui/button";
+import { formatCoordinates } from "@/lib/coordinates";
 import { hasPlaceAddress } from "@/lib/location-check";
 import { matchPlaceByText } from "@/lib/place-text";
+import { addressCandidates } from "@/lib/work-place-address-candidates";
 import type { PlaceItem } from "@/services/notion/places";
 
 type Catalog = {
@@ -28,6 +30,9 @@ type Catalog = {
 export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boolean }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const offline = useOffline();
 
   useEffect(() => {
@@ -63,6 +68,46 @@ export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boole
     );
   }
 
+  const registerCatalogPlace = (registered: PlaceItem) =>
+    setCatalog((current) =>
+      current
+        ? {
+            ...current,
+            // 同じ名前の場所は置き換え、無ければ足す（住所の無い同名の場所へ住所を埋めた場合も含む）。
+            places: [...current.places.filter((item) => item.id !== registered.id), registered],
+          }
+        : current,
+    );
+
+  // 登録済みの場所の住所を、この勤務場所の名前の場所へ付ける。同名で住所の無い場所があれば `createPlace` が住所を埋め、無ければ登録する。
+  const pickAddress = async (source: PlaceItem) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const fields = {
+        address: source.address,
+        coordinates: source.coordinates ? formatCoordinates(source.coordinates) : null,
+        station: source.station,
+      };
+      const response = await fetch("/api/places", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: value, ...fields }),
+      });
+      if (!response.ok) {
+        setError("住所を登録できませんでした。もう一度お試しください。");
+        return;
+      }
+      registerCatalogPlace((await response.json()) as PlaceItem);
+      setPickOpen(false);
+    } catch {
+      setError("住所を登録できませんでした。もう一度お試しください。");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const candidates = addressCandidates(catalog.places, value);
   const place = matchPlaceByText(value, catalog.places);
   if (hasPlaceAddress(value, catalog.places)) {
     return (
@@ -92,6 +137,38 @@ export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boole
             地図から住所を登録
           </Button>
         )}
+        {!offline && candidates.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="self-start"
+            onClick={() => setPickOpen((open) => !open)}
+          >
+            登録済みの住所から選ぶ
+          </Button>
+        )}
+        {pickOpen && !offline && (
+          <div className="flex flex-col gap-1">
+            <ul className="max-h-48 overflow-y-auto rounded-md bg-surface text-on-surface">
+              {candidates.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => pickAddress(item)}
+                    className="type-body-small flex w-full min-w-0 flex-col px-3 py-2 text-left hover:bg-surface-container disabled:opacity-50"
+                  >
+                    <span className="font-medium">{item.name}</span>
+                    <span className="break-words text-on-surface-variant">{item.address}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <span className="type-body-small">選ぶと「{value}」にこの住所を登録します。</span>
+            {error && <span className="type-body-small text-error">{error}</span>}
+          </div>
+        )}
       </div>
       {mapOpen && (
         <PlaceMapDialog
@@ -100,18 +177,7 @@ export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boole
           onCancel={() => setMapOpen(false)}
           onRegistered={(registered) => {
             setMapOpen(false);
-            // 同じ名前の場所は置き換え、無ければ足す（住所の無い同名の場所へ住所を埋めた場合も含む）。
-            setCatalog((current) =>
-              current
-                ? {
-                    ...current,
-                    places: [
-                      ...current.places.filter((item) => item.id !== registered.id),
-                      registered,
-                    ],
-                  }
-                : current,
-            );
+            registerCatalogPlace(registered);
           }}
         />
       )}

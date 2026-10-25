@@ -1,8 +1,11 @@
 import {
+  enumerateDates,
   workWindow,
   type WorkLegOverride,
   type WorkRecordOverride,
+  type WorkTrainItem,
 } from "@/lib/work-sync/plan";
+import { earlyByForReturn, lateByForOutbound } from "@/lib/work-sync/train";
 
 /**
  * 勤務入力ダイアログの「勤務予定・移動の反映」欄の状態を作る・検証する純粋関数
@@ -29,6 +32,8 @@ export type SyncConfig = {
   homeOrigin: string | null;
   defaults: SyncConfigPlaceDefault[];
   routes: Array<{ origin: string; destination: string; minutes: number }>;
+  /** よく使う電車（issue #1347）。古い応答には無いので欠けても受ける。 */
+  trains?: WorkTrainItem[];
   override: WorkRecordOverride | null;
 };
 
@@ -41,6 +46,9 @@ export type SyncForm = {
   outMinutes: string;
   backEnabled: boolean;
   backMinutes: string;
+  /** 選んだ電車のID。空は「所要時間」で作る（issue #1347）。 */
+  outTrainId: string;
+  backTrainId: string;
 };
 
 export type SyncField = keyof SyncForm;
@@ -78,6 +86,29 @@ export function commutes(config: SyncConfig, context: SyncContext): boolean {
   return Boolean(context.key) && (context.isTrip || !config.remotePlaces.includes(context.key));
 }
 
+export type Leg = "out" | "back";
+
+/** その勤務先の往路・復路に選べる電車。往路は自宅→勤務先、復路は勤務先→自宅。出発時刻順。 */
+export function trainsFor(config: SyncConfig, context: SyncContext, leg: Leg): WorkTrainItem[] {
+  const home = config.homeOrigin?.trim();
+  if (!home || !context.key) return [];
+  const origin = leg === "out" ? home : context.key;
+  const destination = leg === "out" ? context.key : home;
+  return (config.trains ?? [])
+    .filter((train) => train.origin === origin && train.destination === destination)
+    .sort((a, b) => a.departMinutes - b.departMinutes);
+}
+
+/** 保存済みの電車が、いまの勤務先の候補に無い（削除された・勤務先が変わった）か。 */
+export function trainMissing(
+  config: SyncConfig,
+  context: SyncContext,
+  leg: Leg,
+  trainId: string,
+): boolean {
+  return Boolean(trainId) && !trainsFor(config, context, leg).some((train) => train.id === trainId);
+}
+
 /** 設定（既定）だけから作る初期値。 */
 export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm {
   const def =
@@ -105,18 +136,27 @@ export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm 
     outMinutes: out ? String(out) : "",
     backEnabled: def?.returnEnabled ?? true,
     backMinutes: back ? String(back) : "",
+    outTrainId: "",
+    backTrainId: "",
   };
 }
 
 /** 記録で保存した指定を、既定の上に重ねる。 */
 export function applyOverride(base: SyncForm, override: WorkRecordOverride | null): SyncForm {
   if (!override) return base;
-  const leg = (value: WorkLegOverride | undefined, enabled: boolean, minutes: string) => ({
+  const leg = (
+    value: WorkLegOverride | undefined,
+    enabled: boolean,
+    minutes: string,
+    trainId: string,
+  ) => ({
     enabled: value?.enabled ?? enabled,
     minutes: value?.minutes != null ? String(value.minutes) : minutes,
+    // 保存した電車はそのまま持つ（削除されていても消さず、画面で選び直しを促す）。
+    trainId: value?.trainId ?? trainId,
   });
-  const out = leg(override.outbound, base.outEnabled, base.outMinutes);
-  const back = leg(override.return, base.backEnabled, base.backMinutes);
+  const out = leg(override.outbound, base.outEnabled, base.outMinutes, base.outTrainId);
+  const back = leg(override.return, base.backEnabled, base.backMinutes, base.backTrainId);
   return {
     workEnabled: override.workEnabled ?? base.workEnabled,
     start: override.startMinutes != null ? toTime(override.startMinutes) : base.start,
@@ -125,6 +165,8 @@ export function applyOverride(base: SyncForm, override: WorkRecordOverride | nul
     outMinutes: out.minutes,
     backEnabled: back.enabled,
     backMinutes: back.minutes,
+    outTrainId: out.trainId,
+    backTrainId: back.trainId,
   };
 }
 
@@ -190,24 +232,69 @@ export function checkForm(
     }
     const leg = (
       label: string,
+      kind: Leg,
       enabled: boolean,
       text: string,
+      trainId: string,
     ): WorkLegOverride | string => {
       if (!enabled) return { enabled: false, minutes: null };
+      if (trainId) {
+        if (trainMissing(config, context, kind, trainId)) {
+          return `${label}で選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。`;
+        }
+        return { enabled: true, minutes: null, trainId };
+      }
       const minutes = Number(text);
       if (text.trim() === "" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
         return `${label}の所要時間（分）を入力してください。入力しない場合は${label}の反映をオフにしてください。`;
       }
       return { enabled: true, minutes };
     };
-    const out = leg("往路", form.outEnabled, form.outMinutes);
+    const out = leg("往路", "out", form.outEnabled, form.outMinutes, form.outTrainId);
     if (typeof out === "string") return { ok: false, message: out };
-    const back = leg("復路", form.backEnabled, form.backMinutes);
+    const back = leg("復路", "back", form.backEnabled, form.backMinutes, form.backTrainId);
     if (typeof back === "string") return { ok: false, message: back };
     payload.outbound = out;
     payload.return = back;
   }
   return { ok: true, payload };
+}
+
+/** 画面で編集する日ごとの勤務時間（`HH:MM`）。指定した日だけ持つ。 */
+export type DayEdits = Record<string, { start: string; end: string }>;
+
+/** 保存済みの日ごとの指定を、画面の入力値へ直す。 */
+export function dayEditsFromOverride(override: WorkRecordOverride | null): DayEdits {
+  const edits: DayEdits = {};
+  for (const [date, range] of Object.entries(override?.days ?? {})) {
+    edits[date] = { start: toTime(range.start), end: toTime(range.end) };
+  }
+  return edits;
+}
+
+/**
+ * 日ごとの入力を、記録の期間内の日だけ検証して送る形にする（issue #1342）。
+ * 全日の時刻が共通の値と同じ日は送らない（指定なし＝共通の値）。
+ */
+export function checkDays(
+  edits: DayEdits,
+  form: Pick<SyncForm, "start" | "end">,
+  dates: { startDate: string; endDate: string },
+): { ok: true; days: NonNullable<WorkRecordOverride["days"]> } | { ok: false; message: string } {
+  const days: NonNullable<WorkRecordOverride["days"]> = {};
+  for (const date of enumerateDates(dates.startDate, dates.endDate)) {
+    const edit = edits[date];
+    if (!edit || (edit.start === form.start && edit.end === form.end)) continue;
+    const start = fromTime(edit.start);
+    const end = fromTime(edit.end);
+    const label = `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+    if (start === null || end === null) {
+      return { ok: false, message: `${label}の勤務開始・終了の時刻を入力してください。` };
+    }
+    if (end <= start) return { ok: false, message: `${label}の勤務終了は開始より後にしてください。` };
+    days[date] = { start, end };
+  }
+  return { ok: true, days };
 }
 
 /** 反映する内容の確認用の文面。反映OFFの項目は出さない。 */
@@ -216,24 +303,104 @@ export function describePlan(
   config: SyncConfig,
   context: SyncContext,
   dates: { startDate: string; endDate: string },
+  dayEdits: DayEdits = {},
 ): string[] {
   const lines: string[] = [];
-  const start = fromTime(form.start);
-  const end = fromTime(form.end);
+  const common = { start: fromTime(form.start), end: fromTime(form.end) };
   const range = (from: number, to: number) => `${toTime(((from % 1440) + 1440) % 1440)}–${toTime(((to % 1440) + 1440) % 1440)}`;
   const span = dates.endDate && dates.endDate !== dates.startDate;
-  if (form.workEnabled && start !== null && end !== null && end > start) {
-    lines.push(`勤務予定 ${range(start, end)}${span ? "（期間の各日）" : ""}`);
-  }
-  if (commutes(config, context) && start !== null && end !== null && end > start) {
-    const out = Number(form.outMinutes);
-    if (form.outEnabled && out > 0) {
-      lines.push(`往路 ${range(start - out, start)}${span ? `（${dates.startDate}）` : ""}`);
+  const dayLabel = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+  /** その日の時間帯。日ごとの指定があればそれ、無ければ共通の値。決められなければ null。 */
+  const windowOn = (date: string) => {
+    const edit = dayEdits[date];
+    const start = edit ? fromTime(edit.start) : common.start;
+    const end = edit ? fromTime(edit.end) : common.end;
+    return start !== null && end !== null && end > start ? { start, end } : null;
+  };
+  const first = windowOn(dates.startDate);
+  const last = windowOn(span ? dates.endDate : dates.startDate);
+
+  if (form.workEnabled) {
+    if (span && Object.keys(dayEdits).length > 0) {
+      for (const date of enumerateDates(dates.startDate, dates.endDate)) {
+        const window = windowOn(date);
+        if (window) lines.push(`勤務予定 ${dayLabel(date)} ${range(window.start, window.end)}`);
+      }
+    } else if (first) {
+      lines.push(`勤務予定 ${range(first.start, first.end)}${span ? "（期間の各日）" : ""}`);
     }
+  }
+  if (commutes(config, context)) {
+    const outTrain = form.outTrainId ? pickedTrain(config, context, "out", form.outTrainId) : null;
+    const out = Number(form.outMinutes);
+    if (form.outEnabled && outTrain) {
+      lines.push(
+        `往路 ${range(outTrain.departMinutes, outTrain.departMinutes + outTrain.durationMinutes)}（${outTrain.label}）${span ? `（${dates.startDate}）` : ""}`,
+      );
+    } else if (first && form.outEnabled && !form.outTrainId && out > 0) {
+      lines.push(`往路 ${range(first.start - out, first.start)}${span ? `（${dates.startDate}）` : ""}`);
+    }
+    const backTrain = form.backTrainId ? pickedTrain(config, context, "back", form.backTrainId) : null;
     const back = Number(form.backMinutes);
-    if (form.backEnabled && back > 0) {
-      lines.push(`復路 ${range(end, end + back)}${span ? `（${dates.endDate}）` : ""}`);
+    if (form.backEnabled && backTrain) {
+      lines.push(
+        `復路 ${range(backTrain.departMinutes, backTrain.departMinutes + backTrain.durationMinutes)}（${backTrain.label}）${span ? `（${dates.endDate}）` : ""}`,
+      );
+    } else if (last && form.backEnabled && !form.backTrainId && back > 0) {
+      lines.push(`復路 ${range(last.end, last.end + back)}${span ? `（${dates.endDate}）` : ""}`);
     }
   }
   return lines;
+}
+
+function pickedTrain(
+  config: SyncConfig,
+  context: SyncContext,
+  leg: Leg,
+  trainId: string,
+): WorkTrainItem | null {
+  return trainsFor(config, context, leg).find((train) => train.id === trainId) ?? null;
+}
+
+/**
+ * 選んだ電車と勤務時間のずれの警告（保存は止めない・issue #1347）。往路は到着が勤務開始より後、
+ * 復路は出発が勤務終了より前のとき。往路は初日、復路は最終日の勤務時間に合わせる。
+ */
+export function trainWarnings(
+  form: SyncForm,
+  config: SyncConfig,
+  context: SyncContext,
+  dates: { startDate: string; endDate: string },
+  dayEdits: DayEdits = {},
+): string[] {
+  if (!commutes(config, context)) return [];
+  const span = dates.endDate && dates.endDate !== dates.startDate;
+  const windowOn = (date: string) => {
+    const edit = dayEdits[date];
+    const start = edit ? fromTime(edit.start) : fromTime(form.start);
+    const end = edit ? fromTime(edit.end) : fromTime(form.end);
+    return start !== null && end !== null && end > start ? { start, end } : null;
+  };
+  const warnings: string[] = [];
+  const outTrain = form.outEnabled && form.outTrainId ? pickedTrain(config, context, "out", form.outTrainId) : null;
+  const first = windowOn(dates.startDate);
+  if (outTrain && first) {
+    const late = lateByForOutbound(outTrain, first.start);
+    if (late !== null) {
+      warnings.push(
+        `往路の電車は勤務開始 ${toTime(first.start)} に間に合いません（到着 ${toTime((outTrain.departMinutes + outTrain.durationMinutes) % 1440)}・${late}分遅れ）。別の電車を選ぶか、勤務開始を直してください。`,
+      );
+    }
+  }
+  const backTrain = form.backEnabled && form.backTrainId ? pickedTrain(config, context, "back", form.backTrainId) : null;
+  const last = windowOn(span ? dates.endDate : dates.startDate);
+  if (backTrain && last) {
+    const early = earlyByForReturn(backTrain, last.end);
+    if (early !== null) {
+      warnings.push(
+        `復路の電車（${toTime(backTrain.departMinutes)}発）は勤務終了 ${toTime(last.end)} より前に出ます（${early}分早い）。別の電車を選ぶか、勤務終了を直してください。`,
+      );
+    }
+  }
+  return warnings;
 }

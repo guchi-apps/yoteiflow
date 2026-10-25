@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,9 @@ export function SettingsShell({
         )}
         {children}
       </div>
+
+      {/* スマホ幅では下部ナビを下端に固定する（issue #1348）。本文が短くても flex-1 で下端へ押される。 */}
+      <SettingsBottomNav />
     </div>
   );
 }
