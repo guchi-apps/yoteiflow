@@ -178,7 +178,7 @@ export function WorkTrains({
               <p className="type-title-small tabular-nums">
                 {toTime(train.departMinutes)} 発 → {toTime(arriveAt)} 着
                 {train.isDefault && (
-                  <span className="type-label-small ml-2 rounded-full bg-primary px-2 py-0.5 text-on-primary">
+                  <span className="type-label-small ml-2 rounded-sm bg-primary px-2 py-0.5 text-on-primary">
                     デフォルト
                   </span>
                 )}
@@ -216,7 +216,6 @@ export function WorkTrains({
               key={value}
               type="button"
               size="sm"
-              className="rounded-full"
               variant={direction === value ? "secondary" : "outline"}
               aria-pressed={direction === value}
               onClick={() => setDirection(value)}

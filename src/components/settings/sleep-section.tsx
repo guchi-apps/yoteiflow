@@ -111,7 +111,7 @@ export function SleepSection({
                     setSaved(false);
                   }}
                   className={cn(
-                    "type-label-medium rounded-full border px-3 py-1 transition-colors",
+                    "type-label-medium rounded-md border px-3 py-1 transition-colors",
                     preset.name === name.trim()
                       ? "border-transparent bg-secondary-container font-bold text-on-surface"
                       : "border-outline-variant text-on-surface-variant hover:bg-on-surface/8",

@@ -149,7 +149,7 @@ export function PlacesScreen({
         )}
 
         {places.length > 0 && (
-          <label className="flex items-center gap-2 rounded-full border border-outline-variant px-4 py-2.5 text-on-surface-variant focus-within:border-primary">
+          <label className="flex items-center gap-2 rounded-xs border border-outline-variant px-4 py-2.5 text-on-surface-variant focus-within:border-primary">
             <Search className="size-4 shrink-0" />
             <input
               type="search"
@@ -175,7 +175,7 @@ export function PlacesScreen({
                     aria-pressed={on}
                     onClick={() => toggleTag(tag)}
                     className={cn(
-                      "type-label-large inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors",
+                      "type-label-large inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors",
                       on
                         ? "border-primary bg-secondary-container font-semibold text-on-secondary-container"
                         : "border-outline-variant text-on-surface hover:bg-on-surface/8",
@@ -215,7 +215,7 @@ export function PlacesScreen({
           <div
             role="group"
             aria-label="表示の切り替え"
-            className="flex self-start overflow-hidden rounded-full border border-outline-variant @3xl/main:hidden"
+            className="flex self-start overflow-hidden rounded-md border border-outline-variant @3xl/main:hidden"
           >
             {(
               [

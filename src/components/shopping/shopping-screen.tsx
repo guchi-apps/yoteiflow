@@ -404,7 +404,7 @@ export function ShoppingScreen({
       <Button
         size="icon"
         className={cn(
-          "elevation-3 fixed right-4 z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]",
+          "elevation-3 fixed right-4 z-20 size-16 rounded-xl bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-md",
           fabBottomOffsetClass(runningActivity !== null),
         )}
         aria-label={view === "wishlist" ? "欲しいものを追加" : "買うものを追加"}
@@ -488,7 +488,7 @@ function CategoryTab({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "type-label-large flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 transition-colors",
+        "type-label-large flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1 transition-colors",
         // 選択中は塗り・輪郭・太さの3つで示す（入力ダイアログのチップと同じ規則・issue #570）。
         // 塗りだけだと、横に送れるタブの列の中でどれを選んでいるのかが読み取りにくい。
         active

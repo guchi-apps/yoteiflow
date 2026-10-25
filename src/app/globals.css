@@ -98,22 +98,23 @@
   /* --- M3 シェイプスケール --- */
   --radius-none: 0px;
   --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 28px;
-  /* M3 Expressive の large-increased 〜 extra-large の間。カード・記録中の帯など、
-     本文の中に置く面の角丸に使う（issue #705）。 */
-  --radius-2xl: 24px;
-  --radius-3xl: 28px;
-  --radius-4xl: 28px;
+  /* M3 の値（8・12・16・28px）から一段ずつ詰めている。丸みが強すぎるため、ボタン・チップを
+     ピル型から角丸へ寄せたのに合わせて、面の角も角張らせた（issue #1383）。 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  /* カード・記録中の帯など、本文の中に置く面の角丸に使う（issue #705・#1383）。 */
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
+  --radius-4xl: 16px;
 
   /* カレンダーの面に置く項目（予定・タスク・日付リマインド・移動・記録）の角丸。
      種類ごとに値を書くと、同じ面に複数の丸みが並び、項目の種類の違いなのか意味の違いなのかが
      読めなくなる（issue #316 では 12px・8px・4px が混在していた）。1か所で持って全部を揃える。 */
-  /* M3 Expressive へ更新したとき（issue #705）に 4px → 6px。0px にしない理由（時間の罫線と
-     輪郭が同じ直線になる）は変わらない。 */
-  --radius-item: 6px;
+  /* M3 Expressive へ更新したとき（issue #705）に 4px → 6px、角張らせたとき（issue #1383）に
+     4px へ戻した。0px にしない理由（時間の罫線と輪郭が同じ直線になる）は変わらない。 */
+  --radius-item: 4px;
 
   /* --- 書体 --- */
   --font-sans: var(--font-sans-stack);
@@ -196,7 +197,7 @@
   --border: var(--md-outline-variant);
   --input: var(--md-outline);
   --ring: var(--md-primary);
-  --radius: 12px;
+  --radius: 8px;
 
   --sidebar: var(--md-surface-container-low);
   --sidebar-foreground: var(--md-on-surface);

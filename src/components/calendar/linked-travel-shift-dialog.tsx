@@ -408,7 +408,7 @@ function TransitFollowCard({
                 aria-pressed={purpose === value}
                 onClick={() => choosePurpose(value)}
                 className={cn(
-                  "rounded-full border px-2.5 py-0.5 type-label-medium",
+                  "rounded-md border px-2.5 py-0.5 type-label-medium",
                   purpose === value
                     ? "border-transparent bg-secondary-container text-on-secondary-container"
                     : "border-outline-variant text-on-surface-variant",

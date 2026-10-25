@@ -1191,7 +1191,7 @@ export function CalendarShell({
         </Button>
 
         {/* M3のセグメンテッドボタン。排他的な選択であることを、隣接した枠で示す。 */}
-        <div className="flex items-center overflow-hidden rounded-full border border-outline">
+        <div className="flex items-center overflow-hidden rounded-md border border-outline">
           {VIEW_LABELS.map((item) => (
             <Button
               key={item.view}
@@ -2216,11 +2216,11 @@ function AddButton({
   return (
     <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>
       {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。
-          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705）。 */}
+          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705。角丸は issue #1383 で12pxへ詰めた）。 */}
       <Button
         size="icon"
         aria-label="追加"
-        className="elevation-3 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
+        className="elevation-3 size-16 rounded-xl bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-md"
         onClick={() => onAdd(available)}
       >
         <Plus className="size-6" />

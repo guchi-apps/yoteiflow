@@ -122,7 +122,7 @@ export function WorkSegmentsEditor({
       aria-pressed={selected}
       onClick={onClick}
       className={cn(
-        "type-label-medium rounded-full border px-3 py-1.5 transition-colors",
+        "type-label-medium rounded-md border px-3 py-1.5 transition-colors",
         selected
           ? trip
             ? "border-transparent bg-travel font-bold text-on-travel"

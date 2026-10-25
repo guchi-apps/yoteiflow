@@ -546,7 +546,7 @@ const DayHeaderPane = memo(function DayHeaderPane({
                 type="button"
                 // 名前をどこまで出すかは列に残っている幅で決まる（画面幅では切り替えない）。
                 // チップの幅判定（@max-[31px] など）はこの枠をコンテナとして見る。
-                className="@container mt-0.5 flex h-[19px] w-full min-w-0 items-center justify-center rounded-full px-0.5 transition-colors hover:bg-on-surface/8 active:bg-on-surface/12"
+                className="@container mt-0.5 flex h-[19px] w-full min-w-0 items-center justify-center rounded-sm px-0.5 transition-colors hover:bg-on-surface/8 active:bg-on-surface/12"
                 aria-label={`${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日の勤務を${workRecord ? "編集" : "登録"}`}
                 onClick={() => onOpenWork(dateKey)}
               >

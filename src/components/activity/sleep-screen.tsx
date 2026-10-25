@@ -140,7 +140,7 @@ export function SleepScreen({
             href={`/activity/sleep?days=${value}`}
             aria-current={value === days ? "page" : undefined}
             className={cn(
-              "type-label-large rounded-full border px-4 py-1.5 transition-colors",
+              "type-label-large rounded-md border px-4 py-1.5 transition-colors",
               value === days
                 ? "border-transparent bg-secondary-container font-bold text-on-surface"
                 : "border-outline-variant text-on-surface-variant hover:bg-on-surface/8",

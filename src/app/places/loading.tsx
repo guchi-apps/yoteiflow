@@ -12,14 +12,14 @@ export default function Loading() {
   return (
     <div className="flex min-h-app flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        <SkeletonBlock className="h-8 w-20 rounded-full" />
+        <SkeletonBlock className="h-8 w-20 rounded-md" />
         <SkeletonBlock className="h-6 w-16" />
         <span className="flex-1" />
         <LoadingRefreshMark className="size-8 md:size-8" />
       </header>
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6 lg:max-w-5xl">
-        <SkeletonBlock className="h-11 w-full rounded-full" />
+        <SkeletonBlock className="h-11 w-full rounded-xs" />
 
         <div className="flex flex-col gap-4 rounded-xl bg-surface-container-low p-4">
           {Array.from({ length: 6 }, (_, i) => (

@@ -22,7 +22,6 @@ import {
   type WorkRouteRow,
 } from "@/components/settings/work-place-defaults";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
-import { cn } from "@/lib/utils";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -189,7 +188,6 @@ export function WorkAutoSection({
                     type="button"
                     size="sm"
                     variant={selected ? "secondary" : "outline"}
-                    className={cn("rounded-full")}
                     disabled={busy}
                     aria-pressed={selected}
                     onClick={() =>
