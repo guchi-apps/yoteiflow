@@ -13,7 +13,7 @@ import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
-import { applyGarbageLeaveTime } from "@/lib/garbage-time";
+import { applyGarbageLeaveTime, homeDepartures } from "@/lib/garbage-time";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
@@ -103,7 +103,7 @@ export async function loadCalendarData(
   ]);
 
   // ゴミの日の時刻は、勤務の往路移動の出発時刻から表示時に決める（issue #1156）。
-  notion.reminders = await applyGarbageTimes(userId, range, notion.reminders);
+  notion.reminders = await applyGarbageTimes(userId, range, notion.reminders, travelPlans, events.items);
 
   // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
   // 書き出し先のIDと一致する予定を落とす（docs/spec.md §29）。
@@ -327,18 +327,24 @@ export async function loadGoogleEvents(
 }
 
 /**
- * ゴミの日の枠へ、勤務から自動生成した往路移動の出発時刻に応じたゴミ出しの時刻を重ねる。
- * DaySpanのDBだけを読み、ゴミの日が無い範囲では何も読まない（docs/spec.md §9）。
+ * ゴミの日の枠へ、その日に自宅を出る最初の移動の出発時刻に応じたゴミ出しの時刻を重ねる
+ * （issue #1156・#1360）。取得済みの移動・予定とDaySpanのDBだけを読み、外部APIの往復は増えない
+ * （docs/spec.md §9）。自宅にいないことが確実な日は動かさない（`homeDepartures()`）。
  */
 async function applyGarbageTimes(
   userId: string,
   range: { timeMin: string; timeMax: string },
   reminders: ReminderItem[],
+  travelPlans: { id: string; origin: string; departAt: Date }[],
+  events: CalendarEventItem[],
 ): Promise<ReminderItem[]> {
   if (!reminders.some((item) => item.source === "garbage" && !item.hasTime)) return reminders;
 
   const [setting, rows] = await Promise.all([
-    db.uiSetting.findUnique({ where: { userId }, select: { timeZone: true } }),
+    db.uiSetting.findUnique({
+      where: { userId },
+      select: { timeZone: true, travelDefaultOrigin: true },
+    }),
     db.workGenerated.findMany({
       where: {
         userId,
@@ -346,24 +352,20 @@ async function applyGarbageTimes(
         travelPlanId: { not: null },
         date: { gte: range.timeMin.slice(0, 10), lte: range.timeMax.slice(0, 10) },
       },
-      select: { date: true, travelPlanId: true },
+      select: { travelPlanId: true },
     }),
   ]);
-  const plans = rows.length
-    ? await db.travelPlan.findMany({
-        where: { userId, id: { in: rows.map((row) => row.travelPlanId!) } },
-        select: { id: true, departAt: true },
-      })
-    : [];
-  const departAtById = new Map(plans.map((plan) => [plan.id, plan.departAt]));
-  const departures = new Map<string, Date>();
-  for (const row of rows) {
-    const departAt = departAtById.get(row.travelPlanId!);
-    const current = departures.get(row.date);
-    // 同じ日に往路が複数あるときは、いちばん早い出発に合わせる。
-    if (departAt && (!current || departAt < current)) departures.set(row.date, departAt);
-  }
-  return applyGarbageLeaveTime(reminders, departures, setting?.timeZone ?? "Asia/Tokyo");
+  const timeZone = setting?.timeZone ?? "Asia/Tokyo";
+  // 勤務から自動生成した往路は、出発地の表記によらず自宅発として扱う。
+  const homeTravelIds = new Set(rows.map((row) => row.travelPlanId!));
+  const departures = homeDepartures(
+    travelPlans,
+    events,
+    setting?.travelDefaultOrigin ?? null,
+    homeTravelIds,
+    timeZone,
+  );
+  return applyGarbageLeaveTime(reminders, departures, timeZone);
 }
 
 async function loadNotionItems(

@@ -5,7 +5,7 @@ import {
   type WorkRecordOverride,
   type WorkTrainItem,
 } from "@/lib/work-sync/plan";
-import { earlyByForReturn, lateByForOutbound } from "@/lib/work-sync/train";
+import { defaultTrain, earlyByForReturn, lateByForOutbound } from "@/lib/work-sync/train";
 
 /**
  * 勤務入力ダイアログの「勤務予定・移動の反映」欄の状態を作る・検証する純粋関数
@@ -138,6 +138,28 @@ export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm 
     backMinutes: back ? String(back) : "",
     outTrainId: "",
     backTrainId: "",
+  };
+}
+
+/**
+ * 新規の記録だけに使う初期選択（issue #1371）。往路・復路が有効で、まだ電車を選んでおらず、その勤務先に
+ * デフォルトの電車があれば選んだ状態にする。**既存の記録には使わない**（開いただけで電車が選ばれ、
+ * 保存で既存の予定・移動の時刻が書き換わるのを避けるため。呼び出し側が新規かを判断する）。
+ */
+export function withDefaultTrains(
+  form: SyncForm,
+  config: SyncConfig,
+  context: SyncContext,
+): SyncForm {
+  if (!commutes(config, context)) return form;
+  const pick = (leg: Leg, enabled: boolean, current: string) => {
+    if (!enabled || current !== "") return current;
+    return defaultTrain(trainsFor(config, context, leg))?.id ?? "";
+  };
+  return {
+    ...form,
+    outTrainId: pick("out", form.outEnabled, form.outTrainId),
+    backTrainId: pick("back", form.backEnabled, form.backTrainId),
   };
 }
 

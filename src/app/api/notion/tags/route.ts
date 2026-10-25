@@ -53,6 +53,12 @@ async function prepare(rawKind: unknown): Promise<Prepared> {
   if (!isTagKind(rawKind)) return reject({ error: "kind is required" }, 400);
   const kind: TagKind = rawKind;
 
+  // 場所のタグは固定の4種で、選択肢の追加・削除・改名・並び替えは受けない（issue #1361）。
+  // 画面から入口を無くすだけだと、APIの直接呼び出しが素通りするためここでも断る。
+  if (kind === "place") {
+    return reject({ error: "place_tags_fixed", message: "場所のタグは変更できません。" }, 403);
+  }
+
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   if (!connection) return reject({ error: "not_connected" }, 404);
 

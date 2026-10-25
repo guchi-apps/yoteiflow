@@ -108,3 +108,44 @@ export function unproject(pixel: { x: number; y: number }, zoom: number): LatLng
 export function isSamePoint(a: LatLng, b: LatLng, tolerance = 0.00001): boolean {
   return Math.abs(a.lat - b.lat) < tolerance && Math.abs(a.lng - b.lng) < tolerance;
 }
+
+/**
+ * 座標の集合がすべて枠に収まる中心とズームを求める（場所画面の地図・issue #1364）。
+ *
+ * 枠の大きさ（px）で入るズームが変わるため、幅・高さを受ける。`padding` は枠の四辺に
+ * 残す余白で、ピンの絵（点より上へ伸びる）が枠の端で切れないようにする。
+ * 1件のときは広がりが無くズームが決まらないため `singleZoom` に固定する。0件は中心を
+ * 決められないため null を返し、呼び出し側の既定の中心へ任せる。
+ *
+ * 経度は単純に最小・最大で見る。日付変更線をまたぐ集合は考えない（国内で使う前提）。
+ */
+export function fitBounds(
+  points: LatLng[],
+  size: { width: number; height: number },
+  { padding = 48, minZoom = 3, maxZoom = 17, singleZoom = 15 } = {},
+): { center: LatLng; zoom: number } | null {
+  if (points.length === 0) return null;
+  if (points.length === 1) return { center: points[0], zoom: singleZoom };
+
+  // ズーム0の世界座標で外接矩形を取る。ズームが1上がるごとに2倍になるので、
+  // 枠の幅・高さとの比から入るズームを逆算できる。
+  const pixels = points.map((point) => project(point, 0));
+  const minX = Math.min(...pixels.map((p) => p.x));
+  const maxX = Math.max(...pixels.map((p) => p.x));
+  const minY = Math.min(...pixels.map((p) => p.y));
+  const maxY = Math.max(...pixels.map((p) => p.y));
+
+  const center = unproject({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, 0);
+
+  const usableWidth = Math.max(1, size.width - padding * 2);
+  const usableHeight = Math.max(1, size.height - padding * 2);
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const zoomX = spanX > 0 ? Math.log2(usableWidth / spanX) : maxZoom;
+  const zoomY = spanY > 0 ? Math.log2(usableHeight / spanY) : maxZoom;
+  // 整数へ切り下げる。タイルが整数のズームにしか無く、端数のままだと拡大縮小した
+  // タイルで見せることになりぼやける。切り下げなら必ず収まる側に倒れる。
+  const zoom = Math.min(maxZoom, Math.max(minZoom, Math.floor(Math.min(zoomX, zoomY))));
+
+  return { center, zoom };
+}

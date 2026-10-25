@@ -19,6 +19,7 @@ export function isPublicPath(pathname: string): boolean {
  * - `/api/shortcuts/` … ライブアクティビティの停止ボタン用（docs/spec.md §43）
  * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
  * - `/api/app-version` … 稼働中の版の照合用（deploy.yml のヘルスチェックが未ログインで呼ぶ。issue #1257）
+ * - `/.well-known/apple-app-site-association` … Universal Linkの関連付け（AppleのCDN・端末が未ログインで取りに来る。issue #1366）
  *
  * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ
  * 到達できない間は（updateSession の authUnreachable の分岐で）トークンだけで判定できる要求まで503になる。
@@ -27,6 +28,7 @@ export function isPublicPath(pathname: string): boolean {
 export function isTokenAuthApiPath(pathname: string): boolean {
   return (
     pathname === "/api/app-version" ||
+    pathname === "/.well-known/apple-app-site-association" ||
     pathname.startsWith("/api/widget/") ||
     pathname.startsWith("/api/shortcuts/") ||
     pathname.startsWith("/api/internal/")

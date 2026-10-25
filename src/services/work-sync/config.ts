@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import type { TrainInput } from "@/lib/work-sync/train";
 import { readStoredOverride } from "@/lib/work-sync/override";
 import type {
   PlaceDefaultsLookup,
@@ -46,6 +47,8 @@ export async function loadTrains(userId: string): Promise<WorkTrainItem[]> {
     label: row.label,
     departMinutes: row.departMinutes,
     durationMinutes: row.durationMinutes,
+    isDefault: row.isDefault,
+    note: row.note,
   }));
 }
 
@@ -79,4 +82,39 @@ export async function saveRecordOverride(
 
 export async function deleteRecordOverride(userId: string, workRecordId: string): Promise<void> {
   await db.workRecordSetting.deleteMany({ where: { userId, workRecordId } });
+}
+
+/**
+ * 電車を追加・更新する。デフォルトにするときは、更新後の（出発地, 行き先）の組で他の行の
+ * デフォルトを外す（組を付け替えても、移動先の組でデフォルトが2件並ばないように）。
+ * 更新対象が無ければ null。
+ */
+export async function saveTrain(
+  userId: string,
+  id: string | null,
+  train: TrainInput,
+): Promise<{ id: string } | null> {
+  return db.$transaction(async (tx) => {
+    let savedId: string;
+    if (id) {
+      const result = await tx.workTrain.updateMany({ where: { id, userId }, data: train });
+      if (result.count === 0) return null;
+      savedId = id;
+    } else {
+      savedId = (await tx.workTrain.create({ data: { userId, ...train } })).id;
+    }
+    if (train.isDefault) {
+      await tx.workTrain.updateMany({
+        where: {
+          userId,
+          origin: train.origin,
+          destination: train.destination,
+          id: { not: savedId },
+          isDefault: true,
+        },
+        data: { isDefault: false },
+      });
+    }
+    return { id: savedId };
+  });
 }

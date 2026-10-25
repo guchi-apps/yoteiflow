@@ -476,6 +476,10 @@ model WorkTrain {
   /// 出発時刻（0時からの分）。到着は出発 + durationMinutes（日をまたぎうる）。
   departMinutes   Int
   durationMinutes Int
+  /// 出発地→行き先ごとのデフォルト（issue #1371）。勤務の入力を新規で開いたとき最初に選ぶ。組ごとに1件。
+  isDefault Boolean @default(false)
+  /// Yahoo!乗換案内の経路テキスト（案内文を除いたもの）。乗換・路線・運賃などの詳細。
+  note      String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

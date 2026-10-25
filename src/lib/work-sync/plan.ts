@@ -74,6 +74,10 @@ export type WorkTrainItem = {
   label: string;
   departMinutes: number;
   durationMinutes: number;
+  /** 出発地→行き先ごとのデフォルト（issue #1371）。 */
+  isDefault: boolean;
+  /** Yahoo!乗換案内の経路テキスト（詳細）。 */
+  note: string | null;
 };
 export type TrainLookup = (id: string) => WorkTrainItem | null;
 

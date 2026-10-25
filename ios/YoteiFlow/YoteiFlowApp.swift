@@ -32,8 +32,15 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.2), value: model.failure)
         .onAppear { model.startIfNeeded() }
-        // ウィジェットの押下。認証シートの戻り先（auth-callback など）は認証シートが受けるため、ここへは来ない
-        .onOpenURL { model.openFromWidget($0) }
+        // ウィジェットの押下。認証シートの戻り先（auth-callback など）は認証シートが受けるため、ここへは来ない。
+        // https はUniversal Link（Discordなどのカレンダーのリンク・issue #1366）で、ウィジェットの経路と分ける
+        .onOpenURL { url in
+            if url.scheme == "https" {
+                model.openUniversalLink(url)
+            } else {
+                model.openFromWidget(url)
+            }
+        }
         // 記録のコントロールを記録していないときに押した（#1296）。intent がこのプロセスで動いたときは通知で届く
         .onReceive(NotificationCenter.default.publisher(for: ControlOpenRequest.notification)) { _ in
             openControlRequest()

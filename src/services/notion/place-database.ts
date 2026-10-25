@@ -3,7 +3,7 @@ import type { Client } from "@notionhq/client";
 // よく行く場所のデータソース。予定の「場所」欄の入力候補として読む（docs/spec.md §9）。
 // タスク・日付リマインドと同じく、一次情報源はNotion側でDaySpanには保存しない。
 
-export type PlaceField = "name" | "address" | "tags" | "coordinates" | "station";
+export type PlaceField = "name" | "address" | "tags" | "coordinates" | "station" | "stationMinutes";
 export type PlacePropertyMap = Partial<Record<PlaceField, string>>;
 
 type PropertyConfig = { id: string; name: string; type: string };
@@ -39,6 +39,14 @@ export const PLACE_FIELD_REQUIREMENTS: Requirement[] = [
     types: ["rich_text"],
     required: false,
     hints: ["最寄り駅", "最寄駅", "最寄", "駅", "station"],
+    hintOnly: true,
+  },
+  {
+    field: "stationMinutes",
+    label: "最寄り駅までの時間",
+    types: ["number"],
+    required: false,
+    hints: ["最寄り駅までの", "駅まで", "徒歩"],
     hintOnly: true,
   },
 ];
@@ -113,6 +121,7 @@ export const PLACE_DATABASE_TEMPLATE = {
   tags: "タグ",
   coordinates: "座標",
   station: "最寄り駅",
+  stationMinutes: "最寄り駅までの時間",
 } as const satisfies Required<Record<PlaceField, string>>;
 
 /**
@@ -136,6 +145,8 @@ export async function createPlaceDatabase(
         [PLACE_DATABASE_TEMPLATE.coordinates]: { rich_text: {} },
         // Yahoo!乗換案内をこの駅名で開く（docs/spec.md §29）。
         [PLACE_DATABASE_TEMPLATE.station]: { rich_text: {} },
+        // 最寄り駅までの徒歩（分）。予定の移動の検索時刻に足す。
+        [PLACE_DATABASE_TEMPLATE.stationMinutes]: { number: { format: "number" } },
       },
     },
   });
@@ -152,10 +163,10 @@ export async function createPlaceDatabase(
   };
 }
 
-/** あとから足せる任意の項目。どちらも `rich_text` で、名前が当たったときだけ対応付ける。 */
-export type PlaceOptionalField = "coordinates" | "station";
+/** あとから足せる任意の項目。座標・最寄り駅は `rich_text`、徒歩分は `number` で、名前が当たったときだけ対応付ける。 */
+export type PlaceOptionalField = "coordinates" | "station" | "stationMinutes";
 
-export const PLACE_OPTIONAL_FIELDS: PlaceOptionalField[] = ["coordinates", "station"];
+export const PLACE_OPTIONAL_FIELDS: PlaceOptionalField[] = ["coordinates", "station", "stationMinutes"];
 
 export const isPlaceOptionalField = (value: unknown): value is PlaceOptionalField =>
   typeof value === "string" && (PLACE_OPTIONAL_FIELDS as string[]).includes(value);
@@ -183,7 +194,9 @@ export async function addPlaceTextProperty(
   if (!existing) {
     await notion.dataSources.update({
       data_source_id: dataSourceId,
-      properties: { [name]: { rich_text: {} } } as never,
+      properties: {
+        [name]: field === "stationMinutes" ? { number: { format: "number" } } : { rich_text: {} },
+      } as never,
     });
   }
 

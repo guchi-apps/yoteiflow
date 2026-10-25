@@ -63,6 +63,8 @@ export type TransitSuggestion = {
   nextEvent: { title: string; start: string } | null;
   /** 予定前の直前の予定（これより前に出発すると予定の途中で抜けることになる）。無ければ null */
   previousEvent: { title: string; end: string } | null;
+  /** 検索時刻に足した最寄り駅からの徒歩（分）。0なら足していない */
+  walkMinutes: number;
   /** 断定できないことの断り（重なる予定・場所なし・候補が複数など） */
   notes: string[];
 };
@@ -91,6 +93,11 @@ export function suggestTransitSearch(input: {
   home: string | null;
   /** 編集中の移動。自分自身を「直前の移動」として拾わない */
   excludeTravelId?: string | null;
+  /**
+   * 予定の場所から最寄り駅までの徒歩（分・省略時は 0）。保存する余裕分には含めず、提案のたびに足す。
+   * 予定前は到着を、予定後は出発をこの分だけ駅側へずらす。
+   */
+  walkMinutes?: number;
   /** 時刻の表示（設定タイムゾーンの H:mm） */
   formatTime: (iso: string) => string;
 }): TransitSuggestion {
@@ -105,13 +112,14 @@ export function suggestTransitSearch(input: {
 
   if (target.allDay) {
     notes.push("終日の予定は時刻が決まらないため、日時を入力してください。");
-    return { purpose, basis: before ? "arrive" : "depart", at: null, eventPlace, candidates: homeOnly(input.home), nextEvent: null, previousEvent: null, notes };
+    return { purpose, basis: before ? "arrive" : "depart", at: null, eventPlace, candidates: homeOnly(input.home), nextEvent: null, previousEvent: null, notes, walkMinutes: 0 };
   }
 
   const start = ms(target.start);
   const end = ms(target.end);
   const marginMs = Math.max(0, input.marginMinutes) * 60_000;
-  const at = new Date(before ? start - marginMs : end + marginMs).toISOString();
+  const walkMs = Math.max(0, input.walkMinutes ?? 0) * 60_000;
+  const at = new Date(before ? start - marginMs - walkMs : end + marginMs + walkMs).toISOString();
   const windowMs = TRANSIT_CONTEXT_HOURS * HOUR_MS;
 
   const events = input.events.filter((event) => event.id !== target.id && !event.allDay && !event.skipped);
@@ -192,6 +200,7 @@ export function suggestTransitSearch(input: {
     nextEvent: next ? { title: next.title, start: next.start } : null,
     previousEvent: previous ? { title: previous.title, end: previous.end } : null,
     notes,
+    walkMinutes: Math.round(walkMs / 60_000),
   };
 }
 
@@ -208,6 +217,8 @@ export function transitRouteWarnings(input: {
   target: TransitTarget;
   purpose: TravelSearchPurpose;
   marginMinutes: number;
+  /** 予定の場所の最寄り駅からの徒歩（分・省略時は 0）。予定前は到着の期限をこの分だけ早める */
+  walkMinutes?: number;
   departAt: string;
   arriveAt: string;
   nextEvent: { title: string; start: string } | null;
@@ -220,7 +231,7 @@ export function transitRouteWarnings(input: {
   if (Number.isNaN(depart) || Number.isNaN(arrive)) return [];
   const warnings: string[] = [];
   if (input.purpose === "BEFORE_EVENT") {
-    const limit = ms(input.target.start) - Math.max(0, input.marginMinutes) * 60_000;
+    const limit = ms(input.target.start) - (Math.max(0, input.marginMinutes) + Math.max(0, input.walkMinutes ?? 0)) * 60_000;
     if (arrive > ms(input.target.start)) warnings.push(`予定の開始（${input.formatTime(input.target.start)}）より後に着く経路です。`);
     else if (arrive > limit) warnings.push(`予定の${input.marginMinutes}分前（${input.formatTime(new Date(limit).toISOString())}）より後に着く経路です。`);
     if (input.previousEvent && depart < ms(input.previousEvent.end)) {
