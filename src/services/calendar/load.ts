@@ -1,5 +1,6 @@
 import { externalApiMessage } from "@/lib/api-error";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
+import { createLoadTimer, formatLoadSpans, SLOW_LOAD_LOG_MS, type LoadTimer } from "@/lib/load-timing";
 import { db } from "@/lib/db";
 import { listActivityCalendarIds } from "@/services/activity/settings";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
@@ -90,20 +91,37 @@ export async function loadWritableCalendars(userId: string): Promise<WritableCal
 export async function loadCalendarData(
   userId: string,
   range: { timeMin: string; timeMax: string },
-  options?: { todayKey?: string },
+  options?: { todayKey?: string; timer?: LoadTimer },
 ): Promise<CalendarLoadResult> {
+  // 取得元ごとの所要時間（issue #1431）。呼び出し側が `Server-Timing` に載せたいときは
+  // timer を渡す。渡されなくても、遅かった回はここでサーバーログへ内訳を残す。
+  const timer = options?.timer ?? createLoadTimer();
+
   // 移動と紐づけはDaySpanのDBにあるため、外部APIの往復は増えない。Google・Notionと並行に読む。
-  const [events, notion, travelPlans, taskLinks, bringItems, travelNotificationSettings] = await Promise.all([
-    loadGoogleEvents(userId, range),
-    loadNotionItems(userId, range, options?.todayKey),
-    listTravelsInRange(userId, range),
-    listTaskLinks(userId),
-    listBringItems(userId),
-    listEventNotificationSettings(userId),
-  ]);
+  const [events, notion, [travelPlans, taskLinks, bringItems, travelNotificationSettings]] =
+    await Promise.all([
+      timer.time("google", loadGoogleEvents(userId, range)),
+      timer.time("notion", loadNotionItems(userId, range, options?.todayKey, timer)),
+      timer.time(
+        "db",
+        Promise.all([
+          listTravelsInRange(userId, range),
+          listTaskLinks(userId),
+          listBringItems(userId),
+          listEventNotificationSettings(userId),
+        ]),
+      ),
+    ]);
 
   // ゴミの日の時刻は、勤務の往路移動の出発時刻から表示時に決める（issue #1156）。
   notion.reminders = await applyGarbageTimes(userId, range, notion.reminders, travelPlans, events.items);
+
+  const totalMs = timer.elapsed();
+  if (totalMs >= SLOW_LOAD_LOG_MS) {
+    console.warn(
+      `[dayspan] calendar load slow (${range.timeMin.slice(0, 10)}..${range.timeMax.slice(0, 10)}): ${formatLoadSpans(timer.spans(), totalMs)}`,
+    );
+  }
 
   // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
   // 書き出し先のIDと一致する予定を落とす（docs/spec.md §29）。
@@ -372,6 +390,7 @@ async function loadNotionItems(
   userId: string,
   range: { timeMin: string; timeMax: string },
   todayKey?: string,
+  timer?: LoadTimer,
 ): Promise<{
   tasks: TaskItem[];
   reminders: ReminderItem[];
@@ -418,19 +437,26 @@ async function loadNotionItems(
     // ゴミの日と、購入予定日のある買い物は日付リマインドと同じ形で描くため、同じ配列へ混ぜて
     // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
     // 混ぜずに分けて返す。
+    // どのDBが遅いのかを分けて測る（issue #1431）。5つは同じ連携トークンで並行に投げるため、
+    // Notionの回数制限（平均3回/秒）に掛かると、どれか1つではなく全体が引き延ばされうる。
+    const timed = <T>(name: string, task: Promise<T>): Promise<T> =>
+      timer ? timer.time(name, task) : task;
     const [tasks, reminders, garbageDays, workRecords, shoppingPlans] = await Promise.all([
       connection.taskDataSourceId
-        ? listTasksInRange(
-            notion,
-            connection,
-            dateRange,
-            overdueRange,
-          )
+        ? timed("notion-tasks", listTasksInRange(notion, connection, dateRange, overdueRange))
         : [],
-      connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
-      connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
-      workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
-      shoppingPlanReady(connection) ? listShoppingPlansInRange(notion, connection, dateRange) : [],
+      connection.reminderDataSourceId
+        ? timed("notion-reminders", listRemindersInRange(notion, connection, dateRange))
+        : [],
+      connection.garbageDataSourceId
+        ? timed("notion-garbage", listGarbageDaysInRange(notion, connection, dateRange))
+        : [],
+      workDatabaseReady(connection)
+        ? timed("notion-work", listWorkRecordsInRange(notion, connection, dateRange))
+        : [],
+      shoppingPlanReady(connection)
+        ? timed("notion-shopping", listShoppingPlansInRange(notion, connection, dateRange))
+        : [],
     ]);
     return {
       tasks,
