@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { LocateFixed, Minus, Plus } from "lucide-react";
+import { LocateFixed, Minus, Plus, Scan } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { project, unproject, TILE_SIZE, type LatLng } from "@/lib/coordinates";
@@ -33,6 +33,23 @@ function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
+/** これより動いた操作はドラッグとして扱い、ピンのタップにしない（px）。 */
+const TAP_SLOP = 6;
+
+/** タップした位置からこの距離（px）までのピンを押したことにする。指の太さぶんの余裕。 */
+const MARKER_HIT_RADIUS = 22;
+
+/** 置いたピンの絵の大きさ（px）。選んでいるものは大きくする。 */
+const MARKER_SIZE = 28;
+const MARKER_SIZE_SELECTED = 36;
+
+/** 地図に置くピン（場所画面の地図・issue #1364）。 */
+export type MapMarker = {
+  id: string;
+  position: LatLng;
+  label?: string;
+};
+
 function tileUrl(x: number, y: number, z: number): string {
   return TILE_URL.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
 }
@@ -44,6 +61,13 @@ export function TileMap({
   onZoomChange,
   onLocate,
   locating = false,
+  showCenterPin = true,
+  markers = [],
+  selectedMarkerId = null,
+  onMarkerSelect,
+  selectedOverlay,
+  onFitAll,
+  onSizeChange,
   className,
 }: {
   center: LatLng;
@@ -53,11 +77,29 @@ export function TileMap({
   /** 「現在地へ」を押したとき。位置情報の取得は呼び出し側が持つ。 */
   onLocate?: () => void;
   locating?: boolean;
+  /** 中央の選択用ピンを出すか。地点を選ぶ地図（既定）で出し、場所を見せるだけの地図では消す。 */
+  showCenterPin?: boolean;
+  /** 地図に置くピン。地図と一緒に動く。 */
+  markers?: MapMarker[];
+  selectedMarkerId?: string | null;
+  /** ピンを押したとき（何も無い所を押したときは null）。 */
+  onMarkerSelect?: (id: string | null) => void;
+  /** 選んでいるピンの上に出す吹き出し。 */
+  selectedOverlay?: ReactNode;
+  /** 「全体を表示」を押したとき。渡したときだけボタンを出す。 */
+  onFitAll?: () => void;
+  /** 枠の大きさが決まった・変わったとき。全体が入るズームの計算に使う。 */
+  onSizeChange?: (size: { width: number; height: number }) => void;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState(false);
+
+  // ピンのタップ判定。ピンの要素はイベントを受けず（地図がポインタをキャプチャするため
+  // clickが届かない）、押してから離すまでの移動量で地図のドラッグと見分ける。
+  // こうするとピンの上から地図を掴んで動かすこともできる。
+  const tapRef = useRef<{ x: number; y: number; moved: boolean; multi: boolean } | null>(null);
 
   // 押している指・ポインタの現在位置。2本になった時点でピンチとして扱う。
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -76,12 +118,19 @@ export function TileMap({
     stateRef.current = { center, zoom };
   }, [center, zoom]);
 
+  const onSizeChangeRef = useRef(onSizeChange);
+  useEffect(() => {
+    onSizeChangeRef.current = onSizeChange;
+  }, [onSizeChange]);
+
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
 
     const observer = new ResizeObserver(([entry]) => {
-      setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+      const next = { width: entry.contentRect.width, height: entry.contentRect.height };
+      setSize(next);
+      onSizeChangeRef.current?.(next);
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -133,6 +182,10 @@ export function TileMap({
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    tapRef.current =
+      pointersRef.current.size === 1
+        ? { x: event.clientX, y: event.clientY, moved: false, multi: false }
+        : tapRef.current && { ...tapRef.current, multi: true };
     beginGesture();
     setDragging(true);
   };
@@ -141,6 +194,11 @@ export function TileMap({
     const pointers = pointersRef.current;
     if (!pointers.has(event.pointerId)) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    const tap = tapRef.current;
+    if (tap && !tap.moved && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > TAP_SLOP) {
+      tap.moved = true;
+    }
 
     const gesture = gestureRef.current;
     if (!gesture) return;
@@ -177,6 +235,12 @@ export function TileMap({
     if (pointersRef.current.size === 0) {
       gestureRef.current = null;
       setDragging(false);
+      const tap = tapRef.current;
+      tapRef.current = null;
+      if (tap && !tap.moved && !tap.multi && event.type === "pointerup" && onMarkerSelect) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        onMarkerSelect(hitMarker(event.clientX - rect.left, event.clientY - rect.top));
+      }
       return;
     }
     // 指が減っても操作は続く。残った指を基準に取り直す。
@@ -200,6 +264,26 @@ export function TileMap({
   const visibleHeight = size.height / scale;
   const coverLeft = world.x - visibleWidth / 2;
   const coverTop = world.y - visibleHeight / 2;
+
+  // ピンの画面上の位置。端数のズームのまま求めれば、CSSで拡大縮小しているタイルと一致する。
+  const centerPixel = project(center, zoom);
+  const placedMarkers = markers.map((marker) => {
+    const p = project(marker.position, zoom);
+    return { ...marker, x: p.x - centerPixel.x + size.width / 2, y: p.y - centerPixel.y + size.height / 2 };
+  });
+  const selectedMarker = placedMarkers.find((marker) => marker.id === selectedMarkerId) ?? null;
+
+  function hitMarker(x: number, y: number): string | null {
+    let best: { id: string; distance: number } | null = null;
+    for (const marker of placedMarkers) {
+      // ピンの絵は地点より上へ伸びるため、絵の中ほど（地点の少し上）を当たりの中心にする。
+      const distance = Math.hypot(marker.x - x, marker.y - 14 - y);
+      if (distance <= MARKER_HIT_RADIUS && (!best || distance < best.distance)) {
+        best = { id: marker.id, distance };
+      }
+    }
+    return best?.id ?? null;
+  }
 
   const tiles: { key: string; url: string; x: number; y: number }[] = [];
   if (size.width > 0 && size.height > 0) {
@@ -261,19 +345,72 @@ export function TileMap({
         ))}
       </div>
 
+      {/* 置いたピン。選んでいるものを最後に描いて最前面へ出す（重なり回避はしない）。 */}
+      {[...placedMarkers.filter((m) => m.id !== selectedMarkerId), ...(selectedMarker ? [selectedMarker] : [])].map(
+        (marker) => {
+          const selected = marker.id === selectedMarkerId;
+          // ピンの先（絵の下から1割の位置）を地点に合わせ、ラベルは地点の下へ垂らす。
+          const pinSize = selected ? MARKER_SIZE_SELECTED : MARKER_SIZE;
+          return (
+            <div
+              key={marker.id}
+              className="pointer-events-none absolute flex flex-col items-center"
+              style={{
+                left: marker.x,
+                top: marker.y,
+                transform: `translate(-50%, -${pinSize * 0.9}px)`,
+              }}
+            >
+              <MarkerPin selected={selected} />
+              {marker.label && !selected && (
+                <span className="-mt-0.5 max-w-32 truncate rounded bg-white/85 px-1 text-[11px] leading-4 font-medium text-neutral-900">
+                  {marker.label}
+                </span>
+              )}
+            </div>
+          );
+        },
+      )}
+
+      {selectedMarker && selectedOverlay && (
+        <div
+          className="absolute z-10"
+          style={{ left: selectedMarker.x, top: selectedMarker.y, transform: "translate(-50%, calc(-100% - 44px))" }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {selectedOverlay}
+        </div>
+      )}
+
       {/* 中心のピン。地図と一緒には動かないため、タイルの層の外へ置く。 */}
-      <div className="pointer-events-none absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/35" />
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 left-1/2 size-9 -translate-x-1/2 -translate-y-full drop-shadow-[0_2px_3px_rgba(0,0,0,0.35)]"
-        fill="var(--md-error)"
-      >
-        <path d="M12 2a7 7 0 0 0-7 7c0 5.2 6.2 12.2 6.5 12.5a.7.7 0 0 0 1 0C12.8 21.2 19 14.2 19 9a7 7 0 0 0-7-7Z" />
-        <circle cx="12" cy="9" r="2.6" fill="#fff" />
-      </svg>
+      {showCenterPin && (
+        <>
+          <div className="pointer-events-none absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/35" />
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-1/2 size-9 -translate-x-1/2 -translate-y-full drop-shadow-[0_2px_3px_rgba(0,0,0,0.35)]"
+            fill="var(--md-error)"
+          >
+            <path d="M12 2a7 7 0 0 0-7 7c0 5.2 6.2 12.2 6.5 12.5a.7.7 0 0 0 1 0C12.8 21.2 19 14.2 19 9a7 7 0 0 0-7-7Z" />
+            <circle cx="12" cy="9" r="2.6" fill="#fff" />
+          </svg>
+        </>
+      )}
 
       <div className="absolute top-2 right-2 flex flex-col gap-2">
+        {onFitAll && (
+          <button
+            type="button"
+            aria-label="全体を表示"
+            title="全体を表示"
+            className="grid size-10 place-items-center rounded-full border border-outline-variant bg-surface-container text-primary shadow-sm"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onFitAll}
+          >
+            <Scan className="size-5" />
+          </button>
+        )}
         {onLocate && (
           <button
             type="button"
@@ -315,6 +452,27 @@ export function TileMap({
         © OpenStreetMap contributors
       </span>
     </div>
+  );
+}
+
+/** 置いたピンの絵。選んでいるものは大きく、色を変えて示す。 */
+function MarkerPin({ selected }: { selected: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      width={selected ? MARKER_SIZE_SELECTED : MARKER_SIZE}
+      height={selected ? MARKER_SIZE_SELECTED : MARKER_SIZE}
+      className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.35)]"
+    >
+      <path
+        d="M12 2a7 7 0 0 0-7 7c0 5.2 6.2 12.2 6.5 12.5a.7.7 0 0 0 1 0C12.8 21.2 19 14.2 19 9a7 7 0 0 0-7-7Z"
+        fill={selected ? "var(--md-error)" : "var(--md-primary)"}
+        stroke="#fff"
+        strokeWidth="1.2"
+      />
+      <circle cx="12" cy="9" r="2.6" fill="#fff" />
+    </svg>
   );
 }
 

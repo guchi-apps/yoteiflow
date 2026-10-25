@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { Check, ChevronRight, MapPin, Plus, Search } from "lucide-react";
+import { Check, ChevronRight, List, Map as MapIcon, MapPin, Plus, Search } from "lucide-react";
 
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { PlaceDialog, type PlaceCapabilities } from "@/components/places/place-dialog";
+import { PlacesMap } from "@/components/places/places-map";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf, tagSwatchClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { WIDE_TWO_COLUMN_ROW_CLASS } from "@/components/ui/wide-section";
 import { formatCoordinates } from "@/lib/coordinates";
 import { filterPlaces } from "@/lib/place-filter";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,24 @@ export function PlacesScreen({
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<PlaceItem | null>(null);
   const [adding, setAdding] = useState(false);
+  // 一覧と地図の切り替え（1024px未満だけ）。端末には覚えさせず、開くたびに一覧から始める。
+  const [mode, setMode] = useState<"list" | "map">("list");
+  // 地図で選んでいる場所と、一覧の行から地図を寄せる合図（issue #1364）。
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<{ id: string; seq: number } | null>(null);
+
+  // 1024px以上では一覧の行を押すと地図をその場所へ寄せる（編集は吹き出しから）。
+  // 地点の無い場所は地図に出ないため、従来どおり編集を開く。それより狭い幅では
+  // 一覧に地図が並ばないので、従来どおり行から編集を開く。
+  const openRow = (place: PlaceItem) => {
+    const wide = window.matchMedia("(min-width: 1024px)").matches;
+    if (wide && place.coordinates) {
+      setSelectedId(place.id);
+      setFocus((current) => ({ id: place.id, seq: (current?.seq ?? 0) + 1 }));
+      return;
+    }
+    setEditing(place);
+  };
 
   // 絞り込みに使うタグ。Notionの選択肢の並びを先に、選択肢に無いが場所に付いているものを後に並べる。
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -193,6 +211,38 @@ export function PlacesScreen({
           </p>
         )}
 
+        {places.length > 0 && (
+          <div
+            role="group"
+            aria-label="表示の切り替え"
+            className="flex self-start overflow-hidden rounded-full border border-outline-variant lg:hidden"
+          >
+            {(
+              [
+                ["list", "一覧", List],
+                ["map", "地図", MapIcon],
+              ] as const
+            ).map(([value, label, Icon], index) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => setMode(value)}
+                className={cn(
+                  "type-label-large flex items-center gap-1.5 px-4 py-1.5 transition-colors",
+                  index > 0 && "border-l border-outline-variant",
+                  mode === value
+                    ? "bg-secondary-container text-on-secondary-container"
+                    : "text-on-surface-variant hover:bg-on-surface/8",
+                )}
+              >
+                <Icon className="size-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {places.length === 0 ? (
           <p className="type-body-medium text-on-surface-variant">
             {loadError
@@ -204,51 +254,66 @@ export function PlacesScreen({
             {query.trim() ? `「${query.trim()}」` : "選んだタグ"}に当たる場所はありません。
           </p>
         ) : (
-          // 広い画面では行を2列に並べる（issue #636）。1行が画面幅いっぱいに伸びても名前と住所の
-          // 間が空くだけで、読める件数は増えない。
-          <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
-            {filtered.map((place) => (
-              <button
-                key={place.id}
-                type="button"
-                onClick={() => setEditing(place)}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3 text-left transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8",
-                  WIDE_TWO_COLUMN_ROW_CLASS,
-                )}
-              >
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="type-body-large truncate">{place.name}</span>
-                  {/* 最寄り駅は電車の移動でそのまま発着地になる。住所と同じ行へ添えて、
-                      どの駅から探されるのかを一覧から読めるようにする。 */}
-                  <span className="type-body-small truncate text-on-surface-variant">
-                    {place.station
-                      ? `${place.address ?? "住所なし"} ・ ${place.station}`
-                      : (place.address ?? "住所なし")}
-                  </span>
-                </div>
-
-                {place.tags.length > 0 && (
-                  <div className="flex max-w-[40%] shrink-0 gap-1">
-                    {place.tags.slice(0, 2).map((tag) => (
-                      <TagChip key={tag} name={tag} color={tagColorOf(tagOptions, tag)} />
-                    ))}
+          // 1024px以上は一覧の右に地図を並べる（issue #1364）。地図に幅を譲るため、一覧は
+          // 以前の2列（issue #636）から1列に戻す。地図は本文のスクロールに付いてこさせる。
+          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+            <Card className={cn("gap-0 py-0", mode === "map" && "hidden lg:flex")}>
+              {filtered.map((place) => (
+                <button
+                  key={place.id}
+                  type="button"
+                  onClick={() => openRow(place)}
+                  aria-current={place.id === selectedId ? "true" : undefined}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 text-left transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8",
+                    place.id === selectedId && "lg:bg-primary/12",
+                  )}
+                >
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="type-body-large truncate">{place.name}</span>
+                    {/* 最寄り駅は電車の移動でそのまま発着地になる。住所と同じ行へ添えて、
+                        どの駅から探されるのかを一覧から読めるようにする。 */}
+                    <span className="type-body-small truncate text-on-surface-variant">
+                      {place.station
+                        ? `${place.address ?? "住所なし"} ・ ${place.station}`
+                        : (place.address ?? "住所なし")}
+                    </span>
                   </div>
-                )}
 
-                {/* 地点があるかどうかで、この場所を開いたときの行き先が変わる
-                    （座標があれば座標、無ければ住所の検索）。一覧から読めるようにしておく。 */}
-                {place.coordinates && (
-                  <MapPin
-                    className="size-4 shrink-0 text-travel"
-                    aria-label={`地点あり（${formatCoordinates(place.coordinates)}）`}
-                  />
-                )}
+                  {place.tags.length > 0 && (
+                    <div className="flex max-w-[40%] shrink-0 gap-1">
+                      {place.tags.slice(0, 2).map((tag) => (
+                        <TagChip key={tag} name={tag} color={tagColorOf(tagOptions, tag)} />
+                      ))}
+                    </div>
+                  )}
 
-                <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
-              </button>
-            ))}
-          </Card>
+                  {/* 地点があるかどうかで、この場所を開いたときの行き先が変わる
+                      （座標があれば座標、無ければ住所の検索）。一覧から読めるようにしておく。 */}
+                  {place.coordinates && (
+                    <MapPin
+                      className="size-4 shrink-0 text-travel"
+                      aria-label={`地点あり（${formatCoordinates(place.coordinates)}）`}
+                    />
+                  )}
+
+                  <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
+                </button>
+              ))}
+            </Card>
+
+            <PlacesMap
+              places={filtered}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              focus={focus}
+              onEdit={setEditing}
+              className={cn(
+                "h-[62dvh] lg:sticky lg:top-24 lg:flex lg:h-[calc(100dvh-8rem)]",
+                mode === "list" && "hidden",
+              )}
+            />
+          </div>
         )}
 
         <p className="type-body-small text-on-surface-variant">
