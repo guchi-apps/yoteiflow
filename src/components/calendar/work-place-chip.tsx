@@ -91,7 +91,8 @@ export function WorkPlaceChip({
       className={cn(
         // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
         "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-xs px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
-        "@max-[31px]:px-0.5",
+        // 1文字へ切り替わる幅では、チップの方が文字より広いので中央へ置く（issue #1410）。
+        "@max-[31px]:justify-center @max-[31px]:px-0.5",
         record.businessTrip
           ? TRIP_CHIP_CLASS
           : tagChipClass(tagColorOf(options, record.place ?? "")),
