@@ -21,6 +21,7 @@ import type {
 import type { WorkRecordItem } from "@/types/work";
 
 import { rangesWithin } from "./optimistic-events";
+import { mergeRangeResponse } from "./range-data-merge";
 import {
   FRESH_REQUEST_HEADER,
   withEventNotificationSettings,
@@ -32,6 +33,20 @@ import {
 
 /** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
 const MIN_REFRESH_SECONDS = 30;
+
+/**
+ * 表示期間が変わってから取りにいくまでの待ち（issue #1377）。スワイプ・前へ／次へが続く間に
+ * 期間ごとの要求を並行させると、追い越された要求もサーバーではGoogle・Notionへの往復を
+ * 最後まで行い、Notionの回数制限で一部の取得元が失敗しやすくなる。前後1期間ぶんは先に
+ * 取ってあるため、少し待っても動かした先は埋まっている。
+ */
+const FETCH_DEBOUNCE_MS = 250;
+
+/**
+ * 保存済み・取得元の一部失敗の応答を足し合わせたあと、確かな応答で置き換えるために
+ * 取り直すまでの待ち（issue #1377）。
+ */
+const UNCERTAIN_RETRY_MS = 30_000;
 
 const EMPTY_RESULT: CalendarLoadResult = {
   events: [],
@@ -185,6 +200,17 @@ export function useCalendarRangeData({
   // 要求時刻が invalidate より古ければ、表示は更新しつつもう一度取りにいく。
   const invalidatedAtRef = useRef(0);
   const freshPendingRef = useRef(false);
+  // 確かでない応答のあとの取り直し（issue #1377）。取り直しの応答も確かでなかったとき
+  // （認可の失効のように続く失敗）に30秒ごとの要求を出し続けないよう、取り直しは1回に限る。
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryPendingRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (seedView === "month") return;
@@ -224,6 +250,12 @@ export function useCalendarRangeData({
     const requestedAt = Date.now();
     const fresh = freshPendingRef.current;
     freshPendingRef.current = false;
+    const isRetry = retryPendingRef.current;
+    retryPendingRef.current = false;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     inFlightKeyRef.current = targetKey;
     onLoadingChangeRef.current(true);
     // 取り直しを始めた時点で、前の期間ぶんの印は一旦下ろす。届いた応答で改めて判定し直す。
@@ -239,12 +271,14 @@ export function useCalendarRangeData({
       // 通信が遅くてService Workerがタイムアウトで保存済みを代わりに返したとき（issue #718）。
       const responseStale = response.headers.get("X-Dayspan-Stale") === "1";
 
-      const data = (await response.json()) as CalendarLoadResult;
+      const data = normalize((await response.json()) as CalendarLoadResult);
       // 自分より後に発行された要求があれば、追い越された古い応答として捨てる。
       if (latestRequestIdRef.current !== requestId) return;
+      // 保存済み・取得元の一部失敗の応答では、表示中の項目を消さずに足し合わせる（issue #1377）。
+      const uncertain = responseStale || data.errors.length > 0;
       setState((prev) => ({
         key: targetKey,
-        data: normalize(data),
+        data: mergeRangeResponse(prev.data, data, { stale: responseStale }).data,
         // 保存済みが返ったときは、同じ期間で前に最新を取れた時点のまま据え置く。
         syncedAt: responseStale ? (prev.key === targetKey ? prev.syncedAt : 0) : requestedAt,
         covered: coveredDays(targetView, targetAnchorKey),
@@ -260,6 +294,19 @@ export function useCalendarRangeData({
         setInvalidateNonce((n) => n + 1);
       } else {
         fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
+      }
+
+      if (uncertain && !isRetry) {
+        // 足し合わせたぶんには、他の端末で消した・完了した項目が残りうる。少し後に取り直し、
+        // 確かな応答で置き換える。保存済みが返るほど遅い回線でも最新を待てるよう、
+        // Service Workerのタイムアウトで保存済みへ倒さない（FRESH_REQUEST_HEADER）。
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          retryPendingRef.current = true;
+          freshPendingRef.current = true;
+          fetchedRef.current = { key: null, fetchedAt: 0 };
+          setInvalidateNonce((n) => n + 1);
+        }, UNCERTAIN_RETRY_MS);
       }
     } catch {
       if (latestRequestIdRef.current !== requestId) return;
@@ -294,7 +341,8 @@ export function useCalendarRangeData({
     const fresh = fetched.key === key && Date.now() - fetched.fetchedAt < ttl;
     if (fresh) return;
 
-    void fetchRange(view, anchorKey);
+    const timer = setTimeout(() => void fetchRange(view, anchorKey), FETCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [enabled, seedSettled, key, view, anchorKey, autoRefreshSeconds, fetchRange, invalidateNonce]);
 
   /**
