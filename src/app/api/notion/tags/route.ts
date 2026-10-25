@@ -160,9 +160,23 @@ export async function PATCH(request: Request) {
       const { [renamed.previousName]: label, ...rest } = shortLabels;
       data.workPlaceShortLabels = { ...rest, [name]: label };
     }
-    if (Object.keys(data).length > 0) {
-      await db.notionConnection.update({ where: { id: connection.id }, data });
-    }
+    // 正式名称の結び付け（WorkPlaceLink）と勤務先別の既定値（WorkPlaceDefault）も名前キー（issue #1417）。
+    // 新しい名前に古い行が残っていると一意制約に当たるため、先に消してから付け替える。
+    // 出張の行き先（isTrip）は場所DBの名前で、勤務場所の選択肢ではないため触らない。
+    const userId = connection.userId;
+    const previous = renamed.previousName;
+    await db.$transaction([
+      ...(Object.keys(data).length > 0
+        ? [db.notionConnection.update({ where: { id: connection.id }, data })]
+        : []),
+      db.workPlaceLink.deleteMany({ where: { userId, workPlace: name } }),
+      db.workPlaceLink.updateMany({ where: { userId, workPlace: previous }, data: { workPlace: name } }),
+      db.workPlaceDefault.deleteMany({ where: { userId, key: name, isTrip: false } }),
+      db.workPlaceDefault.updateMany({
+        where: { userId, key: previous, isTrip: false },
+        data: { key: name },
+      }),
+    ]);
   }
 
   return NextResponse.json({ options: renamed.options });
@@ -194,9 +208,15 @@ export async function DELETE(request: Request) {
           Object.entries(shortLabels).filter(([place]) => place !== name),
         );
       }
-      if (Object.keys(data).length > 0) {
-        await db.notionConnection.update({ where: { id: prepared.connection.id }, data });
-      }
+      const userId = prepared.connection.userId;
+      await db.$transaction([
+        ...(Object.keys(data).length > 0
+          ? [db.notionConnection.update({ where: { id: prepared.connection.id }, data })]
+          : []),
+        // 名前キーの設定も消す（issue #1417）。残ると設定画面のどこからも消せない。
+        db.workPlaceLink.deleteMany({ where: { userId, workPlace: name } }),
+        db.workPlaceDefault.deleteMany({ where: { userId, key: name, isTrip: false } }),
+      ]);
     }
 
     return NextResponse.json({ options });
