@@ -247,6 +247,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 {
   "title": "歯医者",
   "date": "2026-09-07",        // YYYY-MM-DD
+  "endDate": "2026-09-08",      // 任意。日をまたぐ時刻予定のときだけ（issue #1354）
   "startTime": "10:00",         // HH:MM。省略（endTimeも省略）で終日
   "endTime": "11:00",
   "location": "〇〇歯科",        // 任意
@@ -259,7 +260,8 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 | --- | --- | --- |
 | `title` | ○ | 空文字（trim後）は `400` |
 | `date` | ○ | `YYYY-MM-DD`。形式不正・実在しない日付（`2026-02-30` 等）は `400` |
-| `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、`endTime <= startTime`、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
+| `endDate` | - | `YYYY-MM-DD`。`date` から `endDate`+`endTime` までの時刻予定として作る。実在しない日付・`date` より前は `400`。終日（時刻なし）との併用も `400`。省略または `date` と同じ日なら同日の予定（更新APIの `endDate` と同じ基準） |
+| `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、同日で `endTime <= startTime`（`endDate` が翌日以降なら `endTime` が前でもよい）、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
 | `location` | - | 省略可 |
 | `calendarId` | - | 省略時は書き込み可能な既定のカレンダーを解決する。書き込めるカレンダーが1つも無ければ `404`（`no_writable_calendar`） |
 | `tentative` | - | 省略時 `false`。`true` で仮の予定（Googleの `status: tentative`）として作成する（issue #688）。「多分この時間に」のような曖昧な発話のときだけ秘書側が付ける想定。後から確定へ変える・仮へ戻すのは下の `PATCH`（`tentative`）で行える |

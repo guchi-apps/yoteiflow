@@ -2,6 +2,7 @@ import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import { formatCoordinates, parseCoordinates, type LatLng } from "@/lib/coordinates";
+import { ensureStationSuffix } from "@/lib/station-name";
 
 import { createNotionClient } from "./client";
 import type { PlacePropertyMap } from "./place-database";
@@ -134,6 +135,7 @@ export async function createPlace(
 
   const notion = createNotionClient(connection);
   const existing = (await listPlaces(connection)).find((place) => place.name === input.name);
+  input = { ...input, station: ensureStationSuffix(input.station) };
 
   if (existing) {
     const filled: Record<string, unknown> = {};
@@ -292,7 +294,7 @@ export async function updatePlace(
   };
   // 空にしたときは rich_text を空配列で送る。省くと Notion 側の値がそのまま残る。
   const address = input.address?.trim() || null;
-  const station = input.station?.trim() || null;
+  const station = ensureStationSuffix(input.station);
   const writeAddress = Boolean(map.address) && "address" in input;
   const writeCoordinates = Boolean(map.coordinates) && "coordinates" in input;
   const writeStation = Boolean(map.station) && "station" in input;
