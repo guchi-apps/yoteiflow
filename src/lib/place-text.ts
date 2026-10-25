@@ -154,5 +154,15 @@ export function containsAddress(text: string): boolean {
  * 住所を切り分けられない値（施設名だけ・英語住所など）はそのまま返す。
  */
 export function placeDisplayName(text: string): string {
-  return splitNameAndAddress(text)?.name ?? text.trim();
+  // 先頭に郵便番号が付く値（`〒100-0001 東京都…`）は、先に外さないと郵便番号が名前として残る。
+  const withoutLead = text.trim().replace(POSTAL_CODE_HEAD, "");
+  const name = splitNameAndAddress(withoutLead)?.name ?? withoutLead;
+  // 住所の前に郵便番号が付いている値（`名前 〒530-0001 大阪府…`）は、名前の末尾に郵便番号が残る。
+  return name.replace(POSTAL_CODE_TAIL, "").trim() || text.trim();
 }
+
+/** 先頭の郵便番号（`〒` 付き・無しの両方）。 */
+const POSTAL_CODE_HEAD = /^(?:〒\s*)?\d{3}-?\d{4}[\s、,]+/;
+
+/** 名前の末尾に残る郵便番号（`〒` 付き・無しの両方）。 */
+const POSTAL_CODE_TAIL = /[\s、,]*(?:〒\s*)?\d{3}-?\d{4}$/;

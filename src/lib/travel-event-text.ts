@@ -1,3 +1,4 @@
+import { placeDisplayName } from "@/lib/place-text";
 import { parseVia } from "@/lib/travel-via";
 import { TRAVEL_MODE_LABELS, type TravelEstimateSource, type TravelMode } from "@/types/calendar";
 
@@ -11,7 +12,7 @@ export function travelEventTitle(plan: {
   departAt: Date;
   arriveAt: Date;
 }): string {
-  return `→ ${[...parseVia(plan.via), plan.destination].join(" → ")}（${TRAVEL_MODE_LABELS[plan.mode]} ${travelMinutes(plan)}分）`;
+  return `→ ${[...parseVia(plan.via), plan.destination].map(placeDisplayName).join(" → ")}（${TRAVEL_MODE_LABELS[plan.mode]} ${travelMinutes(plan)}分）`;
 }
 
 /** 説明欄。出発地と交通手段はGoogleの予定の欄には無いため、ここへ残す。 */
