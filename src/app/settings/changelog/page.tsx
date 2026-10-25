@@ -17,8 +17,6 @@ export default async function ChangelogPage() {
     <SettingsShell
       title="更新履歴"
       description={`現在のバージョンは v${APP_VERSION} です。`}
-      backHref="/settings"
-      backLabel="設定"
     >
       <Card>
         <CardContent className="flex flex-col gap-6">

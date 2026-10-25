@@ -30,8 +30,6 @@ export default async function NotionSettingsPage() {
     <SettingsShell
       title="Notion"
       description="タスクの一次情報源です。Notion側で用意したタスクDBをYoteiFlowから選択します。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <NotionSection state={state} />
     </SettingsShell>

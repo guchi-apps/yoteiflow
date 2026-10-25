@@ -27,8 +27,6 @@ export default async function DisplaySettingsPage() {
     <SettingsShell
       title="表示"
       description="カレンダーの見た目と、アプリを開いたときの画面に関する設定です。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <StartPathSection startPath={startPath} />
       <DisplaySection

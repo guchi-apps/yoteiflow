@@ -32,7 +32,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { resolveInternalPath, START_PATH_COOKIE, startPathLabel } from "@/lib/home-path";
+import { START_PATH_COOKIE, startPathLabel } from "@/lib/home-path";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { countNotificationDevices } from "@/services/notifications/subscriptions";
 import { weekStartLabel } from "@/lib/week-start";
@@ -78,12 +78,10 @@ export default async function SettingsPage() {
     : 0;
 
   const startPathCookieValue = cookieStore.get(START_PATH_COOKIE)?.value;
-  // 設定画面の戻り先はアプリの起点（起動画面）で揃える（docs/spec.md §4）。
-  const startPath = resolveInternalPath(undefined, startPathCookieValue);
 
   return (
     // 広い画面では行を2列に並べる（issue #636）。各項目の中身の画面は入力欄が並ぶため従来の幅のまま。
-    <SettingsShell title="設定" backHref={startPath} backLabel={startPathLabel(startPathCookieValue)} wide>
+    <SettingsShell title="設定" wide>
       {/*
         共通設定・外部連携・機能ごとの設定の3区分に分ける（issue #706）。以前は11項目が
         見出しなくフラットに並んでおり、どこで何が設定できるか分かりにくかった。

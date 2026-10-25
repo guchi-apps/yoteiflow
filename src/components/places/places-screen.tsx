@@ -124,8 +124,6 @@ export function PlacesScreen({
 
       <SettingsShell
         title="場所"
-        backHref="/activity"
-        backLabel="記録"
         wide
         actions={
           <>

@@ -68,7 +68,7 @@ export default async function PlacesPage() {
 /** 場所DBが未設定のとき。何を用意すればここが使えるようになるのかまで出す。 */
 function ConnectPrompt() {
   return (
-    <SettingsShell title="場所" backHref="/activity" backLabel="記録">
+    <SettingsShell title="場所">
       <Card>
         <CardHeader>
           <CardTitle>場所DBが設定されていません</CardTitle>

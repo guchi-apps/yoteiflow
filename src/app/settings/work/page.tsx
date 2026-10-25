@@ -53,8 +53,6 @@ export default async function WorkSettingsPage({
     <SettingsShell
       title="勤務"
       description="勤務場所を色つきで登録しておけます。勤務記録から勤務予定・移動を自動で作る設定もここにあります。"
-      backHref="/settings"
-      backLabel="設定"
       wide
     >
       <WorkPlacesPanel
