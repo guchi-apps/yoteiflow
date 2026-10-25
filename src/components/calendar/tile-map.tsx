@@ -5,7 +5,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { LocateFixed, Minus, Plus, Scan } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { project, unproject, TILE_SIZE, type LatLng } from "@/lib/coordinates";
+import { metersToPixels, project, unproject, TILE_SIZE, type LatLng } from "@/lib/coordinates";
+
+import type { CurrentLocation } from "./use-current-location";
 
 /**
  * OpenStreetMapのラスタタイルを敷いた地図（docs/spec.md §9）。
@@ -61,6 +63,7 @@ export function TileMap({
   onZoomChange,
   onLocate,
   locating = false,
+  currentLocation = null,
   showCenterPin = true,
   markers = [],
   selectedMarkerId = null,
@@ -77,6 +80,8 @@ export function TileMap({
   /** 「現在地へ」を押したとき。位置情報の取得は呼び出し側が持つ。 */
   onLocate?: () => void;
   locating?: boolean;
+  /** 端末の現在地。青い点と精度円で描く。取れているときは「現在地へ」ボタンを塗って示す。 */
+  currentLocation?: CurrentLocation | null;
   /** 中央の選択用ピンを出すか。地点を選ぶ地図（既定）で出し、場所を見せるだけの地図では消す。 */
   showCenterPin?: boolean;
   /** 地図に置くピン。地図と一緒に動く。 */
@@ -271,6 +276,16 @@ export function TileMap({
     const p = project(marker.position, zoom);
     return { ...marker, x: p.x - centerPixel.x + size.width / 2, y: p.y - centerPixel.y + size.height / 2 };
   });
+  const me = currentLocation
+    ? (() => {
+        const p = project(currentLocation.position, zoom);
+        return {
+          x: p.x - centerPixel.x + size.width / 2,
+          y: p.y - centerPixel.y + size.height / 2,
+          radius: metersToPixels(currentLocation.accuracy, currentLocation.position.lat, zoom),
+        };
+      })()
+    : null;
   const selectedMarker = placedMarkers.find((marker) => marker.id === selectedMarkerId) ?? null;
 
   function hitMarker(x: number, y: number): string | null {
@@ -345,6 +360,24 @@ export function TileMap({
         ))}
       </div>
 
+      {/* 現在地。ピンより下に描く。色は地図タイルの上に載るため、テーマに依らず固定の青。 */}
+      {me && (
+        <div
+          className="pointer-events-none absolute"
+          style={{ left: me.x, top: me.y, transform: "translate(-50%, -50%)" }}
+          role="img"
+          aria-label="現在地"
+        >
+          {me.radius >= 12 && (
+            <span
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#1a73e8]/40 bg-[#1a73e8]/15"
+              style={{ width: me.radius * 2, height: me.radius * 2 }}
+            />
+          )}
+          <span className="relative block size-4 rounded-full border-[3px] border-white bg-[#1a73e8] shadow-[0_1px_4px_rgba(0,0,0,0.4)]" />
+        </div>
+      )}
+
       {/* 置いたピン。選んでいるものを最後に描いて最前面へ出す（重なり回避はしない）。 */}
       {[...placedMarkers.filter((m) => m.id !== selectedMarkerId), ...(selectedMarker ? [selectedMarker] : [])].map(
         (marker) => {
@@ -416,7 +449,12 @@ export function TileMap({
             type="button"
             aria-label="現在地へ"
             disabled={locating}
-            className="grid size-10 place-items-center rounded-full border border-outline-variant bg-surface-container text-primary shadow-sm disabled:opacity-38"
+            className={cn(
+              "grid size-10 place-items-center rounded-full border shadow-sm disabled:opacity-38",
+              currentLocation
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-outline-variant bg-surface-container text-primary",
+            )}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={onLocate}
           >
