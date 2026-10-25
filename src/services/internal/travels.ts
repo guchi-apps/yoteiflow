@@ -217,7 +217,27 @@ export async function runTravelCreate(
     // 書き出しに失敗していた回の再送は、書き出しだけをやり直す（移動は作り直さない）。
     const plan = await gateway.load(userId, stored.travelId);
     if (!plan) return { kind: "succeeded", result: stored, replayed: true };
-    const googleExport = await gateway.export(userId, plan);
+    // Google予定の作成を試みた後の失敗（作成の成否・ID保存の成否が不明）で、移動にイベントIDが無いときは
+    // 再実行すると createEvent が重複した予定を作る。自動で書き出し直さない（IDが分かるときだけ、そのIDで控え直す）。
+    const failed = stored.googleExport;
+    let target = plan;
+    if (failed.status === "failed" && failed.createUncertain && !plan.googleEventId) {
+      // 作成済みのIDが分かっていれば控え直す（updateになるので重複しない）。分からなければ失敗のまま返す。
+      if (!failed.createdEventId || !failed.createdCalendarId) {
+        return { kind: "succeeded", result: stored, replayed: true };
+      }
+      target = { ...plan, googleEventId: failed.createdEventId, googleCalendarId: failed.createdCalendarId };
+    }
+    let googleExport = await gateway.export(userId, target);
+    // 控え直しが再び失敗したら、作成済みのIDを引き継ぐ（失うと次の再送が createEvent で重複する）。
+    if (target !== plan && googleExport.status === "failed" && failed.status === "failed") {
+      googleExport = {
+        ...googleExport,
+        createUncertain: true,
+        createdEventId: failed.createdEventId,
+        createdCalendarId: failed.createdCalendarId,
+      };
+    }
     const result: TravelCreateResult = { ...stored, googleExport };
     await store.update(await recordId(store, identity), { result: result as object });
     return { kind: "succeeded", result, replayed: true };

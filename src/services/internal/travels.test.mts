@@ -92,8 +92,10 @@ class FakeGateway implements TravelGateway {
   async load(_u: string, id: string) {
     return this.plans.find((p) => p.id === id) ?? null;
   }
-  async export() {
+  exportedPlans: TravelPlan[] = [];
+  async export(_u: string, plan: TravelPlan) {
     this.exports++;
+    this.exportedPlans.push(plan);
     return this.exportResult;
   }
 }
@@ -147,6 +149,45 @@ test("同じキーの再送は二重に作らず、書き出し失敗なら書�
   const third = await run("key-1");
   assert.equal(gateway.exports, 2);
   assert.equal(third.kind, "succeeded");
+});
+
+test("予定作成を試みた後の書き出し失敗（作成の成否が不明）は、同じキーの再送で書き出し直さない", async () => {
+  const { gateway, run } = setup();
+  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true };
+  await run("key-1");
+  gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-2" };
+  const second = await run("key-1");
+  assert.equal(gateway.exports, 1);
+  assert.ok(second.kind === "succeeded");
+  if (second.kind === "succeeded") {
+    assert.equal(second.replayed, true);
+    assert.equal(second.result.googleExport.status, "failed");
+  }
+});
+
+test("作成済みのIDが分かっている失敗は、そのIDで控え直す（新規作成にしない）", async () => {
+  const { gateway, run } = setup();
+  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true, createdEventId: "ev-1", createdCalendarId: "cal" };
+  await run("key-1");
+  gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-1" };
+  const second = await run("key-1");
+  assert.equal(gateway.exports, 2);
+  assert.ok(second.kind === "succeeded");
+  assert.equal(gateway.exportedPlans[1].googleEventId, "ev-1");
+  assert.equal(gateway.exportedPlans[1].googleCalendarId, "cal");
+});
+
+test("控え直しが再び失敗しても作成済みIDを引き継ぎ、次の再送でも新規作成にしない", async () => {
+  const { gateway, run } = setup();
+  const uncertain = { status: "failed", message: "db down", createUncertain: true, createdEventId: "ev-1", createdCalendarId: "cal" } as const;
+  gateway.exportResult = uncertain;
+  await run("key-1");
+  gateway.exportResult = { status: "failed", message: "still down" };
+  await run("key-1");
+  gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-1" };
+  await run("key-1");
+  assert.equal(gateway.exports, 3);
+  assert.equal(gateway.exportedPlans[2].googleEventId, "ev-1");
 });
 
 test("同時の同一要求は1件だけ作る", async () => {
