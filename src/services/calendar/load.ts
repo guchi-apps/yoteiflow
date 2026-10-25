@@ -338,7 +338,7 @@ async function applyGarbageTimes(
   travelPlans: { id: string; origin: string; departAt: Date }[],
   events: CalendarEventItem[],
 ): Promise<ReminderItem[]> {
-  if (!reminders.some((item) => item.source === "garbage" && !item.hasTime)) return reminders;
+  if (!reminders.some((item) => item.source === "garbage")) return reminders;
 
   const [setting, rows] = await Promise.all([
     db.uiSetting.findUnique({
