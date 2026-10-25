@@ -28,6 +28,7 @@ import type { PlaceItem } from "@/services/notion/places";
 
 import { readErrorMessage } from "./response-error";
 import { TileMap } from "./tile-map";
+import { useCurrentLocation } from "./use-current-location";
 
 /**
  * 地図から場所を登録する（docs/spec.md §9）。
@@ -169,7 +170,7 @@ export function PlaceMapDialog({
   // 直したあとは、地図を動かしても上書きしない（名前欄と同じ扱い・同じ理由）。
   const [addressTouched, setAddressTouched] = useState(false);
   const [lookup, setLookup] = useState<LookupState>("idle");
-  const [locating, setLocating] = useState(false);
+  const { location: currentLocation, locating, locate: startLocate } = useCurrentLocation();
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -191,25 +192,18 @@ export function PlaceMapDialog({
   };
 
   const locate = () => {
-    if (!navigator.geolocation) {
-      setNotice("この端末では現在地を取得できません。地図を動かして地点を選んでください。");
-      return;
-    }
-
-    setLocating(true);
     setNotice(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        moveTo({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocating(false);
-      },
-      () => {
+    startLocate({
+      // 寄せるのは取れた最初の1回だけ。以降の追従は点だけが動く。
+      onFix: (position) => moveTo(position),
+      onError: (failure) =>
         // 拒否・失敗のどちらでも地図は使える。文言だけ出して操作は止めない。
-        setNotice("現在地を取得できませんでした。地図を動かして地点を選んでください。");
-        setLocating(false);
-      },
-      { timeout: 8000, maximumAge: 60_000 },
-    );
+        setNotice(
+          failure === "unsupported"
+            ? "この端末では現在地を取得できません。地図を動かして地点を選んでください。"
+            : "現在地を取得できませんでした。地図を動かして地点を選んでください。",
+        ),
+    });
   };
 
   // 中心が決まらなかったときの地点。引く文字列があればその地点、無ければ現在地。
@@ -353,6 +347,7 @@ export function PlaceMapDialog({
           onZoomChange={setZoom}
           onLocate={locate}
           locating={locating}
+          currentLocation={currentLocation}
           className="h-[40vh] max-h-80 min-h-56"
         />
 

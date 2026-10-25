@@ -1,4 +1,3 @@
-import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -6,57 +5,8 @@ import { cn } from "@/lib/utils";
  * 実際の配置と同じ形を先に描いてから内容を差し替える。
  */
 export function CalendarSkeleton() {
-  return (
-    <AppFrameSkeleton>
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2 md:max-lg:flex-wrap md:max-lg:justify-end">
-        <SkeletonBlock className="h-8 w-8 rounded-full md:hidden" />
-        <SkeletonBlock className="h-8 w-8 rounded-full md:max-lg:size-10" />
-        <SkeletonBlock className="hidden size-8 rounded-full md:block md:max-lg:size-10" />
-        <SkeletonBlock className="h-6 w-32" />
-        <span className="flex-1" />
-        <span aria-hidden className="hidden md:max-lg:block md:max-lg:basis-full" />
-        <SkeletonBlock className="h-8 w-14 rounded-full md:max-lg:h-10" />
-        <SkeletonBlock className="h-8 w-24 rounded-full md:max-lg:h-10" />
-        <LoadingRefreshMark />
-      </div>
-
-      <CalendarGridSkeleton />
-
-      <BottomNavSkeleton />
-    </AppFrameSkeleton>
-  );
-}
-
-/**
- * 下部ナビから開く5画面の骨組みの外枠（issue #636）。実物の `AppFrame` と同じく、
- * 768px以上では左端にサイドバーの帯を置き、本文の列を `@container/main` にする。
- * 骨組みだけ1列のままだと、読み込みが終わった瞬間に割り付けが跳ねる。
- */
-export function AppFrameSkeleton({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-app overflow-hidden">
-      <SidebarSkeleton />
-      <div className="@container/main flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-    </div>
-  );
-}
-
-/** サイドバー（app-sidebar.tsx）と同じ幅・同じ行数の帯。 */
-function SidebarSkeleton() {
-  return (
-    <div
-      aria-hidden
-      className="hidden w-48 shrink-0 flex-col gap-1 border-r border-outline-variant bg-surface-container-low px-3 pt-4 md:flex lg:w-56"
-    >
-      <SkeletonBlock className="mx-3 mb-3 h-5 w-20" />
-      {Array.from({ length: 9 }, (_, i) => (
-        <div key={i} className={cn("flex items-center gap-3 px-4 py-3", i === 5 && "mt-6")}>
-          <SkeletonBlock className="size-5 rounded-sm" />
-          <SkeletonBlock className="h-4 w-16" />
-        </div>
-      ))}
-    </div>
-  );
+  // ヘッダー・サイドバー・下部ナビは共通レイアウトが常駐させている（issue #1395）。
+  return <CalendarGridSkeleton />;
 }
 
 /**
@@ -95,33 +45,4 @@ export function CalendarGridSkeleton() {
 
 export function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-sm bg-on-surface/8", className)} />;
-}
-
-/**
- * 下部ナビと同じ寸法の帯（issue #352）。
- *
- * ナビは画面をまたいで残り続ける枠で、骨組みから落とすと、押したナビそのものが
- * 一瞬消えて戻る。中央の記録だけが上へはみ出した円になるのも実物と同じ
- * （src/components/nav/main-nav.tsx）。
- */
-export function BottomNavSkeleton() {
-  return (
-    <nav
-      aria-hidden
-      className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
-    >
-      {Array.from({ length: 5 }, (_, i) => (
-        <span key={i} className="flex w-full min-w-0 flex-col items-center gap-1">
-          <span className="relative flex h-8 w-16 items-center justify-center">
-            {i === 2 ? (
-              <SkeletonBlock className="absolute bottom-0 size-14 rounded-full border-4 border-surface-container" />
-            ) : (
-              <SkeletonBlock className="size-6 rounded-sm" />
-            )}
-          </span>
-          <SkeletonBlock className="h-3 w-10" />
-        </span>
-      ))}
-    </nav>
-  );
 }

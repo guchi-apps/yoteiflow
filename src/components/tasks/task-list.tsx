@@ -17,15 +17,13 @@ import {
   Tag,
 } from "lucide-react";
 
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
+import { HeaderActions, useShellRunning } from "@/components/nav/main-shell";
 import {
   WIDE_SECTION_CARD_CLASS,
   WIDE_SECTION_HEADING_CLASS,
   WIDE_SECTION_LIST_CLASS,
 } from "@/components/ui/wide-section";
-import { BottomNav } from "@/components/nav/main-nav";
-import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { fabBottomOffsetClass } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
@@ -60,7 +58,6 @@ import {
 import { EMPTY_TAG_CATALOG, type TagCatalog, type TagOption } from "@/services/notion/tag-options";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import type { TaskItem, TaskPriority, WritableCalendar } from "@/types/calendar";
-import type { RunningActivitySummary } from "@/types/activity";
 import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
 /** 期限での分類の並び。完了・対応しないは分類の軸によらず末尾へ別に置くため含めない。 */
@@ -100,16 +97,12 @@ const EMPTY_CALENDARS: WritableCalendar[] = [];
 export function TaskList({
   timeZone,
   weekStartsOn = 0,
-  runningActivity = null,
 }: {
   timeZone: string;
   weekStartsOn?: number;
-  /**
-   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
-   * 出すために使う（docs/spec.md §27）。
-   */
-  runningActivity?: RunningActivitySummary | null;
 }) {
+  // 記録中の項目は常駐シェルが持つ（issue #1395）。FABを記録中バーの上へ逃がすのに使う。
+  const runningActivity = useShellRunning();
   // 一覧・タグ・場所・カレンダーはページが待たずに、ここで背景取得する（issue #724）。
   // 追加ボタン・ナビは取得を待たない。入力ダイアログは候補が届く前でも開ける。
   const resource = useApiResource<TaskListData>(
@@ -277,15 +270,8 @@ export function TaskList({
   );
 
   return (
-    <AppFrame
-      current="tasks"
-      activityRunning={runningActivity !== null}
-      running={runningActivity}
-    >
-      <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="tasks" activityRunning={runningActivity !== null} />
+    <>
+      <HeaderActions>
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -326,7 +312,7 @@ export function TaskList({
           disabled={offline}
           onClick={() => reload()}
         />
-      </header>
+      </HeaderActions>
 
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}
@@ -436,7 +422,7 @@ export function TaskList({
       <Button
         size="icon"
         className={cn(
-          "elevation-3 fixed right-4 z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]",
+          "elevation-3 fixed right-4 z-20 size-16 rounded-xl bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-md",
           fabBottomOffsetClass(runningActivity !== null),
         )}
         aria-label="タスクを追加"
@@ -444,9 +430,6 @@ export function TaskList({
       >
         <Plus className="size-6" />
       </Button>
-
-      <RunningActivityBar running={runningActivity} />
-      <BottomNav current="tasks" activityRunning={runningActivity !== null} timeZone={timeZone} />
 
       {itemDialog && (
         <ItemDialog
@@ -485,7 +468,7 @@ export function TaskList({
           onChanged={() => reload()}
         />
       )}
-    </AppFrame>
+    </>
   );
 }
 

@@ -5,8 +5,9 @@ import { useOffline } from "next/offline";
 import { ExternalLink, Pencil, X } from "lucide-react";
 
 import { TileMap, type MapMarker } from "@/components/calendar/tile-map";
+import { useCurrentLocation } from "@/components/calendar/use-current-location";
 import { Button } from "@/components/ui/button";
-import { fitBounds, type LatLng } from "@/lib/coordinates";
+import { countInView, fitBounds, type LatLng } from "@/lib/coordinates";
 import { mapLink } from "@/lib/map-link";
 import { cn } from "@/lib/utils";
 import type { PlaceItem } from "@/services/notion/places";
@@ -56,8 +57,27 @@ export function PlacesMap({
     [located],
   );
 
+  // 現在地は「現在地へ」を押したときにだけ取得する（開いた時点で許可を求めない）。
+  const { location: currentLocation, locating, locate } = useCurrentLocation();
+  const [locateNotice, setLocateNotice] = useState<string | null>(null);
+  const handleLocate = () => {
+    setLocateNotice(null);
+    locate({
+      onFix: (position) =>
+        setView((current) => ({ center: position, zoom: Math.max(current.zoom, FOCUS_ZOOM) })),
+      onError: (failure) =>
+        setLocateNotice(
+          failure === "unsupported"
+            ? "この端末では現在地を取得できません。"
+            : "現在地を取得できませんでした。位置情報の許可を確認してください。",
+        ),
+    });
+  };
+
   const [view, setView] = useState({ center: FALLBACK_CENTER, zoom: FALLBACK_ZOOM });
   const sizeRef = useRef<{ width: number; height: number } | null>(null);
+  // 件数ラベルの「この範囲に◯件」を描き直すため、枠の大きさは state にも持つ（issue #1386）。
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
 
   const fitAll = useCallback(() => {
     const size = sizeRef.current;
@@ -78,6 +98,7 @@ export function PlacesMap({
     (size: { width: number; height: number }) => {
       const first = sizeRef.current === null || sizeRef.current.width === 0;
       sizeRef.current = size;
+      setSize(size);
       if (first && size.width > 0) {
         fittedKeyRef.current = locatedKey;
         fitAll();
@@ -103,6 +124,19 @@ export function PlacesMap({
     setView((current) => ({ center: target.coordinates, zoom: Math.max(current.zoom, FOCUS_ZOOM) }));
   }, [focus, located]);
 
+  // 「20件」が取得上限なのか範囲の件数なのか読めなかったため、全件と表示範囲の件数を
+  // 並べる（issue #1386）。場所は全件を読み終えており、範囲で取り直す必要は無い。
+  const inView =
+    size && size.width > 0 ? countInView(markers.map((marker) => marker.position), view, size) : located.length;
+  const countLabel =
+    located.length === 0
+      ? "地点のある場所はありません"
+      : inView === located.length
+        ? `地点のある場所 ${located.length}件`
+        : inView === 0
+          ? `この範囲に場所はありません ／ 全${located.length}件`
+          : `この範囲に ${inView}件 ／ 全${located.length}件`;
+
   const selected = located.find((place) => place.id === selectedId) ?? null;
 
   const detailBody = (fill: boolean) =>
@@ -125,6 +159,9 @@ export function PlacesMap({
           zoom={view.zoom}
           onCenterChange={(center) => setView((current) => ({ ...current, center }))}
           onZoomChange={(zoom) => setView((current) => ({ ...current, zoom }))}
+          onLocate={handleLocate}
+          locating={locating}
+          currentLocation={currentLocation}
           showCenterPin={false}
           markers={markers}
           selectedMarkerId={selectedId}
@@ -135,12 +172,14 @@ export function PlacesMap({
           onSizeChange={handleSizeChange}
         />
 
-        <span className="type-label-medium pointer-events-none absolute top-2 left-2 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1 text-on-surface-variant">
-          {located.length > 0 ? `地図に出ているのは ${located.length}件` : "地点のある場所はありません"}
+        <span className="type-label-medium pointer-events-none absolute top-2 left-2 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-1 text-on-surface-variant">
+          {countLabel}
         </span>
 
         {selected && <div className="absolute inset-x-2 bottom-6 z-10 lg:hidden">{detailBody(true)}</div>}
       </div>
+
+      {locateNotice && <p className="type-body-small text-on-surface-variant">{locateNotice}</p>}
 
       {missing > 0 && (
         <p className="type-body-small text-on-surface-variant">
@@ -180,7 +219,7 @@ function PlaceSummary({
         <button
           type="button"
           aria-label="閉じる"
-          className="-m-1 grid size-7 shrink-0 place-items-center rounded-full text-on-surface-variant hover:bg-on-surface/8"
+          className="-m-1 grid size-7 shrink-0 place-items-center rounded-md text-on-surface-variant hover:bg-on-surface/8"
           onClick={onClose}
         >
           <X className="size-4" />

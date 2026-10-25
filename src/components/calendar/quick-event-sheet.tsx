@@ -334,7 +334,7 @@ export function QuickEventSheet({
               <div
                 role="radiogroup"
                 aria-label="追加する種類"
-                className="grid w-48 grid-cols-2 overflow-hidden rounded-full border border-outline"
+                className="grid w-48 grid-cols-2 overflow-hidden rounded-md border border-outline"
               >
                 {(["event", "task"] as const).map((option) => (
                   <button

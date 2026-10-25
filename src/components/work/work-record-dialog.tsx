@@ -466,7 +466,7 @@ export function WorkRecordDialog({
             role="radiogroup"
             aria-label="記録の種類"
             className={cn(
-              "grid overflow-hidden rounded-full border border-outline",
+              "grid overflow-hidden rounded-md border border-outline",
               // 使える種類の数で列を決める。4列に固定すると、年休だけを足したDBで空の枠が並ぶ。
               kinds.length === 4
                 ? "grid-cols-4"
@@ -507,7 +507,7 @@ export function WorkRecordDialog({
                     aria-pressed={leaveKind === name}
                     onClick={() => setLeaveKind(name)}
                     className={cn(
-                      "type-label-large rounded-full border px-4 py-2 transition-colors",
+                      "type-label-large rounded-md border px-4 py-2 transition-colors",
                       leaveKind === name
                         ? "border-transparent bg-tertiary-container font-bold text-on-tertiary-container"
                         : "border-outline text-on-surface hover:bg-on-surface/8",
@@ -534,7 +534,7 @@ export function WorkRecordDialog({
                   aria-pressed={leaveHours === hours}
                   onClick={() => setLeaveHours(hours)}
                   className={cn(
-                    "type-label-large rounded-full border px-3.5 py-1.5 transition-colors",
+                    "type-label-large rounded-md border px-3.5 py-1.5 transition-colors",
                     leaveHours === hours
                       ? "border-transparent bg-tertiary-container font-bold text-on-tertiary-container"
                       : "border-outline text-on-surface hover:bg-on-surface/8",
@@ -564,7 +564,7 @@ export function WorkRecordDialog({
                   aria-pressed={place === option.name}
                   onClick={() => setPlace(option.name)}
                   className={cn(
-                    "type-label-large rounded-full border px-4 py-2 transition-colors",
+                    "type-label-large rounded-md border px-4 py-2 transition-colors",
                     place === option.name
                       ? cn("border-transparent font-bold", tagChipClass(option.color))
                       : "border-outline text-on-surface hover:bg-on-surface/8",
@@ -604,7 +604,7 @@ export function WorkRecordDialog({
                   key={name}
                   type="button"
                   onClick={() => setDestination(name)}
-                  className="type-label-large shrink-0 rounded-full border border-outline px-4 py-2 whitespace-nowrap text-on-surface transition-colors hover:bg-on-surface/8"
+                  className="type-label-large shrink-0 rounded-md border border-outline px-4 py-2 whitespace-nowrap text-on-surface transition-colors hover:bg-on-surface/8"
                 >
                   {name}
                 </button>

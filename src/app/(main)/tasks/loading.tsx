@@ -1,5 +1,4 @@
-import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
-import { LoadingRefreshMark } from "@/components/ui/refresh-button";
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 import { WIDE_SECTION_CARD_CLASS } from "@/components/ui/wide-section";
 import { cn } from "@/lib/utils";
 
@@ -9,16 +8,8 @@ import { cn } from "@/lib/utils";
  */
 export default function Loading() {
   return (
-    <AppFrameSkeleton>
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full md:hidden" />
-        <SkeletonBlock className="h-6 w-20" />
-        <span className="flex-1" />
-        <SkeletonBlock className="h-8 w-20 rounded-full" />
-        <LoadingRefreshMark />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden @xl/main:grid @xl/main:grid-cols-2 @xl/main:content-start @xl/main:items-start @xl/main:gap-3 @xl/main:p-3 @5xl/main:grid-cols-4">
+    <>
+            <div className="min-h-0 flex-1 overflow-hidden @xl/main:grid @xl/main:grid-cols-2 @xl/main:content-start @xl/main:items-start @xl/main:gap-3 @xl/main:p-3 @5xl/main:grid-cols-4">
         {Array.from({ length: 4 }, (_, section) => (
           <div
             key={section}
@@ -39,8 +30,6 @@ export default function Loading() {
           </div>
         ))}
       </div>
-
-      <BottomNavSkeleton />
-    </AppFrameSkeleton>
+    </>
   );
 }

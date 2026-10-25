@@ -6,10 +6,12 @@ import { TagSection, type TagSectionState } from "@/components/settings/tag-sect
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { loadWritableCalendars } from "@/services/calendar/load";
-import { loadPlaceDefaultRows, loadTrains } from "@/services/work-sync/config";
+import { getNotionPlaceConnection } from "@/services/calendar/write-context";
+import { listPlaces } from "@/services/notion/places";
+import { loadPlaceDefaultRows, loadTrains, loadWorkPlaceLinks } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { loadTagOptions } from "@/services/notion/tag-options";
-import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
+import { workCapabilities, workPlaceShortLabels, workTripPlaces } from "@/services/notion/work-logs";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
@@ -24,7 +26,7 @@ export default async function WorkSettingsPage() {
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");
 
-  const [options, autoSettings, routes, placeDefaults, trains, calendars] = await Promise.all([
+  const [options, autoSettings, routes, placeDefaults, links, trains, calendars, linkablePlaces] = await Promise.all([
     loadTagOptions(connection, "work"),
     getWorkAutoSettings(user.id),
     db.workRouteDefault.findMany({
@@ -32,8 +34,14 @@ export default async function WorkSettingsPage() {
       orderBy: [{ destination: "asc" }, { origin: "asc" }],
     }),
     loadPlaceDefaultRows(user.id),
+    loadWorkPlaceLinks(user.id),
     loadTrains(user.id),
     loadWritableCalendars(user.id),
+    // 正式名称に選べる場所。読めなくても設定画面は開く（選択肢が空になるだけ）。
+    getNotionPlaceConnection(user.id)
+      .then((place) => listPlaces(place))
+      .then((places) => places.map((place) => ({ id: place.id, name: place.name, address: place.address })))
+      .catch(() => []),
   ]);
 
   const state: TagSectionState = {
@@ -46,6 +54,7 @@ export default async function WorkSettingsPage() {
     databaseUrl: notionUrl(connection.workDatabaseId),
     // 行けば必ず出張になる勤務先は、場所を選んだ時点で出張の既定を立てる（docs/spec.md §34）。
     // 選択肢の一覧がここにあるため、場所ごとの設定も同じ行に添える。
+    shortLabels: workPlaceShortLabels(connection),
     trip: {
       places: workTripPlaces(connection),
       available: workCapabilities(connection).businessTrip,
@@ -70,6 +79,8 @@ export default async function WorkSettingsPage() {
           minutes: route.minutes,
         }))}
         placeDefaults={placeDefaults}
+        links={links}
+        linkablePlaces={linkablePlaces}
         trains={trains}
         tripPlaces={workTripPlaces(connection)}
         calendars={calendars}

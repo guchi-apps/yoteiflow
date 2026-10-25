@@ -1,6 +1,7 @@
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
+import { isSingleCharacter } from "@/lib/work-short-label";
 import {
   canHaveSegments,
   formatWorkSegments,
@@ -85,6 +86,21 @@ export function workTripPlaces(connection: NotionConnection | null): string[] {
   const value = connection?.workTripPlaces;
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * 狭い月表示の勤務バッジに出す、勤務場所ごとの1文字（{ 名前: 1文字 }）。
+ * 壊れた値（オブジェクトでない・1文字でない値）は落とす。表示のための設定が読めないことを
+ * 理由にカレンダーを止めないため。
+ */
+export function workPlaceShortLabels(connection: NotionConnection | null): Record<string, string> {
+  const value = connection?.workPlaceShortLabels;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, string> = {};
+  for (const [place, label] of Object.entries(value)) {
+    if (typeof label === "string" && isSingleCharacter(label)) result[place] = label;
+  }
+  return result;
 }
 
 /** 勤務記録DBが読み書きできる状態か。データソースと必須プロパティが揃って初めて使える。 */

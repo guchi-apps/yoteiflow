@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { WorkTrains } from "@/components/settings/work-trains";
 import { fromTime, toTime } from "@/lib/work-sync/form";
+import type { WorkTrainItem } from "@/lib/work-sync/plan";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
+
+import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -55,6 +60,9 @@ export function WorkPlaceDefaults({
   remotePlaces,
   defaults: initialDefaults,
   routes: initialRoutes,
+  trains,
+  links: initialLinks,
+  linkablePlaces,
   home,
   commonStart,
   commonEnd,
@@ -64,12 +72,16 @@ export function WorkPlaceDefaults({
   remotePlaces: string[];
   defaults: WorkPlaceDefaultRow[];
   routes: WorkRouteRow[];
+  trains: WorkTrainItem[];
+  links: WorkPlaceLinkRow[];
+  linkablePlaces: LinkablePlace[];
   home: string | null;
   commonStart: number;
   commonEnd: number;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
   const [routes, setRoutes] = useState(initialRoutes);
+  const [links, setLinks] = useState(initialLinks);
   const [extra, setExtra] = useState<Entry[]>([]);
   const [newTrip, setNewTrip] = useState("");
 
@@ -85,6 +97,10 @@ export function WorkPlaceDefaults({
   defaults.forEach((row) => add({ key: row.key, isTrip: row.isTrip }));
   routes.forEach((route) => {
     if (route.origin === home) add({ key: route.destination, isTrip: !placeNames.includes(route.destination) });
+  });
+  trains.forEach((train) => {
+    if (train.origin === home) add({ key: train.destination, isTrip: !placeNames.includes(train.destination) });
+    else if (train.destination === home) add({ key: train.origin, isTrip: !placeNames.includes(train.origin) });
   });
   extra.forEach(add);
 
@@ -117,9 +133,13 @@ export function WorkPlaceDefaults({
           entry={entry}
           remote={!entry.isTrip && remotePlaces.includes(entry.key)}
           home={home}
+          linkablePlaces={linkablePlaces}
+          link={links.find((item) => item.workPlace === entry.key) ?? null}
+          onSavedLinks={setLinks}
           row={defaults.find((row) => row.key === entry.key && row.isTrip === entry.isTrip) ?? null}
           out={home ? routes.find((r) => r.origin === home && r.destination === entry.key) ?? null : null}
           back={home ? routes.find((r) => r.origin === entry.key && r.destination === home) ?? null : null}
+          trains={trains}
           commonStart={commonStart}
           commonEnd={commonEnd}
           onSavedDefaults={setDefaults}
@@ -159,9 +179,13 @@ function PlaceCard({
   entry,
   remote,
   home,
+  linkablePlaces,
+  link,
+  onSavedLinks,
   row,
   out,
   back,
+  trains,
   commonStart,
   commonEnd,
   onSavedDefaults,
@@ -170,9 +194,13 @@ function PlaceCard({
   entry: Entry;
   remote: boolean;
   home: string | null;
+  linkablePlaces: LinkablePlace[];
+  link: WorkPlaceLinkRow | null;
+  onSavedLinks: (links: WorkPlaceLinkRow[]) => void;
   row: WorkPlaceDefaultRow | null;
   out: WorkRouteRow | null;
   back: WorkRouteRow | null;
+  trains: WorkTrainItem[];
   commonStart: number;
   commonEnd: number;
   onSavedDefaults: (rows: WorkPlaceDefaultRow[]) => void;
@@ -360,7 +388,6 @@ function PlaceCard({
                 type="button"
                 size="sm"
                 variant={candidate === form.mode ? "secondary" : "outline"}
-                className="rounded-full"
                 aria-pressed={candidate === form.mode}
                 onClick={() => patch({ mode: candidate })}
               >
@@ -369,6 +396,16 @@ function PlaceCard({
             ))}
           </div>
         </>
+      )}
+
+      {!remote && <WorkTrains trains={trains} home={home} place={entry.key} />}
+      {!entry.isTrip && (
+        <WorkPlaceLinkFields
+          workPlace={entry.key}
+          places={linkablePlaces}
+          link={link}
+          onSaved={onSavedLinks}
+        />
       )}
 
       <div className="flex items-center gap-3">

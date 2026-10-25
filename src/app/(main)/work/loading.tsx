@@ -1,5 +1,4 @@
-import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
-import { LoadingRefreshMark } from "@/components/ui/refresh-button";
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 
 /**
  * 勤務の骨組み（docs/spec.md §33・issue #508）。
@@ -12,22 +11,14 @@ import { LoadingRefreshMark } from "@/components/ui/refresh-button";
  */
 export default function Loading() {
   return (
-    <AppFrameSkeleton>
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full md:hidden" />
-        <SkeletonBlock className="h-6 w-16" />
-        <span className="flex-1" />
-        <SkeletonBlock className="size-8 rounded-full" />
-        <LoadingRefreshMark />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden">
+    <>
+            <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <SkeletonBlock className="h-8 w-8 rounded-full" />
+              <SkeletonBlock className="h-8 w-8 rounded-md" />
               <SkeletonBlock className="h-5 w-40" />
-              <SkeletonBlock className="h-8 w-8 rounded-full" />
+              <SkeletonBlock className="h-8 w-8 rounded-md" />
             </div>
 
             <div className="flex gap-4 px-1">
@@ -47,8 +38,6 @@ export default function Loading() {
           </div>
         </div>
       </div>
-
-      <BottomNavSkeleton />
-    </AppFrameSkeleton>
+    </>
   );
 }

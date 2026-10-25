@@ -101,3 +101,19 @@ test("場所の一致は名前でも見る", () => {
   assert.equal(isSamePlaceText("自宅", HOME), true);
   assert.equal(isSamePlaceText("京都駅", HOME), false);
 });
+
+import { travelCandidatesFromEvents } from "@/lib/garbage-time";
+
+test("移動カレンダーの時刻あり予定が出発時刻の候補になる（終日・他カレンダーは除く）", () => {
+  const events = [
+    { id: "a", calendarId: "travel", allDay: false, start: "2026-10-08T07:30:00+09:00" },
+    { id: "b", calendarId: "travel", allDay: true, start: "2026-10-08" },
+    { id: "d", calendarId: "travel", allDay: false, start: "2026-10-08T05:00:00+09:00", outcome: { kind: "CANCELLED" } },
+    { id: "c", calendarId: "other", allDay: false, start: "2026-10-08T06:00:00+09:00" },
+  ];
+  const travels = travelCandidatesFromEvents(events, "travel");
+  assert.equal(travels.length, 1);
+  assert.equal(travelCandidatesFromEvents(events, null).length, 0);
+  const m = homeDepartures(travels, [], HOME, new Set(), TZ);
+  assert.equal(m.get("2026-10-08")?.toISOString(), at("2026-10-08T07:30:00+09:00").toISOString());
+});

@@ -267,7 +267,7 @@ function DrawerItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "mx-3 flex items-center gap-3 rounded-full px-4 py-3 transition-colors",
+        "mx-3 flex items-center gap-3 rounded-md px-4 py-3 transition-colors",
         active
           ? "bg-secondary-container text-on-secondary-container"
           : "text-on-surface hover:bg-on-surface/8",

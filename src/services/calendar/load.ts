@@ -13,7 +13,7 @@ import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
-import { applyGarbageLeaveTime, homeDepartures } from "@/lib/garbage-time";
+import { applyGarbageLeaveTime, homeDepartures, travelCandidatesFromEvents } from "@/lib/garbage-time";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
@@ -343,7 +343,7 @@ async function applyGarbageTimes(
   const [setting, rows] = await Promise.all([
     db.uiSetting.findUnique({
       where: { userId },
-      select: { timeZone: true, travelDefaultOrigin: true },
+      select: { timeZone: true, travelDefaultOrigin: true, travelCalendarId: true },
     }),
     db.workGenerated.findMany({
       where: {
@@ -359,7 +359,7 @@ async function applyGarbageTimes(
   // 勤務から自動生成した往路は、出発地の表記によらず自宅発として扱う。
   const homeTravelIds = new Set(rows.map((row) => row.travelPlanId!));
   const departures = homeDepartures(
-    travelPlans,
+    [...travelPlans, ...travelCandidatesFromEvents(events, setting?.travelCalendarId ?? null)],
     events,
     setting?.travelDefaultOrigin ?? null,
     homeTravelIds,

@@ -20,10 +20,8 @@ import {
   TrainFront,
 } from "lucide-react";
 
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
-import { BottomNav } from "@/components/nav/main-nav";
-import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { HeaderActions, useRegisterCalendarNav, useShellRunning } from "@/components/nav/main-shell";
+import { fabBottomOffsetClass } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -114,6 +112,7 @@ import { useCalendarRangeData } from "./use-calendar-range-data";
 import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
+import { WorkShortLabelsContext } from "./work-place-chip";
 
 // 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
 // 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
@@ -143,6 +142,8 @@ export type CalendarWorkContext = {
   writable: boolean;
   /** 出張扱いにする勤務場所の名前。 */
   tripPlaces: string[];
+  /** 狭い月表示の勤務バッジに出す勤務場所ごとの1文字（#1381）。 */
+  shortLabels: Record<string, string>;
   /** 出張・年休・会社休業日・申請・メモが使えるか。 */
   capabilities: WorkCapabilities;
   /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
@@ -1092,17 +1093,22 @@ export function CalendarShell({
     navigate(view, viewSwitchAnchorKey());
   };
 
-  return (
-    <AppFrame
-      current="calendar"
-      activityRunning={initialRunningActivity !== null}
-      running={initialRunningActivity}
-    >
-      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2 md:max-lg:flex-wrap md:max-lg:justify-end">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="calendar" activityRunning={initialRunningActivity !== null} />
+  // 下部ナビの「カレンダー」の押下（今日へ）と長押し（予定追加）は常駐シェルのナビが受ける。
+  // この画面が持つ動きを登録する（issue #1395）。
+  useRegisterCalendarNav({
+    onClick: goToday,
+    // カレンダー画面ではすでにcalendars/timeZoneを持っているため、他画面向けの
+    // 自己完結シート（取得を伴う）を使わず、既存のquickDraftへそのまま合流させる。
+    // 保存後の再取得も変更範囲だけに絞られた既存のhandleSavedへ乗る。
+    onLongPress: () => {
+      if (offline || navigator.onLine === false) return;
+      setQuickDraft(toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES, undefined, false));
+    },
+  });
 
+  return (
+    <>
+      <HeaderActions>
         {/*
           アイコンはPCだけに出す。他の画面（タスク・日付リマインド）も同じ位置にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
@@ -1191,7 +1197,7 @@ export function CalendarShell({
         </Button>
 
         {/* M3のセグメンテッドボタン。排他的な選択であることを、隣接した枠で示す。 */}
-        <div className="flex items-center overflow-hidden rounded-full border border-outline">
+        <div className="flex items-center overflow-hidden rounded-md border border-outline">
           {VIEW_LABELS.map((item) => (
             <Button
               key={item.view}
@@ -1235,7 +1241,7 @@ export function CalendarShell({
         />
         {/* 勤務・場所・設定はヘッダーに置かない（issue #463）。どの画面幅でもドロワーが開くように
             なったため、この帯に3つ並べる理由が無くなった（docs/spec.md §4・§9・§34）。 */}
-      </header>
+      </HeaderActions>
 
       <OfflineNotice />
 
@@ -1344,23 +1350,9 @@ export function CalendarShell({
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
 
-      <RunningActivityBar running={initialRunningActivity} />
-      <BottomNav
-        current="calendar"
-        activityRunning={initialRunningActivity !== null}
-        onCalendarClick={goToday}
-        // カレンダー画面ではすでにcalendars/timeZoneを持っているため、他画面向けの
-        // 自己完結シート（取得を伴う）を使わず、既存のquickDraftへそのまま合流させる。
-        // 保存後の再取得も変更範囲だけに絞られた既存のhandleSavedへ乗る。
-        onLongPressCalendar={() => {
-          if (offline || navigator.onLine === false) return;
-          setQuickDraft(toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES, undefined, false));
-        }}
-      />
-
       {/* Suspenseの外に置く。取得中でもショートカット一覧はいつでも開けてよいため。 */}
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-    </AppFrame>
+    </>
   );
 }
 
@@ -1875,6 +1867,9 @@ function CalendarBody({
     data.invalidate(taskRanges(task));
   };
 
+  // FABを記録中バーの上へ逃がすため、常駐シェルが持つ記録中の値を見る（issue #1395）。
+  const shellRunning = useShellRunning();
+
   // 記録中の帯は、記録済みの活動と同じ茶系（保存先カレンダーの色）で描く（issue #1279）。
   const runningWithColor = useMemo(() => {
     if (!runningActivity) return null;
@@ -1906,7 +1901,7 @@ function CalendarBody({
   });
 
   return (
-    <>
+    <WorkShortLabelsContext.Provider value={work.shortLabels}>
       {/* オフラインならすでに OfflineNotice が出ているため、二重に出さない（issue #718）。 */}
       {!offline && data.stale && <SlowNetworkNotice />}
 
@@ -1995,7 +1990,7 @@ function CalendarBody({
       <AddButton
         available={addAvailable}
         onAdd={onAdd}
-        hasRunningBar={runningActivity !== null}
+        hasRunningBar={shellRunning !== null}
       />
 
       {/*
@@ -2186,7 +2181,7 @@ function CalendarBody({
           onDeleted={handleSaved}
         />
       )}
-    </>
+    </WorkShortLabelsContext.Provider>
   );
 }
 
@@ -2216,11 +2211,11 @@ function AddButton({
   return (
     <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>
       {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。
-          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705）。 */}
+          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705。角丸は issue #1383 で12pxへ詰めた）。 */}
       <Button
         size="icon"
         aria-label="追加"
-        className="elevation-3 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
+        className="elevation-3 size-16 rounded-xl bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-md"
         onClick={() => onAdd(available)}
       >
         <Plus className="size-6" />

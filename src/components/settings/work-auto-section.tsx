@@ -14,14 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
+import type { LinkablePlace } from "./work-place-link-fields";
 import {
   WorkPlaceDefaults,
   type WorkPlaceDefaultRow,
   type WorkRouteRow,
 } from "@/components/settings/work-place-defaults";
-import { WorkTrains } from "@/components/settings/work-trains";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
-import { cn } from "@/lib/utils";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -44,6 +44,8 @@ export function WorkAutoSection({
   settings,
   routes,
   placeDefaults,
+  links,
+  linkablePlaces,
   trains,
   tripPlaces,
   calendars,
@@ -52,6 +54,10 @@ export function WorkAutoSection({
   settings: WorkAutoSettings;
   routes: WorkRouteRow[];
   placeDefaults: WorkPlaceDefaultRow[];
+  /** 勤務場所ごとの正式名称の場所と省略名（issue #1382）。 */
+  links: WorkPlaceLinkRow[];
+  /** 正式名称に選べる場所DBの場所。読めなければ空。 */
+  linkablePlaces: LinkablePlace[];
   trains: WorkTrainItem[];
   /** 出張扱いの勤務場所。既定値の一覧では出張先として並べる。 */
   tripPlaces: string[];
@@ -182,7 +188,6 @@ export function WorkAutoSection({
                     type="button"
                     size="sm"
                     variant={selected ? "secondary" : "outline"}
-                    className={cn("rounded-full")}
                     disabled={busy}
                     aria-pressed={selected}
                     onClick={() =>
@@ -210,17 +215,12 @@ export function WorkAutoSection({
           remotePlaces={value.remotePlaces}
           defaults={placeDefaults}
           routes={routes}
+          trains={trains}
+          links={links}
+          linkablePlaces={linkablePlaces}
           home={home}
           commonStart={value.startMinutes}
           commonEnd={value.endMinutes}
-        />
-
-        <WorkTrains
-          trains={trains}
-          home={home}
-          destinations={[...new Set([...placeNames, ...tripPlaces, ...routes.map((r) => r.destination)])].filter(
-            (name) => name !== home,
-          )}
         />
       </CardContent>
     </Card>

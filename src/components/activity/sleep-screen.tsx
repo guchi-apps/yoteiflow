@@ -88,9 +88,9 @@ export function SleepScreen({
 
       <Card>
         {/* 広い画面では平均と3つの数字を横1段に並べ、グラフを上へ詰める（issue #636）。 */}
-        <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-8">
+        <CardContent className="flex flex-col gap-4 @3xl/main:flex-row @3xl/main:items-center @3xl/main:gap-8">
           {/* この画面を開く理由のほとんどが「足りているか」のため、平均をいちばん大きい字にする。 */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 lg:shrink-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 @3xl/main:shrink-0">
             <span className="type-headline-small font-bold tabular-nums">
               {summary.averageMinutes === null ? "—" : formatSleepMinutes(summary.averageMinutes)}
             </span>
@@ -103,7 +103,7 @@ export function SleepScreen({
             </span>
           </div>
 
-          <dl className="flex gap-2 border-t border-outline-variant pt-3 lg:flex-1 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+          <dl className="flex gap-2 border-t border-outline-variant pt-3 @3xl/main:flex-1 @3xl/main:border-t-0 @3xl/main:border-l @3xl/main:pt-0 @3xl/main:pl-8">
             <Stat
               label="目標との差"
               value={summary.diffMinutes === null ? "—" : formatSleepDiff(summary.diffMinutes)}
@@ -140,7 +140,7 @@ export function SleepScreen({
             href={`/activity/sleep?days=${value}`}
             aria-current={value === days ? "page" : undefined}
             className={cn(
-              "type-label-large rounded-full border px-4 py-1.5 transition-colors",
+              "type-label-large rounded-md border px-4 py-1.5 transition-colors",
               value === days
                 ? "border-transparent bg-secondary-container font-bold text-on-surface"
                 : "border-outline-variant text-on-surface-variant hover:bg-on-surface/8",

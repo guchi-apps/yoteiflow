@@ -13,10 +13,7 @@ import {
 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
-import { BottomNav } from "@/components/nav/main-nav";
-import { RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { HeaderActions } from "@/components/nav/main-shell";
 import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -55,7 +52,6 @@ import {
   type WorkRecordItem,
   type WorkTodo,
 } from "@/types/work";
-import type { RunningActivitySummary } from "@/types/activity";
 
 /**
  * 勤務場所・出張・年休・会社休業日の画面（docs/spec.md §34）。
@@ -123,13 +119,6 @@ type WorkMonthScreenProps = {
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
-  /**
-   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
-   * 出すために使う（docs/spec.md §27）。
-   */
-  runningActivity?: RunningActivitySummary | null;
-  /** 下部ナビの「今日へ」に使うタイムゾーン（`UiSetting.timeZone`）。 */
-  timeZone: string;
   /** 1日の所定労働時間（分）。入力ダイアログの時間休の上限に使う（issue #537）。 */
   workMinutesPerDay?: number;
 };
@@ -141,8 +130,6 @@ function WorkMonthScreen({
   todayKey,
   tripPlaces,
   capabilities,
-  runningActivity = null,
-  timeZone,
   workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
 }: WorkMonthScreenProps) {
   // 記録の追加・変更はすべて書き込み。オフライン中は押せないようにする（docs/spec.md §21）。
@@ -280,11 +267,8 @@ function WorkMonthScreen({
   const hasProcedures = capabilities.approval || capabilities.annualLeave;
 
   return (
-    <AppFrame current="work" activityRunning={runningActivity !== null} running={runningActivity}>
-      <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="work" activityRunning={runningActivity !== null} />
+    <>
+      <HeaderActions>
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -321,7 +305,7 @@ function WorkMonthScreen({
           disabled={offline}
           onClick={resource.reload}
         />
-      </header>
+      </HeaderActions>
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}
       {syncNote && (
@@ -362,7 +346,7 @@ function WorkMonthScreen({
                   aria-haspopup="dialog"
                   aria-label={`${monthLabel}の勤務場所（表示する月を選ぶ）`}
                   onClick={onOpenMonthPicker}
-                  className="type-title-small flex items-center gap-1 rounded-full px-3 py-1.5 tabular-nums hover:bg-on-surface/8"
+                  className="type-title-small flex items-center gap-1 rounded-md px-3 py-1.5 tabular-nums hover:bg-on-surface/8"
                 >
                   {monthLabel}の勤務場所
                   <ChevronDown className="size-4 text-on-surface-variant" />
@@ -432,7 +416,7 @@ function WorkMonthScreen({
                       <span className="flex w-16 shrink-0">
                         <span
                           className={cn(
-                            "type-body-small inline-flex h-5 items-center rounded-full px-2 tabular-nums",
+                            "type-body-small inline-flex h-5 items-center rounded-sm px-2 tabular-nums",
                             dateKey === todayKey
                               ? "bg-primary font-semibold text-primary-foreground"
                               : dateClass(dateKey),
@@ -504,7 +488,7 @@ function WorkMonthScreen({
                           {marks.map((todo) => (
                             <span
                               key={todo}
-                              className="type-label-small rounded-full bg-error-container px-2 py-0.5 text-on-error-container"
+                              className="type-label-small rounded-sm bg-error-container px-2 py-0.5 text-on-error-container"
                             >
                               {WORK_TODO_LABELS[todo]}
                             </span>
@@ -533,8 +517,6 @@ function WorkMonthScreen({
         </div>
       </div>
 
-      <RunningActivityBar running={runningActivity} />
-      <BottomNav current="work" activityRunning={runningActivity !== null} timeZone={timeZone} />
 
       {/* 開閉は `open` で切り替え、閉じるときにアンマウントしない（Radixのダイアログを開いたまま
           アンマウントすると、<body> の `pointer-events: none` が残ることがあるため）。 */}
@@ -575,7 +557,7 @@ function WorkMonthScreen({
           }}
         />
       )}
-    </AppFrame>
+    </>
   );
 }
 
@@ -750,7 +732,7 @@ function OpenRecords({
         <>
           <button
             type="button"
-            className="type-label-large flex items-center gap-1.5 self-start rounded-full px-2 py-1 text-left text-on-surface-variant hover:bg-on-surface/8"
+            className="type-label-large flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-left text-on-surface-variant hover:bg-on-surface/8"
             aria-expanded={laterOpen}
             onClick={() => setLaterOpen(!laterOpen)}
           >
@@ -846,7 +828,7 @@ function RecordRow({
             <label
               key={todo}
               className={cn(
-                "flex items-center gap-2 rounded-full px-2 py-1 transition-colors",
+                "flex items-center gap-2 rounded-md px-2 py-1 transition-colors",
                 needsAttention && "bg-error-container",
                 !todoDisabled && !writeDisabled && "cursor-pointer",
               )}

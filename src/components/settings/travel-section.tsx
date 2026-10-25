@@ -146,7 +146,6 @@ export function TravelSection({
                 variant={mode === value.defaultMode ? "secondary" : "outline"}
                 size="sm"
                 className={cn(
-                  "rounded-full",
                   mode === value.defaultMode && "bg-travel-container text-on-travel-container",
                 )}
                 disabled={busy}

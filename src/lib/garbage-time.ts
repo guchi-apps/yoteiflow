@@ -57,6 +57,22 @@ function zonedDateKey(date: Date, timeZone: string): string {
 }
 
 type DepartureTravel = { id: string; origin: string; departAt: Date };
+
+/**
+ * 移動カレンダーに「予定として」入っている移動（issue #502 が許容する保存方法）を、
+ * 出発時刻の候補へ直す（issue #1394）。時刻のある予定だけを対象にし、中止・不参加の記録が付いたものは除き、予定には出発地が無いため
+ * 出発地は空（＝自宅扱い）にする。
+ */
+export function travelCandidatesFromEvents(
+  events: { id: string; calendarId: string; allDay: boolean; start: string; outcome?: unknown }[],
+  travelCalendarId: string | null,
+): DepartureTravel[] {
+  if (!travelCalendarId) return [];
+  return events
+    .filter((event) => event.calendarId === travelCalendarId && !event.allDay && !event.outcome)
+    .map((event) => ({ id: `event:${event.id}`, origin: "", departAt: new Date(event.start) }))
+    .filter((travel) => !Number.isNaN(travel.departAt.getTime()));
+}
 type AwayEvent = { allDay: boolean; start: string; end: string; location: string | null };
 
 /**

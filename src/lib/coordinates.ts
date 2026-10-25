@@ -104,6 +104,19 @@ export function unproject(pixel: { x: number; y: number }, zoom: number): LatLng
   };
 }
 
+/** 赤道上の地球1周（m）。Webメルカトルの縮尺の基準。 */
+const EARTH_CIRCUMFERENCE_METERS = 40_075_016.686;
+
+/**
+ * 実距離（m）→ そのズーム・緯度での画面上のピクセル数。現在地の精度円を描くのに使う。
+ * Webメルカトルは高緯度ほど引き伸ばされるため、緯度のcosで割り戻す。
+ */
+export function metersToPixels(meters: number, lat: number, zoom: number): number {
+  const cos = Math.cos((clampLatitude(lat) * Math.PI) / 180);
+  const metersPerPixel = (EARTH_CIRCUMFERENCE_METERS * cos) / (TILE_SIZE * 2 ** zoom);
+  return meters / metersPerPixel;
+}
+
 /** 2点がほぼ同じ地点か。住所を調べ直すかどうかの判定に使う（既定はおよそ1m）。 */
 export function isSamePoint(a: LatLng, b: LatLng, tolerance = 0.00001): boolean {
   return Math.abs(a.lat - b.lat) < tolerance && Math.abs(a.lng - b.lng) < tolerance;
@@ -148,4 +161,26 @@ export function fitBounds(
   const zoom = Math.min(maxZoom, Math.max(minZoom, Math.floor(Math.min(zoomX, zoomY))));
 
   return { center, zoom };
+}
+
+/**
+ * 中心・ズーム・枠の大きさ（px）で決まる表示範囲に入っている地点の数（場所画面の地図・issue #1386）。
+ *
+ * 地図の件数ラベルで「この範囲に◯件」を出すために使う。`TileMap` がピンを置くのと同じ
+ * 計算（端数のズームのまま `project` し、中心を枠の中心へ置く）で判定し、画面に見えている
+ * ピンと数が食い違わないようにする。ピンの絵ではなく地点そのものが枠の内側かで数える。
+ * 経度は `TileMap` のピンと同じく折り返さない（日付変更線をまたぐ表示は考えない）。
+ */
+export function countInView(
+  points: LatLng[],
+  view: { center: LatLng; zoom: number },
+  size: { width: number; height: number },
+): number {
+  const center = project(view.center, view.zoom);
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  return points.filter((point) => {
+    const p = project(point, view.zoom);
+    return Math.abs(p.x - center.x) <= halfWidth && Math.abs(p.y - center.y) <= halfHeight;
+  }).length;
 }

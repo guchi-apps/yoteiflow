@@ -12,7 +12,7 @@ export default function Loading() {
   return (
     <div className="flex min-h-app flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        <SkeletonBlock className="h-8 w-20 rounded-full" />
+        <SkeletonBlock className="h-8 w-20 rounded-md" />
         <SkeletonBlock className="h-6 w-16" />
         <span className="flex-1" />
         <LoadingRefreshMark className="size-8 md:size-8" />
@@ -20,9 +20,9 @@ export default function Loading() {
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6 lg:grid lg:max-w-5xl lg:grid-cols-2 lg:content-start lg:items-start">
         <div className="flex items-center justify-between gap-2 lg:col-span-2">
-          <SkeletonBlock className="size-8 rounded-full" />
+          <SkeletonBlock className="size-8 rounded-md" />
           <SkeletonBlock className="h-6 w-28" />
-          <SkeletonBlock className="size-8 rounded-full" />
+          <SkeletonBlock className="size-8 rounded-md" />
         </div>
 
         {/* 残り日数・ペース・月ごと・一覧の4枚。 */}
