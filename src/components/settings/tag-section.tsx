@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   TAG_COLORS,
@@ -29,19 +28,6 @@ export type TagSectionState = {
   missingMessage: string;
   /** Notion側で色を直してもらうための入口。DBが未選択なら null。 */
   databaseUrl: string | null;
-  /**
-   * 勤務場所だけが持つ「出張扱い」の設定（docs/spec.md §34）。
-   *
-   * 選択肢そのものはNotionが一次情報源だが、どれを出張と見なすかはDaySpanが持つ
-   * （NotionConnection.workTripPlaces）。出張のチェックを持たないDBでは決めても
-   * 書き込む先が無いため、使えるかどうかも渡す。
-   */
-  trip?: { places: string[]; available: boolean };
-  /**
-   * 勤務場所だけが持つ、狭い月表示の勤務バッジに出す1文字（{ 名前: 1文字 }・issue #1381）。
-   * 未設定の場所は名前の先頭1文字。
-   */
-  shortLabels?: Record<string, string>;
 };
 
 /**
@@ -58,8 +44,6 @@ export function TagSection({ state }: { state: TagSectionState }) {
   const router = useRouter();
 
   const [options, setOptions] = useState(state.options);
-  const [tripPlaces, setTripPlaces] = useState(state.trip?.places ?? []);
-  const [shortLabels, setShortLabels] = useState(state.shortLabels ?? {});
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("default");
   // 改名の欄は押されたときだけ出す。全行に入力欄を並べると、一覧を読むための画面が
@@ -96,69 +80,6 @@ export function TagSection({ state }: { state: TagSectionState }) {
     }
   };
 
-  /**
-   * 出張扱いの切り替え。1件ずつではなく一覧をまるごと送る（同時に複数を切り替えたときに
-   * 順番次第で結果が変わらないようにするため）。失敗したら押す前の状態へ戻す。
-   */
-  const toggleTrip = async (place: string, trip: boolean) => {
-    const before = tripPlaces;
-    const next = trip ? [...before, place] : before.filter((item) => item !== place);
-
-    setTripPlaces(next);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/work/trip-places", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ places: next }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        setTripPlaces(before);
-        setError(body?.message ?? "出張扱いを保存できませんでした。");
-        return;
-      }
-      // 勤務画面が持っている出張扱いの一覧も古くなる。サーバー側の取得をやり直させる。
-      router.refresh();
-    } catch {
-      setTripPlaces(before);
-      setError("出張扱いを保存できませんでした。");
-    }
-  };
-
-  /** 1文字は欄を離れたときに保存する。入力の途中（変換中）で何度も送らないため。 */
-  const saveShortLabel = async (place: string, value: string) => {
-    const trimmed = value.trim();
-    if ((shortLabels[place] ?? "") === trimmed) return;
-
-    const before = shortLabels;
-    const next = { ...before };
-    if (trimmed) next[place] = trimmed;
-    else delete next[place];
-
-    setShortLabels(next);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/work/place-short-labels", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labels: next }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        setShortLabels(before);
-        setError(body?.message ?? "月表示の1文字を保存できませんでした。");
-        return;
-      }
-      router.refresh();
-    } catch {
-      setShortLabels(before);
-      setError("月表示の1文字を保存できませんでした。");
-    }
-  };
-
   const add = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -186,16 +107,13 @@ export function TagSection({ state }: { state: TagSectionState }) {
     );
     if (!confirmed) return;
 
-    const removed = await send(
+    await send(
       fetch(
         `/api/notion/tags?kind=${state.kind}&name=${encodeURIComponent(target)}`,
         { method: "DELETE" },
       ),
     );
 
-    // 消した名前はサーバー側でも出張扱いから落としているが、この画面が持っている一覧にも
-    // 残る。残したまま別の場所を切り替えると、消したはずの名前を一緒に送り返してしまう。
-    if (removed) setTripPlaces((places) => places.filter((place) => place !== target));
   };
 
   const startRename = (option: TagOption) => {
@@ -213,8 +131,7 @@ export function TagSection({ state }: { state: TagSectionState }) {
    * 名前を変える。
    *
    * IDで指すため、それが付いているNotionのページの値も一緒に変わる（選択肢を消して
-   * 作り直すのとは違い、ページから外れない）。出張扱い（勤務場所）は名前で覚えているため、
-   * サーバー側でそちらも付け替える。
+   * 作り直すのとは違い、ページから外れない）。
    */
   const rename = async (option: TagOption) => {
     const trimmed = editingName.trim();
@@ -232,7 +149,6 @@ export function TagSection({ state }: { state: TagSectionState }) {
     );
 
     if (!renamed) return;
-    setTripPlaces((places) => places.map((place) => (place === option.name ? trimmed : place)));
     cancelRename();
   };
 
@@ -267,13 +183,6 @@ export function TagSection({ state }: { state: TagSectionState }) {
         <div className="flex flex-col gap-1">
           <h2 className="type-title-medium">{state.title}</h2>
           <p className="type-body-small text-on-surface-variant">{state.description}</p>
-          {state.trip && options !== null && (
-            <p className="type-body-small text-on-surface-variant">
-              {state.trip.available
-                ? "「出張扱いにする」を入れた場所を選ぶと、はじめから出張として登録されます（行き先はその場所の名前）。"
-                : "勤務記録DBに出張（チェックボックス）のプロパティがないため、出張扱いは決められません。設定のNotion画面から追加できます。"}
-            </p>
-          )}
         </div>
 
         {error && (
@@ -375,34 +284,6 @@ export function TagSection({ state }: { state: TagSectionState }) {
                     </div>
                   )}
 
-                  {/* 出張扱いは名前の下へ置く。同じ行に足すと、狭い画面で場所の名前が
-                      押し出される（勤務場所の名前はそれ自体が何の記録かを示す）。 */}
-                  {state.shortLabels && (
-                    <label className="flex items-center gap-2 py-0.5">
-                      <Input
-                        key={`${option.name}:${shortLabels[option.name] ?? ""}`}
-                        className="h-9 w-12 px-0 text-center"
-                        aria-label={`${option.name} の月表示の1文字`}
-                        placeholder={Array.from(option.name)[0] ?? ""}
-                        defaultValue={shortLabels[option.name] ?? ""}
-                        maxLength={2}
-                        onBlur={(event) => saveShortLabel(option.name, event.target.value)}
-                      />
-                      <span className="type-body-small text-on-surface-variant">
-                        スマホの月表示に出す1文字（空欄は先頭の1文字）
-                      </span>
-                    </label>
-                  )}
-
-                  {state.trip?.available && (
-                    <label className="flex items-center gap-2 py-0.5">
-                      <Switch
-                        checked={tripPlaces.includes(option.name)}
-                        onCheckedChange={(next) => toggleTrip(option.name, next)}
-                      />
-                      <span className="type-body-small text-on-surface-variant">出張扱いにする</span>
-                    </label>
-                  )}
                 </li>
               ))}
 
@@ -465,7 +346,7 @@ export function TagSection({ state }: { state: TagSectionState }) {
 }
 
 /** 色見本から選ぶ。名前だけの一覧では、Notion上でどう見えるかが分からないため。 */
-function ColorPicker({
+export function ColorPicker({
   value,
   onChange,
   disabled,
