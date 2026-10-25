@@ -183,6 +183,8 @@ export type InternalCreateEventRequest = {
   title: string;
   /** YYYY-MM-DD */
   date: string;
+  /** 終了日 YYYY-MM-DD。日をまたぐ時刻予定のときだけ指定する（省略で date と同日。終日との併用は不正） */
+  endDate?: string | null;
   /** HH:MM。両方省略で終日、片方だけの指定は不正 */
   startTime?: string | null;
   endTime?: string | null;
