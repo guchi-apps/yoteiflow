@@ -46,3 +46,58 @@ test("時刻ありの枠・ゴミ以外は触らない", () => {
   assert.equal(out[0], timed);
   assert.equal(out[1], other);
 });
+
+import { homeDepartures, isSamePlaceText } from "@/lib/garbage-time";
+
+const at = (iso: string) => new Date(iso);
+const HOME = "自宅 大阪府大阪市北区梅田1-1";
+
+test("手で作った自宅発の移動で出発時刻が採られる", () => {
+  const m = homeDepartures(
+    [{ id: "a", origin: "自宅", departAt: at("2026-10-08T07:30:00+09:00") }],
+    [],
+    HOME,
+    new Set(),
+    TZ,
+  );
+  assert.equal(m.get("2026-10-08")?.toISOString(), at("2026-10-08T07:30:00+09:00").toISOString());
+});
+
+test("最初の移動の出発地が自宅でないと確実なら外す", () => {
+  const m = homeDepartures(
+    [
+      { id: "a", origin: "京都駅", departAt: at("2026-10-08T07:00:00+09:00") },
+      { id: "b", origin: "自宅", departAt: at("2026-10-08T18:00:00+09:00") },
+    ],
+    [],
+    HOME,
+    new Set(),
+    TZ,
+  );
+  assert.equal(m.has("2026-10-08"), false);
+});
+
+test("出発地が空・自宅が未設定なら自宅扱い", () => {
+  const t = [{ id: "a", origin: "", departAt: at("2026-10-08T07:30:00+09:00") }];
+  assert.equal(homeDepartures(t, [], HOME, new Set(), TZ).has("2026-10-08"), true);
+  const t2 = [{ id: "a", origin: "京都駅", departAt: at("2026-10-08T07:30:00+09:00") }];
+  assert.equal(homeDepartures(t2, [], null, new Set(), TZ).has("2026-10-08"), true);
+});
+
+test("自動生成の往路は出発地の表記によらず自宅発", () => {
+  const t = [{ id: "a", origin: "別の表記", departAt: at("2026-10-08T07:30:00+09:00") }];
+  assert.equal(homeDepartures(t, [], HOME, new Set(["a"]), TZ).has("2026-10-08"), true);
+});
+
+test("前日から続く自宅以外の宿泊予定がある日は外す", () => {
+  const t = [{ id: "a", origin: "", departAt: at("2026-10-08T07:30:00+09:00") }];
+  const stay = { allDay: false, start: "2026-10-07T20:00:00+09:00", end: "2026-10-08T10:00:00+09:00", location: "京都ホテル" };
+  assert.equal(homeDepartures(t, [stay], HOME, new Set(), TZ).has("2026-10-08"), false);
+  const homeStay = { ...stay, location: "自宅" };
+  assert.equal(homeDepartures(t, [homeStay], HOME, new Set(), TZ).has("2026-10-08"), true);
+});
+
+test("場所の一致は名前でも見る", () => {
+  assert.equal(isSamePlaceText("自宅", HOME), true);
+  assert.equal(isSamePlaceText("京都駅", HOME), false);
+});
