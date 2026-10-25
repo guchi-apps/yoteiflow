@@ -227,3 +227,20 @@ export function parseSegmentsInput(raw: unknown): WorkSegment[] | string {
   }
   return sortWorkSegments(segments);
 }
+
+/**
+ * ある日の区切りを、ほかの日へ複製する（issue #1342）。複製先に既にある区切りは置き換える。
+ * 行の型は画面の編集行（`SegmentRow`）もAPIの区切りも渡せるよう、日付を持つものなら何でもよい。
+ */
+export function replicateToDays<T extends { date: string | null }>(
+  rows: T[],
+  fromDate: string,
+  toDates: string[],
+  clone: (row: T, date: string) => T,
+): T[] {
+  const source = rows.filter((row) => row.date === fromDate);
+  const targets = new Set(toDates.filter((date) => date !== fromDate));
+  const kept = rows.filter((row) => row.date === null || !targets.has(row.date));
+  const copies = [...targets].sort().flatMap((date) => source.map((row) => clone(row, date)));
+  return [...kept, ...copies];
+}

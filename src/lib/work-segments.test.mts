@@ -5,6 +5,7 @@ import {
   formatWorkSegments,
   parseSegmentsInput,
   parseWorkSegments,
+  replicateToDays,
   segmentsOn,
   summarizeSegments,
   validateWorkSegments,
@@ -127,4 +128,17 @@ test("日別一覧の要約とその日の区切り", () => {
     segmentsOn({ startDate: "2026-10-08", endDate: "2026-10-08" } as never, "2026-10-08"),
     [],
   );
+});
+
+test("replicateToDays はその日の区切りを他の日へ置き換えて複製する（issue #1342）", () => {
+  const rows = [
+    { date: "2026-10-27", id: "a" },
+    { date: "2026-10-28", id: "old" },
+  ];
+  const result = replicateToDays(rows, "2026-10-27", ["2026-10-27", "2026-10-28", "2026-10-29"], (row, date) => ({
+    ...row,
+    date,
+    id: `${row.id}@${date}`,
+  }));
+  assert.deepEqual(result.map((row) => row.id), ["a", "a@2026-10-28", "a@2026-10-29"]);
 });

@@ -750,25 +750,31 @@ export function WorkRecordDialog({
                   minutes === undefined ? fallback : formatSegmentTime(minutes);
                 const firstPlace =
                   placeOptions.find((option) => !isTripPlace(tripPlaces, option.name))?.name ?? "";
-                const date = spanned ? startDate : null;
-                changeSegments([
-                  newSegmentRow({
-                    date,
-                    start: time(window?.start, "09:00"),
-                    end: time(window?.lunchStart, "12:00"),
-                    trip: false,
-                    place: businessTrip ? firstPlace : place,
-                    destination: "",
-                  }),
-                  newSegmentRow({
-                    date,
-                    start: time(window?.lunchEnd, "13:00"),
-                    end: time(window?.end, "18:00"),
-                    trip: businessTrip,
-                    place: businessTrip ? "" : place,
-                    destination: "",
-                  }),
-                ]);
+                // 期間の記録は全日に同じ初期の区切りを作る（日ごとに直せる・issue #1342）。
+                const days: Array<string | null> =
+                  spanned && segmentEndDate !== startDate
+                    ? enumerateDates(startDate, segmentEndDate)
+                    : [spanned ? startDate : null];
+                changeSegments(
+                  days.flatMap((date) => [
+                    newSegmentRow({
+                      date,
+                      start: time(window?.start, "09:00"),
+                      end: time(window?.lunchStart, "12:00"),
+                      trip: false,
+                      place: businessTrip ? firstPlace : place,
+                      destination: "",
+                    }),
+                    newSegmentRow({
+                      date,
+                      start: time(window?.lunchEnd, "13:00"),
+                      end: time(window?.end, "18:00"),
+                      trip: businessTrip,
+                      place: businessTrip ? "" : place,
+                      destination: "",
+                    }),
+                  ]),
+                );
               }}
             >
               <Clock className="size-4" />
