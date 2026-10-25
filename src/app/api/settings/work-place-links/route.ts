@@ -17,8 +17,8 @@ export async function GET() {
 }
 
 type Body = {
-  workPlace?: string;
-  placeId?: string | null;
+  workPlace?: unknown;
+  placeId?: unknown;
 };
 
 export async function PUT(request: Request) {
@@ -26,15 +26,18 @@ export async function PUT(request: Request) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = (await request.json().catch(() => null)) as Body | null;
-  const workPlace = body?.workPlace?.trim();
+  const workPlace = typeof body?.workPlace === "string" ? body.workPlace.trim() : "";
   if (!body || !workPlace) {
     return NextResponse.json({ error: "invalid", message: "勤務場所を指定してください。" }, { status: 400 });
+  }
+  if (body.placeId != null && typeof body.placeId !== "string") {
+    return NextResponse.json({ error: "invalid", message: "placeId は文字列で指定してください。" }, { status: 400 });
   }
 
   // 項目ごと送られたものだけ更新する（undefined は触らない・null/空は消す）。
   // 省略名（shortLabel2/1）の更新は受けない（issue #1426。月表示の1文字へ一本化。列は残す）。
   const data: { placeId?: string | null } = {};
-  if (body.placeId !== undefined) data.placeId = body.placeId?.trim() || null;
+  if (body.placeId !== undefined) data.placeId = (body.placeId as string | null)?.trim() || null;
 
   await db.workPlaceLink.upsert({
     where: { userId_workPlace: { userId, workPlace } },
