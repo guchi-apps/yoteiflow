@@ -50,3 +50,12 @@ test("同じ地点が複数あっても上限のズームに留める", () => {
   const result = fitBounds([point, point], SIZE, { maxZoom: 17 });
   assert.equal(result?.zoom, 17);
 });
+
+test("精度円は距離を縮尺で割る（赤道・ズーム0は1ピクセル約156543m）", async () => {
+  const { metersToPixels } = await import("@/lib/coordinates");
+  assert.ok(Math.abs(metersToPixels(156_543.03392, 0, 0) - 1) < 1e-6);
+  // ズームが1つ上がると同じ距離は2倍の大きさになる。
+  assert.ok(Math.abs(metersToPixels(100, 34.7, 16) / metersToPixels(100, 34.7, 15) - 2) < 1e-9);
+  // 高緯度ほど同じ距離が大きく見える。
+  assert.ok(metersToPixels(100, 60, 15) > metersToPixels(100, 0, 15));
+});
