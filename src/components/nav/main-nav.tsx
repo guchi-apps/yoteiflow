@@ -72,7 +72,8 @@ export function BottomNav({
   onLongPressCalendar,
   timeZone,
 }: {
-  current: NavKey;
+  /** 現在地。5項目に含まれない画面（設定・場所など）は null で、ハイライトを出さない。 */
+  current: NavKey | null;
   /** 活動を記録中かどうか。記録の項目へ印を出す。 */
   activityRunning?: boolean;
   /**
