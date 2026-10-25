@@ -10,6 +10,7 @@ import {
   resolveKey,
   trainMissing,
   trainsFor,
+  withDefaultTrains,
   trainWarnings,
   type SyncConfig,
   type SyncField,
@@ -108,9 +109,9 @@ test("名前と住所が続く行き先から勤務先名を当てる", () => {
 const trainConfig: SyncConfig = {
   ...config,
   trains: [
-    { id: "o2", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 483, durationMinutes: 140 },
-    { id: "o1", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 450, durationMinutes: 140 },
-    { id: "b1", origin: "門真", destination: "自宅", label: "のぞみ", departMinutes: 1040, durationMinutes: 140 },
+    { id: "o2", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 483, durationMinutes: 140, isDefault: false, note: null },
+    { id: "o1", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 450, durationMinutes: 140, isDefault: false, note: null },
+    { id: "b1", origin: "門真", destination: "自宅", label: "のぞみ", departMinutes: 1040, durationMinutes: 140, isDefault: false, note: null },
   ],
 };
 const dates = { startDate: "2026-10-05", endDate: "2026-10-05" };
@@ -156,4 +157,27 @@ test("復路の電車が勤務終了より前に出るときは警告する", ()
   const warnings = trainWarnings({ ...base, backTrainId: "b1" }, trainConfig, ctx("門真", true), dates);
   assert.equal(warnings.length, 1);
   assert.ok(warnings[0].includes("勤務終了"));
+});
+
+// --- 新規の記録だけデフォルトの電車を選ぶ（issue #1371） ---
+
+test("デフォルトの電車は新規の初期値で往路・復路とも選ばれ、既に選んだものは動かさない", () => {
+  const cfg: SyncConfig = {
+    ...trainConfig,
+    trains: [
+      { id: "o1", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 450, durationMinutes: 140, isDefault: false, note: null },
+      { id: "o2", origin: "自宅", destination: "門真", label: "こだま", departMinutes: 483, durationMinutes: 140, isDefault: true, note: null },
+      { id: "b1", origin: "門真", destination: "自宅", label: "のぞみ", departMinutes: 1040, durationMinutes: 140, isDefault: true, note: null },
+    ],
+  };
+  const base = defaultForm(cfg, ctx("門真", true));
+  assert.equal(base.outTrainId, "");
+  const seeded = withDefaultTrains(base, cfg, ctx("門真", true));
+  assert.equal(seeded.outTrainId, "o2");
+  assert.equal(seeded.backTrainId, ""); // 門真の既定は復路オフのため選ばない
+  const both = { ...base, backEnabled: true };
+  assert.equal(withDefaultTrains(both, cfg, ctx("門真", true)).backTrainId, "b1");
+  assert.equal(withDefaultTrains({ ...base, outTrainId: "o1" }, cfg, ctx("門真", true)).outTrainId, "o1");
+  assert.equal(withDefaultTrains({ ...base, outEnabled: false }, cfg, ctx("門真", true)).outTrainId, "");
+  assert.equal(withDefaultTrains(base, cfg, ctx("栗東")).outTrainId, "");
 });

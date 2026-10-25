@@ -19,6 +19,7 @@ import {
   trainMissing,
   trainsFor,
   trainWarnings,
+  withDefaultTrains,
   toTime,
   type Leg,
   type SyncConfig,
@@ -97,6 +98,9 @@ export function useWorkSyncFields({
   const context: SyncContext = { key, isTrip, annualLeave };
   const contextId = `${key}|${isTrip}|${annualLeave ?? ""}`;
 
+  // 新規の記録だけ、デフォルトの電車を最初から選ぶ（既存の記録は保存した指定のまま・issue #1371）。
+  const seedForm = (base: SyncForm) =>
+    config && !recordId ? withDefaultTrains(base, config, context) : base;
   const [initialContextId] = useState(contextId);
   const [previousContextId, setPreviousContextId] = useState(contextId);
   const [edited, setEdited] = useState<SyncForm | null>(null);
@@ -107,7 +111,7 @@ export function useWorkSyncFields({
   if (contextId !== previousContextId) {
     setPreviousContextId(contextId);
     if (config && edited) {
-      const result = rebase(edited, touched, defaultForm(config, context));
+      const result = rebase(edited, touched, seedForm(defaultForm(config, context)));
       setEdited(result.form);
       setKept(result.kept);
     } else {
@@ -117,8 +121,8 @@ export function useWorkSyncFields({
 
   const initial = config
     ? contextId === initialContextId
-      ? applyOverride(defaultForm(config, context), config.override)
-      : defaultForm(config, context)
+      ? applyOverride(seedForm(defaultForm(config, context)), config.override)
+      : seedForm(defaultForm(config, context))
     : null;
   const form = edited ?? initial;
 
@@ -290,6 +294,11 @@ export function useWorkSyncFields({
                     >
                       <span className="type-title-small tabular-nums">
                         {toTime(train.departMinutes)} → {toTime((train.departMinutes + train.durationMinutes) % 1440)}
+                        {train.isDefault && (
+                          <span className="type-label-small ml-2 rounded-full bg-primary px-2 py-0.5 text-on-primary">
+                            デフォルト
+                          </span>
+                        )}
                       </span>
                       <span className="text-on-surface-variant">
                         {train.label}・{train.durationMinutes}分
@@ -298,6 +307,11 @@ export function useWorkSyncFields({
                   );
                 })}
               </div>
+              {trains.find((train) => train.id === trainId)?.note && (
+                <p className="type-body-small whitespace-pre-line border-l-4 border-outline-variant pl-2 text-on-surface-variant">
+                  {trains.find((train) => train.id === trainId)?.note}
+                </p>
+              )}
               {missing && (
                 <p className="type-body-small text-error">
                   選んでいた電車が見つかりません（削除されたか、勤務先が変わりました）。電車を選び直すか、所要時間に切り替えてください。

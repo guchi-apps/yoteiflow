@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { parseTrainInput } from "@/lib/work-sync/train";
-import { loadTrains } from "@/services/work-sync/config";
+import { loadTrains, saveTrain } from "@/services/work-sync/config";
 
 /** よく使う電車（出発地 → 行き先ごとに複数・docs/spec.md §46・issue #1347）。 */
 const MAX_TRAINS = 200;
@@ -27,8 +27,8 @@ export async function PUT(request: Request) {
   const id = typeof raw?.id === "string" && raw.id ? raw.id : null;
 
   if (id) {
-    const result = await db.workTrain.updateMany({ where: { id, userId }, data: parsed.train });
-    if (result.count === 0) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    const saved = await saveTrain(userId, id, parsed.train);
+    if (!saved) return NextResponse.json({ error: "not_found" }, { status: 404 });
   } else {
     const count = await db.workTrain.count({ where: { userId } });
     if (count >= MAX_TRAINS) {
@@ -37,7 +37,7 @@ export async function PUT(request: Request) {
         { status: 400 },
       );
     }
-    await db.workTrain.create({ data: { userId, ...parsed.train } });
+    await saveTrain(userId, null, parsed.train);
   }
   return NextResponse.json({ trains: await loadTrains(userId) });
 }
