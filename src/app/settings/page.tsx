@@ -92,7 +92,7 @@ export default async function SettingsPage() {
         ヘッダーから開く専用ページに置くため、ここには出さない）。
       */}
       <SettingsSection heading="共通設定">
-        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
+        <Card className="gap-0 py-0 @3xl/main:grid @3xl/main:grid-cols-2">
           <MenuItem
             href="/settings/account"
             icon={UserRound}
@@ -127,7 +127,7 @@ export default async function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection heading="外部連携">
-        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
+        <Card className="gap-0 py-0 @3xl/main:grid @3xl/main:grid-cols-2">
           <MenuItem
             href="/settings/google"
             icon={CalendarDays}
@@ -157,7 +157,7 @@ export default async function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection heading="機能ごとの設定">
-        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
+        <Card className="gap-0 py-0 @3xl/main:grid @3xl/main:grid-cols-2">
           {/* タグ・種類・カテゴリの選択肢はNotionのプロパティ定義そのもので、DB単位の
               未接続はページ内の案内文で吸収する。行の表示・非表示はNotion全体の接続の
               有無で揃える（以前の「タグ」項目と同じ条件）。 */}
