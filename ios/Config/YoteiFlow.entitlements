@@ -14,6 +14,13 @@
 	<true/>
 	<key>com.apple.developer.healthkit.access</key>
 	<array/>
+	<!-- Universal Link（#1366）。Discordなどの https://dayspan.gucchii.com/calendar?date=… をアプリで開く。
+	     サーバーは /.well-known/apple-app-site-association を返す（src/lib/universal-links.ts）。
+	     Apple DeveloperのApp IDで Associated Domains を有効にしておく必要がある -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:dayspan.gucchii.com</string>
+	</array>
 	<key>aps-environment</key>
 	<string>development</string>
 </dict>

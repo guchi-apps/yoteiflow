@@ -29,3 +29,10 @@ test("稼働版の照合（/api/app-version）は未ログインでも通す", (
   assert.equal(isTokenAuthApiPath("/api/events"), false);
   assert.equal(isTokenAuthApiPath("/api/widget/activity"), true);
 });
+
+test("Universal LinkのAASAはSupabaseを通さず未ログインでも返す（issue #1366）", () => {
+  assert.equal(isTokenAuthApiPath("/.well-known/apple-app-site-association"), true);
+  assert.equal(isTokenAuthApiPath("/.well-known/apple-app-site-association/x"), false);
+  assert.equal(isTokenAuthApiPath("/.well-known/other"), false);
+  assert.equal(isPublicPath("/.well-known/apple-app-site-association"), false);
+});
