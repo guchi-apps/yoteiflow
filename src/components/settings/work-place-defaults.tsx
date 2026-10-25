@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { WorkTrains } from "@/components/settings/work-trains";
 import { fromTime, toTime } from "@/lib/work-sync/form";
+import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -55,6 +57,7 @@ export function WorkPlaceDefaults({
   remotePlaces,
   defaults: initialDefaults,
   routes: initialRoutes,
+  trains,
   home,
   commonStart,
   commonEnd,
@@ -64,6 +67,7 @@ export function WorkPlaceDefaults({
   remotePlaces: string[];
   defaults: WorkPlaceDefaultRow[];
   routes: WorkRouteRow[];
+  trains: WorkTrainItem[];
   home: string | null;
   commonStart: number;
   commonEnd: number;
@@ -85,6 +89,10 @@ export function WorkPlaceDefaults({
   defaults.forEach((row) => add({ key: row.key, isTrip: row.isTrip }));
   routes.forEach((route) => {
     if (route.origin === home) add({ key: route.destination, isTrip: !placeNames.includes(route.destination) });
+  });
+  trains.forEach((train) => {
+    if (train.origin === home) add({ key: train.destination, isTrip: !placeNames.includes(train.destination) });
+    else if (train.destination === home) add({ key: train.origin, isTrip: !placeNames.includes(train.origin) });
   });
   extra.forEach(add);
 
@@ -120,6 +128,7 @@ export function WorkPlaceDefaults({
           row={defaults.find((row) => row.key === entry.key && row.isTrip === entry.isTrip) ?? null}
           out={home ? routes.find((r) => r.origin === home && r.destination === entry.key) ?? null : null}
           back={home ? routes.find((r) => r.origin === entry.key && r.destination === home) ?? null : null}
+          trains={trains}
           commonStart={commonStart}
           commonEnd={commonEnd}
           onSavedDefaults={setDefaults}
@@ -162,6 +171,7 @@ function PlaceCard({
   row,
   out,
   back,
+  trains,
   commonStart,
   commonEnd,
   onSavedDefaults,
@@ -173,6 +183,7 @@ function PlaceCard({
   row: WorkPlaceDefaultRow | null;
   out: WorkRouteRow | null;
   back: WorkRouteRow | null;
+  trains: WorkTrainItem[];
   commonStart: number;
   commonEnd: number;
   onSavedDefaults: (rows: WorkPlaceDefaultRow[]) => void;
@@ -370,6 +381,8 @@ function PlaceCard({
           </div>
         </>
       )}
+
+      {!remote && <WorkTrains trains={trains} home={home} place={entry.key} />}
 
       <div className="flex items-center gap-3">
         <Button type="button" size="sm" disabled={busy} onClick={save}>
