@@ -1,4 +1,5 @@
 import type { ReminderItem } from "@/types/calendar";
+import { splitNameAndAddress } from "@/lib/place-text";
 import { toOffsetIso } from "@/lib/sleep-health";
 import { zonedTime } from "@/lib/work-sync/plan";
 
@@ -29,4 +30,83 @@ export function applyGarbageLeaveTime(
       : fallback;
     return { ...item, date: toOffsetIso(leave, timeZone), hasTime: true };
   });
+}
+
+/** 場所の文字列を自宅との比較用にそろえる（`名前 住所` なら名前の側）。 */
+function placeKey(text: string): string {
+  const value = text.trim();
+  return (splitNameAndAddress(value)?.name ?? value).replace(/\s+/g, "");
+}
+
+/** 2つの場所の文字列が同じ場所を指すか（完全一致か、名前が一致するか、一方が他方で始まる）。 */
+export function isSamePlaceText(a: string, b: string): boolean {
+  const x = a.trim();
+  const y = b.trim();
+  if (!x || !y) return false;
+  if (x === y || x.startsWith(y) || y.startsWith(x)) return true;
+  return placeKey(x) === placeKey(y);
+}
+
+function zonedDateKey(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+type DepartureTravel = { id: string; origin: string; departAt: Date };
+type AwayEvent = { allDay: boolean; start: string; end: string; location: string | null };
+
+/**
+ * 日付ごとの「自宅を出る最初の移動」の出発時刻を求める（issue #1360・docs/spec.md §9）。
+ *
+ * - その日の最初の移動の出発地が入力済みで自宅と一致しなければ、その日は自宅を出ないものとして外す。
+ *   出発地が空・自宅が未設定なら判定できないため自宅扱い（外すのは「確実に自宅にいない」ときだけ）。
+ *   勤務から自動生成した往路（`homeTravelIds`）は出発地の表記によらず自宅発として扱う。
+ * - 前日から続く予定（宿泊など）の場所が入力済みで自宅と一致しないときも、その日は外す。
+ *   場所がURLの予定は除く。
+ */
+export function homeDepartures(
+  travels: DepartureTravel[],
+  events: AwayEvent[],
+  homeOrigin: string | null,
+  homeTravelIds: Set<string>,
+  timeZone: string,
+): Map<string, Date> {
+  const home = homeOrigin?.trim() || null;
+  const first = new Map<string, DepartureTravel>();
+  for (const travel of travels) {
+    const key = zonedDateKey(travel.departAt, timeZone);
+    const current = first.get(key);
+    if (
+      !current ||
+      travel.departAt < current.departAt ||
+      (travel.departAt.getTime() === current.departAt.getTime() && travel.id < current.id)
+    ) {
+      first.set(key, travel);
+    }
+  }
+
+  const result = new Map<string, Date>();
+  for (const [key, travel] of first) {
+    const origin = travel.origin.trim();
+    const awayByTravel =
+      !homeTravelIds.has(travel.id) && home !== null && origin !== "" && !isSamePlaceText(origin, home);
+    if (awayByTravel) continue;
+    if (home !== null && events.some((event) => awayEventCoversMorning(event, key, home, timeZone))) continue;
+    result.set(key, travel.departAt);
+  }
+  return result;
+}
+
+/** 前日から続き、朝（その日の6時）にかかる自宅以外の予定か。 */
+function awayEventCoversMorning(event: AwayEvent, dateKey: string, home: string, timeZone: string): boolean {
+  const location = event.location?.trim();
+  if (!location || /^https?:\/\//i.test(location) || isSamePlaceText(location, home)) return false;
+  if (event.allDay) return event.start < dateKey && event.end >= dateKey;
+  const dayStart = zonedTime(dateKey, 0, timeZone).getTime();
+  const morning = zonedTime(dateKey, 6 * 60, timeZone).getTime();
+  return new Date(event.start).getTime() < dayStart && new Date(event.end).getTime() > morning;
 }
