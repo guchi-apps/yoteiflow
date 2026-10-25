@@ -26,3 +26,12 @@ test("終了が開始以前・時刻が範囲外は断る", () => {
   assert.equal(parseWorkOverride({ startMinutes: 2000 }).ok, false);
   assert.equal(parseWorkOverride("x").ok, false);
 });
+
+test("日ごとの勤務時間を検証する（issue #1342）", () => {
+  const ok = parseWorkOverride({ days: { "2026-10-27": { start: 600, end: 1020 } } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.ok && ok.override.days, { "2026-10-27": { start: 600, end: 1020 } });
+  assert.equal(parseWorkOverride({ days: { "10/27": { start: 600, end: 1020 } } }).ok, false);
+  assert.equal(parseWorkOverride({ days: { "2026-10-27": { start: 700, end: 700 } } }).ok, false);
+  assert.equal(parseWorkOverride({ days: [] }).ok, false);
+});

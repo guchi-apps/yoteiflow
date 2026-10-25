@@ -1,4 +1,5 @@
 import {
+  enumerateDates,
   workWindow,
   type WorkLegOverride,
   type WorkRecordOverride,
@@ -210,29 +211,84 @@ export function checkForm(
   return { ok: true, payload };
 }
 
+/** 画面で編集する日ごとの勤務時間（`HH:MM`）。指定した日だけ持つ。 */
+export type DayEdits = Record<string, { start: string; end: string }>;
+
+/** 保存済みの日ごとの指定を、画面の入力値へ直す。 */
+export function dayEditsFromOverride(override: WorkRecordOverride | null): DayEdits {
+  const edits: DayEdits = {};
+  for (const [date, range] of Object.entries(override?.days ?? {})) {
+    edits[date] = { start: toTime(range.start), end: toTime(range.end) };
+  }
+  return edits;
+}
+
+/**
+ * 日ごとの入力を、記録の期間内の日だけ検証して送る形にする（issue #1342）。
+ * 全日の時刻が共通の値と同じ日は送らない（指定なし＝共通の値）。
+ */
+export function checkDays(
+  edits: DayEdits,
+  form: Pick<SyncForm, "start" | "end">,
+  dates: { startDate: string; endDate: string },
+): { ok: true; days: NonNullable<WorkRecordOverride["days"]> } | { ok: false; message: string } {
+  const days: NonNullable<WorkRecordOverride["days"]> = {};
+  for (const date of enumerateDates(dates.startDate, dates.endDate)) {
+    const edit = edits[date];
+    if (!edit || (edit.start === form.start && edit.end === form.end)) continue;
+    const start = fromTime(edit.start);
+    const end = fromTime(edit.end);
+    const label = `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+    if (start === null || end === null) {
+      return { ok: false, message: `${label}の勤務開始・終了の時刻を入力してください。` };
+    }
+    if (end <= start) return { ok: false, message: `${label}の勤務終了は開始より後にしてください。` };
+    days[date] = { start, end };
+  }
+  return { ok: true, days };
+}
+
 /** 反映する内容の確認用の文面。反映OFFの項目は出さない。 */
 export function describePlan(
   form: SyncForm,
   config: SyncConfig,
   context: SyncContext,
   dates: { startDate: string; endDate: string },
+  dayEdits: DayEdits = {},
 ): string[] {
   const lines: string[] = [];
-  const start = fromTime(form.start);
-  const end = fromTime(form.end);
+  const common = { start: fromTime(form.start), end: fromTime(form.end) };
   const range = (from: number, to: number) => `${toTime(((from % 1440) + 1440) % 1440)}–${toTime(((to % 1440) + 1440) % 1440)}`;
   const span = dates.endDate && dates.endDate !== dates.startDate;
-  if (form.workEnabled && start !== null && end !== null && end > start) {
-    lines.push(`勤務予定 ${range(start, end)}${span ? "（期間の各日）" : ""}`);
+  const dayLabel = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+  /** その日の時間帯。日ごとの指定があればそれ、無ければ共通の値。決められなければ null。 */
+  const windowOn = (date: string) => {
+    const edit = dayEdits[date];
+    const start = edit ? fromTime(edit.start) : common.start;
+    const end = edit ? fromTime(edit.end) : common.end;
+    return start !== null && end !== null && end > start ? { start, end } : null;
+  };
+  const first = windowOn(dates.startDate);
+  const last = windowOn(span ? dates.endDate : dates.startDate);
+
+  if (form.workEnabled) {
+    if (span && Object.keys(dayEdits).length > 0) {
+      for (const date of enumerateDates(dates.startDate, dates.endDate)) {
+        const window = windowOn(date);
+        if (window) lines.push(`勤務予定 ${dayLabel(date)} ${range(window.start, window.end)}`);
+      }
+    } else if (first) {
+      lines.push(`勤務予定 ${range(first.start, first.end)}${span ? "（期間の各日）" : ""}`);
+    }
   }
-  if (commutes(config, context) && start !== null && end !== null && end > start) {
+  if (commutes(config, context)) {
     const out = Number(form.outMinutes);
-    if (form.outEnabled && out > 0) {
-      lines.push(`往路 ${range(start - out, start)}${span ? `（${dates.startDate}）` : ""}`);
+    if (first && form.outEnabled && out > 0) {
+      lines.push(`往路 ${range(first.start - out, first.start)}${span ? `（${dates.startDate}）` : ""}`);
     }
     const back = Number(form.backMinutes);
-    if (form.backEnabled && back > 0) {
-      lines.push(`復路 ${range(end, end + back)}${span ? `（${dates.endDate}）` : ""}`);
+    if (last && form.backEnabled && back > 0) {
+      lines.push(`復路 ${range(last.end, last.end + back)}${span ? `（${dates.endDate}）` : ""}`);
     }
   }
   return lines;

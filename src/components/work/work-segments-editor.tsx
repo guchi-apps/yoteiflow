@@ -6,7 +6,7 @@ import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { formatSegmentTime, validateWorkSegments } from "@/lib/work-segments";
+import { formatSegmentTime, replicateToDays, validateWorkSegments } from "@/lib/work-segments";
 import { fromTime } from "@/lib/work-sync/form";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkSegment } from "@/types/work";
@@ -134,6 +134,94 @@ export function WorkSegmentsEditor({
     </button>
   );
 
+  /** その日の区切りを、ほかのすべての日へ複製する（置き換え）。 */
+  const copyToOthers = (fromDate: string) => {
+    if (!dates) return;
+    const normalized: SegmentRow[] = rows.map((row) => ({ ...row, date: row.date ?? dates[0] }));
+    onChange(
+      replicateToDays(normalized, fromDate, dates, (row, date) =>
+        newSegmentRow({
+          date,
+          start: row.start,
+          end: row.end,
+          trip: row.trip,
+          place: row.place,
+          destination: row.destination,
+        }),
+      ),
+    );
+  };
+
+  const renderRow = (row: SegmentRow, index: number) => (
+    <div
+            key={row.key}
+            className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
+          >
+            <div className="flex items-end gap-2">
+              {dates && (
+                <label className="flex min-w-0 flex-col gap-1">
+                  <span className="type-label-small text-on-surface-variant">日付</span>
+                  <select
+                    aria-label={`${index + 1}つ目の時間帯の日付`}
+                    value={row.date ?? dates[0]}
+                    onChange={(event) => update(row.key, { date: event.target.value })}
+                    className="type-body-medium h-10 rounded-lg border border-outline bg-surface px-2 text-on-surface"
+                  >
+                    {dates.map((date) => (
+                      <option key={date} value={date}>
+                        {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <Input
+                aria-label={`${index + 1}つ目の時間帯の開始`}
+                type="time"
+                className="w-[6.5rem] min-w-0"
+                value={row.start}
+                onChange={(event) => update(row.key, { start: event.target.value })}
+              />
+              <span className="pb-2 text-on-surface-variant">〜</span>
+              <Input
+                aria-label={`${index + 1}つ目の時間帯の終了`}
+                type="time"
+                className="w-[6.5rem] min-w-0"
+                value={row.end}
+                onChange={(event) => update(row.key, { end: event.target.value })}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto text-error"
+                aria-label={`${index + 1}つ目の時間帯を削除`}
+                onClick={() => onChange(rows.filter((item) => item.key !== row.key))}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {placeOptions.map((option) =>
+                chip(!row.trip && row.place === option.name, option.color, option.name, () =>
+                  update(row.key, { trip: false, place: option.name }),
+                ),
+              )}
+              {allowTrip && chip(row.trip, null, "出張", () => update(row.key, { trip: true }), true)}
+            </div>
+            {row.trip && (
+              <Input
+                id={`work-segment-destination-${row.key}`}
+                label="この時間帯の行き先"
+                placeholder={defaultDestination || "行き先"}
+                value={row.destination}
+                onChange={(event) => update(row.key, { destination: event.target.value })}
+                onClear={() => update(row.key, { destination: "" })}
+              />
+            )}
+          </div>
+  );
+
   return (
     <div className="flex flex-col gap-3">
       {invalidText && (
@@ -143,75 +231,36 @@ export function WorkSegmentsEditor({
         </div>
       )}
 
-      {rows.map((row, index) => (
-        <div
-          key={row.key}
-          className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
-        >
-          <div className="flex items-end gap-2">
-            {dates && (
-              <label className="flex min-w-0 flex-col gap-1">
-                <span className="type-label-small text-on-surface-variant">日付</span>
-                <select
-                  aria-label={`${index + 1}つ目の時間帯の日付`}
-                  value={row.date ?? dates[0]}
-                  onChange={(event) => update(row.key, { date: event.target.value })}
-                  className="type-body-medium h-10 rounded-lg border border-outline bg-surface px-2 text-on-surface"
-                >
-                  {dates.map((date) => (
-                    <option key={date} value={date}>
-                      {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <Input
-              aria-label={`${index + 1}つ目の時間帯の開始`}
-              type="time"
-              className="w-[6.5rem] min-w-0"
-              value={row.start}
-              onChange={(event) => update(row.key, { start: event.target.value })}
-            />
-            <span className="pb-2 text-on-surface-variant">〜</span>
-            <Input
-              aria-label={`${index + 1}つ目の時間帯の終了`}
-              type="time"
-              className="w-[6.5rem] min-w-0"
-              value={row.end}
-              onChange={(event) => update(row.key, { end: event.target.value })}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="ml-auto text-error"
-              aria-label={`${index + 1}つ目の時間帯を削除`}
-              onClick={() => onChange(rows.filter((item) => item.key !== row.key))}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {placeOptions.map((option) =>
-              chip(!row.trip && row.place === option.name, option.color, option.name, () =>
-                update(row.key, { trip: false, place: option.name }),
-              ),
-            )}
-            {allowTrip && chip(row.trip, null, "出張", () => update(row.key, { trip: true }), true)}
-          </div>
-          {row.trip && (
-            <Input
-              id={`work-segment-destination-${row.key}`}
-              label="この時間帯の行き先"
-              placeholder={defaultDestination || "行き先"}
-              value={row.destination}
-              onChange={(event) => update(row.key, { destination: event.target.value })}
-              onClear={() => update(row.key, { destination: "" })}
-            />
-          )}
-        </div>
-      ))}
+      {dates
+        ? dates.map((date) => {
+            const dayRows = rows.filter((row) => (row.date ?? dates[0]) === date);
+            return (
+              <div key={date} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="type-label-large font-bold">
+                    {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))}
+                    {dayRows.length === 0 && (
+                      <span className="type-body-small ml-2 font-normal text-on-surface-variant">
+                        区切りなし（記録の行き先で1日）
+                      </span>
+                    )}
+                  </span>
+                  {dayRows.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToOthers(date)}
+                    >
+                      他の日へコピー
+                    </Button>
+                  )}
+                </div>
+                {dayRows.map((row) => renderRow(row, rows.indexOf(row)))}
+              </div>
+            );
+          })
+        : rows.map((row, index) => renderRow(row, index))}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={add}>
