@@ -172,7 +172,7 @@ export function PlacesMap({
           onSizeChange={handleSizeChange}
         />
 
-        <span className="type-label-medium pointer-events-none absolute top-2 left-2 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1 text-on-surface-variant">
+        <span className="type-label-medium pointer-events-none absolute top-2 left-2 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-1 text-on-surface-variant">
           {countLabel}
         </span>
 
@@ -219,7 +219,7 @@ function PlaceSummary({
         <button
           type="button"
           aria-label="閉じる"
-          className="-m-1 grid size-7 shrink-0 place-items-center rounded-full text-on-surface-variant hover:bg-on-surface/8"
+          className="-m-1 grid size-7 shrink-0 place-items-center rounded-md text-on-surface-variant hover:bg-on-surface/8"
           onClick={onClose}
         >
           <X className="size-4" />

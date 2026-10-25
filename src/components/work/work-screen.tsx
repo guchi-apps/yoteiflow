@@ -362,7 +362,7 @@ function WorkMonthScreen({
                   aria-haspopup="dialog"
                   aria-label={`${monthLabel}の勤務場所（表示する月を選ぶ）`}
                   onClick={onOpenMonthPicker}
-                  className="type-title-small flex items-center gap-1 rounded-full px-3 py-1.5 tabular-nums hover:bg-on-surface/8"
+                  className="type-title-small flex items-center gap-1 rounded-md px-3 py-1.5 tabular-nums hover:bg-on-surface/8"
                 >
                   {monthLabel}の勤務場所
                   <ChevronDown className="size-4 text-on-surface-variant" />
@@ -432,7 +432,7 @@ function WorkMonthScreen({
                       <span className="flex w-16 shrink-0">
                         <span
                           className={cn(
-                            "type-body-small inline-flex h-5 items-center rounded-full px-2 tabular-nums",
+                            "type-body-small inline-flex h-5 items-center rounded-sm px-2 tabular-nums",
                             dateKey === todayKey
                               ? "bg-primary font-semibold text-primary-foreground"
                               : dateClass(dateKey),
@@ -504,7 +504,7 @@ function WorkMonthScreen({
                           {marks.map((todo) => (
                             <span
                               key={todo}
-                              className="type-label-small rounded-full bg-error-container px-2 py-0.5 text-on-error-container"
+                              className="type-label-small rounded-sm bg-error-container px-2 py-0.5 text-on-error-container"
                             >
                               {WORK_TODO_LABELS[todo]}
                             </span>
@@ -750,7 +750,7 @@ function OpenRecords({
         <>
           <button
             type="button"
-            className="type-label-large flex items-center gap-1.5 self-start rounded-full px-2 py-1 text-left text-on-surface-variant hover:bg-on-surface/8"
+            className="type-label-large flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-left text-on-surface-variant hover:bg-on-surface/8"
             aria-expanded={laterOpen}
             onClick={() => setLaterOpen(!laterOpen)}
           >
@@ -846,7 +846,7 @@ function RecordRow({
             <label
               key={todo}
               className={cn(
-                "flex items-center gap-2 rounded-full px-2 py-1 transition-colors",
+                "flex items-center gap-2 rounded-md px-2 py-1 transition-colors",
                 needsAttention && "bg-error-container",
                 !todoDisabled && !writeDisabled && "cursor-pointer",
               )}

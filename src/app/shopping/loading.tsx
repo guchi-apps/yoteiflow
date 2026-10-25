@@ -14,18 +14,18 @@ export default function Loading() {
   return (
     <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full md:hidden" />
+        <SkeletonBlock className="size-8 rounded-md md:hidden" />
         <span className="flex-1" />
-        <SkeletonBlock className="h-8 w-20 rounded-full" />
-        <SkeletonBlock className="h-8 w-8 rounded-full" />
+        <SkeletonBlock className="h-8 w-20 rounded-md" />
+        <SkeletonBlock className="h-8 w-8 rounded-md" />
         <LoadingRefreshMark />
       </div>
 
       {/* カテゴリのタブ。件数はDBによって違うため、幅を揃えず3つだけ置く。 */}
       <div className="flex gap-2 border-b border-rule bg-surface-container-low px-3 pt-1 pb-2">
-        <SkeletonBlock className="h-7 w-20 rounded-full" />
-        <SkeletonBlock className="h-7 w-16 rounded-full" />
-        <SkeletonBlock className="h-7 w-24 rounded-full" />
+        <SkeletonBlock className="h-7 w-20 rounded-md" />
+        <SkeletonBlock className="h-7 w-16 rounded-md" />
+        <SkeletonBlock className="h-7 w-24 rounded-md" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden @xl/main:columns-2 @xl/main:gap-3 @xl/main:p-3 @5xl/main:columns-3">

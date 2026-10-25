@@ -9,14 +9,14 @@ export function CalendarSkeleton() {
   return (
     <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2 md:max-lg:flex-wrap md:max-lg:justify-end">
-        <SkeletonBlock className="h-8 w-8 rounded-full md:hidden" />
-        <SkeletonBlock className="h-8 w-8 rounded-full md:max-lg:size-10" />
-        <SkeletonBlock className="hidden size-8 rounded-full md:block md:max-lg:size-10" />
+        <SkeletonBlock className="h-8 w-8 rounded-md md:hidden" />
+        <SkeletonBlock className="h-8 w-8 rounded-md md:max-lg:size-10" />
+        <SkeletonBlock className="hidden size-8 rounded-md md:block md:max-lg:size-10" />
         <SkeletonBlock className="h-6 w-32" />
         <span className="flex-1" />
         <span aria-hidden className="hidden md:max-lg:block md:max-lg:basis-full" />
-        <SkeletonBlock className="h-8 w-14 rounded-full md:max-lg:h-10" />
-        <SkeletonBlock className="h-8 w-24 rounded-full md:max-lg:h-10" />
+        <SkeletonBlock className="h-8 w-14 rounded-md md:max-lg:h-10" />
+        <SkeletonBlock className="h-8 w-24 rounded-md md:max-lg:h-10" />
         <LoadingRefreshMark />
       </div>
 
