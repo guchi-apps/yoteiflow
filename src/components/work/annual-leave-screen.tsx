@@ -112,7 +112,7 @@ export function AnnualLeaveScreen({
   return (
     // 広い画面ではカードを2列に並べる（issue #636）。残り・消化ペースを1段目、月ごと・一覧を
     // 2段目に置き、年度の数字をスクロールせずに見比べられるようにする。
-    <SettingsShell title="年休" backHref="/work" backLabel="勤務" wide columns>
+    <SettingsShell title="年休" wide columns>
       {loadError && (
         <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container @3xl/main:col-span-2">
           {loadError}

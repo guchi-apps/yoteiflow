@@ -65,8 +65,6 @@ export function SleepScreen({
     // 細かさになる。
     <SettingsShell
       title="睡眠"
-      backHref="/activity"
-      backLabel="記録"
       wide
       actions={
         <>

@@ -29,8 +29,6 @@ export default async function ActivitySettingsPage() {
     <SettingsShell
       title="活動記録"
       description="カレンダー画面の記録ボタンに並ぶ項目です。押した時点から記録が始まり、止めた時点までが予定として保存されます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <ActivitySection
         presets={presets}

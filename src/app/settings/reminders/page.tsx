@@ -35,8 +35,6 @@ export default async function ReminderSettingsPage() {
     <SettingsShell
       title="日付リマインド"
       description="日付リマインドの種類を色つきで登録しておけます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <TagSection state={state} />
     </SettingsShell>
