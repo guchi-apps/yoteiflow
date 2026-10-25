@@ -19,11 +19,7 @@ export async function GET() {
 type Body = {
   workPlace?: string;
   placeId?: string | null;
-  shortLabel2?: string | null;
-  shortLabel1?: string | null;
 };
-
-const MAX_SHORT = { shortLabel2: 2, shortLabel1: 1 } as const;
 
 export async function PUT(request: Request) {
   const userId = await requireUserId();
@@ -36,20 +32,9 @@ export async function PUT(request: Request) {
   }
 
   // 項目ごと送られたものだけ更新する（undefined は触らない・null/空は消す）。
-  const data: { placeId?: string | null; shortLabel2?: string | null; shortLabel1?: string | null } = {};
+  // 省略名（shortLabel2/1）の更新は受けない（issue #1426。月表示の1文字へ一本化。列は残す）。
+  const data: { placeId?: string | null } = {};
   if (body.placeId !== undefined) data.placeId = body.placeId?.trim() || null;
-  for (const key of ["shortLabel2", "shortLabel1"] as const) {
-    const raw = body[key];
-    if (raw === undefined) continue;
-    const value = raw?.trim() || null;
-    if (value && [...value].length > MAX_SHORT[key]) {
-      return NextResponse.json(
-        { error: "invalid", message: `省略名は${MAX_SHORT[key]}文字以内で入力してください。` },
-        { status: 400 },
-      );
-    }
-    data[key] = value;
-  }
 
   await db.workPlaceLink.upsert({
     where: { userId_workPlace: { userId, workPlace } },
