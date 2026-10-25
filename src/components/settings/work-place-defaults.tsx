@@ -281,7 +281,9 @@ export function PlaceDefaultFields({
         </>
       )}
 
-      {!remote && <WorkTrains trains={trains} home={home} place={entry.key} />}
+      {!remote && (
+        <WorkTrains trains={trains} home={home} place={entry.key} canAdd={form.mode === "PUBLIC_TRANSIT"} />
+      )}
       {!entry.isTrip && (
         <WorkPlaceLinkFields
           workPlace={entry.key}
