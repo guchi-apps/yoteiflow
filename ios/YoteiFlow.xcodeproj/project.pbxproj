@@ -621,6 +621,7 @@
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "場所の地図に現在地を表示するために使います。位置情報は端末の中だけで使い、サーバーへ送信・保存しません。";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -661,6 +662,7 @@
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "場所の地図に現在地を表示するために使います。位置情報は端末の中だけで使い、サーバーへ送信・保存しません。";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
