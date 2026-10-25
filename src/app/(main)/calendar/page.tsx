@@ -28,7 +28,6 @@ import { listActivityCalendarIds } from "@/services/activity/settings";
 import { listHolidayCalendarIds } from "@/services/calendar/holiday-settings";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
-import { loadWorkPlaceLinks } from "@/services/work-sync/config";
 import { loadTagCatalog } from "@/services/notion/tag-options";
 import {
   workCapabilities,
@@ -104,18 +103,7 @@ export default async function CalendarPage({
 
   // タグ・種類は月をまたいでも変わらない。予定・タスクの取得とは分けて解決させ、
   // 月を送るたびにNotionへの往復が増えないようにする。
-  const tagCatalogPromise = loadTagCatalog(notionConnection).then(async (catalog) => {
-    // 勤務場所の省略名（issue #1382）。DaySpanのDBの値で、Notionの選択肢へ添えて渡す。
-    const links = await loadWorkPlaceLinks(user.id).catch(() => []);
-    if (links.length === 0 || !catalog.work) return catalog;
-    return {
-      ...catalog,
-      work: catalog.work.map((option) => {
-        const link = links.find((item) => item.workPlace === option.name);
-        return link ? { ...option, shortLabel2: link.shortLabel2, shortLabel1: link.shortLabel1 } : option;
-      }),
-    };
-  });
+  const tagCatalogPromise = loadTagCatalog(notionConnection);
 
   // 場所も月をまたいでは変わらない。予定・タスクの取得とは分けて解決させる。
   const placeCatalogPromise = loadPlaceCatalog(notionConnection);

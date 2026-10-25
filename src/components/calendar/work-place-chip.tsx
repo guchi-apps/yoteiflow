@@ -36,14 +36,10 @@ import {
  * 印は両方入る幅（31px以上）でだけ添える。引き換えに、その幅では出張と通常の勤務を分けるものが
  * 色だけになる（種別は読み上げと勤務の画面・1日表示に残る）。
  *
- * 加えて**狭い列（31px未満）では文字を8px・左右の余白を2pxへ詰める**。10pxのままだと
- * 幅390pxの端末の月表示（チップに残るのは約21px）で1文字しか入らず、「大」だけでは行き先も
- * 勤務場所も読めないため。8px＋余白4pxなら2文字（16px）が入る。高さ（`leading-[15px]`）は
- * 変えないので、日付の見出しの高さは動かない。
- *
- * 8pxにするのは幅で決めており、出張かどうかでは分けない。同じ月表示の中で出張の日だけ文字の
- * 大きさが違うと、幅で決まっているはずの見え方が種別で変わって見える。狭い列では通常の勤務・
- * 年休・会社休業日も8pxになるが、そこは10pxでも1文字しか入らない幅で、名前が読めるほうを採る。
+ * 加えて**狭い列（31px以下）では名前を1文字へ切り替える**（issue #1381）。文字は常に10pxで、
+ * 8pxへ縮めて2文字を詰めると欠けて読めなかったため。1文字は設定 ▸ 勤務で勤務場所ごとに決めた
+ * 文字（`WorkShortLabelsContext`）で、未設定は先頭1文字。切り替えは幅で決めており、出張かどうかでは
+ * 分けない。高さ（`leading-[15px]`）は変えないので、日付の見出しの高さは動かない。
  *
  * **出張の色は勤務場所ではなく travel の1色に固定する**（issue #549）。チップの色は勤務場所の
  * 選択肢が持つNotionのタグ色から引いているが、出張が持つのは自由記述の行き先で、色を持たない。
@@ -62,6 +58,7 @@ export const WorkShortLabelsContext = createContext<Record<string, string>>({});
 
 /** 出張のチップの色。行き先ごとには変えられないため1色に決める（issue #549）。 */
 const TRIP_CHIP_CLASS = "bg-travel/18 text-travel";
+
 export function WorkPlaceChip({
   record,
   options,
@@ -76,20 +73,11 @@ export function WorkPlaceChip({
   const shortLabels = useContext(WorkShortLabelsContext);
   if (!label) return null;
   const shortLabel = workShortLabel(record, shortLabels);
-  // 2文字・1文字の省略名は通常の勤務場所だけ（出張・年休・休みは対象外。issue #1382）。
-  const option = !record.businessTrip && !record.annualLeave && !record.companyHoliday
-    ? options.find((item) => item.name === record.place)
-    : undefined;
-  const two = option?.shortLabel2?.trim() || null;
-  const one = option?.shortLabel1?.trim() || null;
-  const short = two || one ? { two, one } : null;
-
   return (
     <span
       // 押下は通す。月表示では日のセル全体を覆う「1日表示へ移動」のボタンへ、時間グリッドでは
       // このチップを包む勤務スロットのボタンへ届く（issue #532）。
       className={cn(
-        // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
         "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-xs px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
         // 1文字へ切り替わる幅では、チップの方が文字より広いので中央へ置く（issue #1410）。
         "@max-[31px]:justify-center @max-[31px]:px-0.5",
@@ -120,63 +108,38 @@ export function WorkPlaceChip({
               : "勤務場所"}{" "}
         {label}
       </span>
-      {short ? (
-        // 省略名を設定している通常の勤務場所（issue #1382）。幅が31px以上なら名前、20〜31pxなら2文字、
-        // 12〜20pxなら1文字、それより狭ければ色だけ。1文字用・2文字用が未設定のときは名前で代用する。
-        <>
-          <span aria-hidden className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[30px]:hidden">
-            {label}
-          </span>
-          <span
-            aria-hidden
-            className="hidden h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[30px]:inline @max-[19px]:hidden"
-          >
-            {short.two ?? short.one ?? label}
-          </span>
-          <span
-            aria-hidden
-            className="hidden h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[19px]:inline @max-[12px]:hidden"
-          >
-            {short.one ?? short.two ?? label}
-          </span>
-        </>
-      ) : (
-        <>
-          <span
+      <span
         aria-hidden
-        // 31px以上は名前、31px未満は1文字へ切り替える（issue #1381）。1文字（10px）も入らない
+        // 31px超は名前、31px以下は1文字へ切り替える（issue #1381）。1文字（10px）も入らない
         // 幅（余白4px＋10px）では色だけを残す。
         className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[31px]:hidden"
       >
         {label}
-          </span>
-          <span
+      </span>
+      <span
         aria-hidden
         className="hidden h-[15px] min-w-0 overflow-hidden whitespace-nowrap @max-[31px]:inline @max-[14px]:hidden"
       >
         {shortLabel}
-          </span>
-        </>
-      )}
+      </span>
     </span>
   );
 }
 
 /**
- * 幅ごとの見え方（狭い列は文字8px・余白4px、31px以上は文字10px・余白8px から決まる）。
+ * 幅ごとの見え方（文字は常に10px。31px以下では余白が左右4pxから2pxになり中央寄せになる）。
  *
  * | チップに残る幅 | 通常の勤務・年休・休み | 出張 |
  * |---|---|---|
- * | 31px以上 | 10px・入る文字だけ | 10px・印＋入る文字だけ |
- * | 12〜31px | 8px・入る文字だけ | 8px・入る文字だけ |
- * | 12px未満 | 色だけ | 色だけ |
+ * | 31px超 | 名前（入る文字だけ） | 印＋名前（入る文字だけ） |
+ * | 14〜31px | 1文字 | 1文字（印なし） |
+ * | 14px未満 | 色だけ | 色だけ |
  *
- * 幅390pxの端末の月表示でチップに残るのは約21px で、8pxの文字が2つ入る（幅375pxで約19px、
- * 1文字）。判定は画面幅ではなく**チップに残っている幅**で行う（列の幅は表示形式と画面幅の
- * 掛け算で決まるため、ブレークポイントで切るとPCの月表示のような幅のある列でも文字が縮む・
- * docs/spec.md §34）。
+ * 幅390pxの端末の月表示でチップに残るのは約21pxで、1文字の行になる。判定は画面幅ではなく
+ * **チップに残っている幅**で行う（列の幅は表示形式と画面幅の掛け算で決まるため、ブレーク
+ * ポイントで切るとPCの月表示のような幅のある列でも名前が1文字になる・docs/spec.md §34）。
  *
- * 12pxを割るのは幅320px前後より狭い端末の月表示だけ（列45.7px − 罫線1px − セルの余白4px −
+ * 14pxを割るのは幅320px前後より狭い端末の月表示だけ（列45.7px − 罫線1px − セルの余白4px −
  * 数字28px ≒ 12px）。月の変わり目の日（数字が `9/1` のように広がる）は `px-1` へ詰めてあり
  * `min-w-7`（28px）に収まるため、他の日と残り幅は変わらない。
  */

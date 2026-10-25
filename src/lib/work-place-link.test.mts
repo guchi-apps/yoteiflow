@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shortLabelOf, withWorkPlaceLinks } from "@/lib/work-place-link";
+import { withWorkPlaceLinks } from "@/lib/work-place-link";
 import { matchPlaceByText } from "@/lib/place-text";
 import type { PlaceItem } from "@/services/notion/places";
 
@@ -36,11 +36,4 @@ test("別名: 結び付け先が無い・未設定なら変えない", () => {
     { workPlace: "支社", placeId: null, shortLabel2: "支", shortLabel1: "支" },
   ];
   assert.equal(withWorkPlaceLinks(places, links), places);
-});
-
-test("省略名: 空白だけは未設定", () => {
-  const link = { shortLabel2: "本社", shortLabel1: " " };
-  assert.equal(shortLabelOf(link, 2), "本社");
-  assert.equal(shortLabelOf(link, 1), null);
-  assert.equal(shortLabelOf(undefined, 2), null);
 });

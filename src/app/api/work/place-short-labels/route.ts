@@ -22,7 +22,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "work_database_not_selected" }, { status: 404 });
   }
 
-  const { labels } = (await request.json()) as Body;
+  const body = (await request.json().catch(() => null)) as Body | null;
+  const labels = body?.labels;
   if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
     return NextResponse.json({ error: "labels must be an object" }, { status: 400 });
   }
