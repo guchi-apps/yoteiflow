@@ -18,6 +18,7 @@ import type { PlaceItem } from "@/services/notion/places";
 
 import type { LatLng } from "@/lib/coordinates";
 import { matchPlaceByText, splitNameAndAddress } from "@/lib/place-text";
+import { yahooSearchStationName } from "@/lib/station-name";
 
 const SEARCH = "https://transit.yahoo.co.jp/search/result";
 
@@ -55,7 +56,11 @@ export function resolveYahooPlace(text: string, places: PlaceItem[]): YahooTrans
   if (place) {
     // 最寄り駅があるときは座標を添えない。座標があるとYahoo!はそちらで探索し、
     // 駅名は表示名にしかならないため、入れた駅から探せなくなる。
-    if (place.station) return { name: place.station, query: place.station, coordinates: null };
+    // 保存は「梅田駅」の形だが、Yahoo!には「駅」を外して渡す（issue #1356）。
+    if (place.station) {
+      const station = yahooSearchStationName(place.station);
+      return { name: station, query: station, coordinates: null };
+    }
     return { name: place.name, query: place.address ?? place.name, coordinates: place.coordinates };
   }
 
