@@ -95,3 +95,19 @@ describe("transitRouteWarnings", () => {
     assert.equal(w.length, 2);
   });
 });
+
+describe("最寄り駅からの徒歩（issue #1370）", () => {
+  it("予定前は到着を徒歩ぶん早め、予定後は出発を徒歩ぶん遅らせる", () => {
+    const before = suggestTransitSearch({ ...base, purpose: "BEFORE_EVENT", events: [], walkMinutes: 10 });
+    assert.equal(before.at, "2026-11-02T13:35:00.000Z");
+    assert.equal(before.walkMinutes, 10);
+    const after = suggestTransitSearch({ ...base, marginMinutes: 0, purpose: "AFTER_EVENT", events: [], walkMinutes: 10 });
+    assert.equal(after.at, "2026-11-02T15:10:00.000Z");
+  });
+
+  it("省略時は従来どおり", () => {
+    const s = suggestTransitSearch({ ...base, purpose: "BEFORE_EVENT", events: [] });
+    assert.equal(s.at, "2026-11-02T13:45:00.000Z");
+    assert.equal(s.walkMinutes, 0);
+  });
+});
