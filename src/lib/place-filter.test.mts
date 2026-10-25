@@ -29,3 +29,7 @@ test("検索語とタグは掛け合わせる", () => {
 test("タグを持たない場所はタグ選択中は出ない", () => {
   assert.deepEqual(filterPlaces(places, "", ["カフェ"]).map((p) => p.name), ["スタバ梅田"]);
 });
+
+test("検索語は最寄り駅にも当たる", () => {
+  assert.deepEqual(filterPlaces(places, "梅田駅", []).map((p) => p.name), ["スタバ梅田"]);
+});
