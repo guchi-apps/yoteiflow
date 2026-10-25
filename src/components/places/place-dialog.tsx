@@ -8,6 +8,8 @@ import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { tagColorOf } from "@/components/tags/tag-color";
+import { PLACE_TAGS } from "@/lib/place-tags";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -46,6 +48,12 @@ export function PlaceDialog({
   /** 保存・削除できたとき。一覧を取り直すのは呼び出し側の役目。 */
   onSaved: () => void;
 }) {
+  // 選べるのは固定の4種だけ。色だけNotionの同名の選択肢から借りる（issue #1361）。
+  const fixedTagOptions: TagOption[] = PLACE_TAGS.map((name) => ({
+    id: name,
+    name,
+    color: tagColorOf(tagOptions, name),
+  }));
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -330,9 +338,16 @@ export function PlaceDialog({
           */}
           {capabilities.tags && (
             <div className="flex flex-col gap-1">
-              <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
+              <TagPicker
+                label="タグ"
+                options={fixedTagOptions}
+                value={tags}
+                multiple
+                allowAdd={false}
+                onChange={setTags}
+              />
               <p className="type-body-small text-on-surface-variant">
-                色・並び順・名前の変更は場所一覧の右上「タグ」から行えます。
+                タグは固定の4種類から選びます。以前から付いているタグは外せますが、付け直せません。
               </p>
             </div>
           )}

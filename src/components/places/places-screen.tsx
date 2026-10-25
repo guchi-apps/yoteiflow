@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { Check, ChevronRight, List, Map as MapIcon, MapPin, Plus, Search, Tags } from "lucide-react";
+import { Check, ChevronRight, List, Map as MapIcon, MapPin, Plus, Search } from "lucide-react";
 
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -130,14 +129,7 @@ export function PlacesScreen({
         wide
         actions={
           <>
-            {/* タグの選択肢（追加・削除・改名・並び替え）は記録操作とは別のNotionの
-                プロパティ定義を直す操作のため、専用ページに分ける（issue #706）。
-                「この場所にどのタグを付けるか」はこの画面の編集ダイアログで決める。 */}
-            <Button variant="ghost" size="icon-sm" aria-label="タグの管理" asChild>
-              <Link href="/places/tags">
-                <Tags />
-              </Link>
-            </Button>
+            {/* タグは固定の4種で、管理画面は持たない（issue #1361）。 */}
             <Button
               variant="ghost"
               size="icon-sm"

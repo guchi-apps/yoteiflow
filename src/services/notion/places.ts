@@ -2,6 +2,7 @@ import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import { formatCoordinates, parseCoordinates, type LatLng } from "@/lib/coordinates";
+import { disallowedPlaceTags } from "@/lib/place-tags";
 import { ensureStationSuffix } from "@/lib/station-name";
 
 import { createNotionClient } from "./client";
@@ -211,6 +212,14 @@ export class PlaceNameTakenError extends Error {
   }
 }
 
+/** 固定の4種にも、その場所に既に付いているタグにも無い名前を新しく付けようとした（issue #1361）。 */
+export class PlaceTagNotAllowedError extends Error {
+  constructor(readonly tagNames: string[]) {
+    super(`Place tag not allowed: ${tagNames.join(", ")}`);
+    this.name = "PlaceTagNotAllowedError";
+  }
+}
+
 /** NotionのIDはハイフン付き・無しのどちらの表記でも同じものを指す。比較の前に揃える。 */
 const sameId = (a: string | null, b: string | null) =>
   a !== null && b !== null && a.replaceAll("-", "").toLowerCase() === b.replaceAll("-", "").toLowerCase();
@@ -289,6 +298,12 @@ export async function updatePlace(
   const duplicated = places.find((place) => place.name === name && !sameId(place.id, placeId));
   if (duplicated) throw new PlaceNameTakenError(name);
 
+  if (map.tags && "tags" in input) {
+    const before = places.find((place) => sameId(place.id, placeId));
+    const rejected = disallowedPlaceTags(input.tags ?? [], before?.tags ?? []);
+    if (rejected.length > 0) throw new PlaceTagNotAllowedError(rejected);
+  }
+
   const properties: Record<string, unknown> = {
     [map.name]: { title: [{ type: "text", text: { content: name } }] },
   };
@@ -307,8 +322,7 @@ export async function updatePlace(
       ? richText(formatCoordinates(input.coordinates))
       : { rich_text: [] };
   }
-  // 登録済みに無い名前を渡すとNotionが選択肢を足す（タスクのタグと同じ）。
-  // 入力の途中で思いついたタグを、設定画面へ回らずにその場で付けられるようにするため。
+  // 付けられるのは固定のタグ（src/lib/place-tags.ts）と据え置きの旧タグだけ。上で検証済み。
   if (writeTags) properties[map.tags!] = { multi_select: tags.map((name) => ({ name })) };
 
   await notion.pages.update({ page_id: placeId, properties: properties as never });

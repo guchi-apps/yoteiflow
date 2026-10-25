@@ -8,6 +8,7 @@ import {
   deletePlace,
   PlaceNameTakenError,
   PlaceNotEditableError,
+  PlaceTagNotAllowedError,
   updatePlace,
 } from "@/services/notion/places";
 
@@ -63,7 +64,7 @@ export async function PATCH(
     coordinates?: string | null;
     /** 最寄り駅。空文字・null は「消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
     station?: string | null;
-    /** 付けるタグの名前。登録済みに無い名前はNotionが選択肢として足す。 */
+    /** 付けるタグの名前。固定のタグか、その場所に既に付いているタグだけ受ける（issue #1361）。 */
     tags?: unknown;
   };
 
@@ -88,6 +89,12 @@ export async function PATCH(
           message: `「${error.placeName}」はすでに登録されています。別の名前を入力してください。`,
         },
         { status: 409 },
+      );
+    }
+    if (error instanceof PlaceTagNotAllowedError) {
+      return NextResponse.json(
+        { error: "tag_not_allowed", message: "このタグは付けられません。" },
+        { status: 400 },
       );
     }
     return externalApiError("notion", "場所の更新", error);

@@ -32,7 +32,7 @@ export default async function PlacesPage() {
   // Notionが失敗しても画面自体は開く。ここで投げるとNext.jsの汎用のエラー画面へ落ち、
   // 何が起きたのかも、開き直せば直るのかも画面から分からなくなる（issue #402）。
   // loadPlaces ではなく listPlaces を使うのは、0件と取得失敗を区別する必要があるため。
-  // タグの選択肢はこの画面（と /places/tags）でしか要らないため、まとめて取る loadTagCatalog
+  // タグの選択肢はこの画面でしか要らないため、まとめて取る loadTagCatalog
   // ではなく1種類ぶんだけ読む。カレンダー・タスクの経路へNotionへの往復を足さないため
   // （docs/spec.md §20）。取得に失敗しても null が返り、画面は開く。
   let places: PlaceItem[] = [];
