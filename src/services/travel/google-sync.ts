@@ -25,8 +25,8 @@ export type TravelExportResult =
       message: string;
       /**
        * Googleでの予定作成を試みた後に失敗した（作成が成功していたか分からない）。
-       * 同じ移動をそのまま書き出し直すと予定が重複するため、自動で再書出しせず照合する。
-       * 作成の成功が分かっているときだけ `createdEventId` を添える。
+       * 同じ移動をそのまま書き出し直すと予定が重複するため、呼び出し元は新規作成をやり直さない。
+       * 作成の成功が分かっているときだけ `createdEventId` を添え、呼び出し元はそのIDで控え直す。
        */
       createUncertain?: true;
       createdEventId?: string;
