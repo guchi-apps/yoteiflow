@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,14 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
-import type { LinkablePlace } from "./work-place-link-fields";
-import {
-  WorkPlaceDefaults,
-  type WorkPlaceDefaultRow,
-  type WorkRouteRow,
-} from "@/components/settings/work-place-defaults";
-import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -37,39 +28,19 @@ const fromTime = (value: string) => {
 /**
  * 勤務記録からの勤務予定・移動の自動生成（docs/spec.md §46）。
  *
- * 移動の既定値は「出発地 → 行き先」の組ごとに持つ。往路と復路は別の行なので、所要時間が
- * 違ってもそれぞれ置ける。ここの値はあくまで既定で、特定の日の移動を直しても更新しない。
+ * ここは全体の設定（共通の勤務時間・書き出し先）。勤務場所ごとの既定値は、勤務場所の詳細
+ * （work-places-panel.tsx・issue #1405）にある。
  */
 export function WorkAutoSection({
   settings,
-  routes,
-  placeDefaults,
-  links,
-  linkablePlaces,
-  trains,
-  tripPlaces,
   calendars,
-  placeNames,
 }: {
   settings: WorkAutoSettings;
-  routes: WorkRouteRow[];
-  placeDefaults: WorkPlaceDefaultRow[];
-  /** 勤務場所ごとの正式名称の場所と省略名（issue #1382）。 */
-  links: WorkPlaceLinkRow[];
-  /** 正式名称に選べる場所DBの場所。読めなければ空。 */
-  linkablePlaces: LinkablePlace[];
-  trains: WorkTrainItem[];
-  /** 出張扱いの勤務場所。既定値の一覧では出張先として並べる。 */
-  tripPlaces: string[];
   calendars: WritableCalendar[];
-  /** 勤務場所の選択肢。在宅扱いの指定と、移動の行き先の候補に使う。 */
-  placeNames: string[];
 }) {
   const [value, setValue] = useState(settings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const home = value.homeOrigin;
 
   const send = async (patch: Partial<WorkAutoSettings>) => {
     const previous = value;
@@ -175,53 +146,6 @@ export function WorkAutoSection({
             移動の書き出し先は、設定の「移動」で選んだカレンダーです。
           </p>
         </div>
-
-        {placeNames.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <Label>在宅として扱う勤務場所</Label>
-            <div className="flex flex-wrap gap-2">
-              {placeNames.map((name) => {
-                const selected = value.remotePlaces.includes(name);
-                return (
-                  <Button
-                    key={name}
-                    type="button"
-                    size="sm"
-                    variant={selected ? "secondary" : "outline"}
-                    disabled={busy}
-                    aria-pressed={selected}
-                    onClick={() =>
-                      send({
-                        remotePlaces: selected
-                          ? value.remotePlaces.filter((place) => place !== name)
-                          : [...value.remotePlaces, name],
-                      })
-                    }
-                  >
-                    {name}
-                  </Button>
-                );
-              })}
-            </div>
-            <p className="type-body-small text-on-surface-variant">
-              在宅の日は勤務予定だけを作り、通勤の移動は作りません。
-            </p>
-          </div>
-        )}
-
-        <WorkPlaceDefaults
-          placeNames={placeNames}
-          tripPlaces={tripPlaces}
-          remotePlaces={value.remotePlaces}
-          defaults={placeDefaults}
-          routes={routes}
-          trains={trains}
-          links={links}
-          linkablePlaces={linkablePlaces}
-          home={home}
-          commonStart={value.startMinutes}
-          commonEnd={value.endMinutes}
-        />
       </CardContent>
     </Card>
   );
