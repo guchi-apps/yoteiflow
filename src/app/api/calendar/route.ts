@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { createLoadTimer, serverTimingHeader, type LoadTimer } from "@/lib/load-timing";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import {
   getMonthsFetchRange,
@@ -33,6 +34,9 @@ const RANGE_VIEWS = new Set(["day1", "day3", "day7"]);
  * サーバーコンポーネントの再レンダリングではなくこのAPIを使う（issue #697）。
  */
 export async function GET(request: Request) {
+  // 取得元ごとの所要時間を Server-Timing で返す（issue #1431）。開発者ツールの「タイミング」で、
+  // 応答の待ち時間のうちNotion・Google・DBが占めた分と、それ以外（回線・認証）を見分けられる。
+  const timer = createLoadTimer();
   const userId = await requireUserId();
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -56,9 +60,9 @@ export async function GET(request: Request) {
       parseDateKey(dateParam),
       0,
     );
-    const data = await loadCalendarData(userId, range, { todayKey });
+    const data = await loadCalendarData(userId, range, { todayKey, timer });
 
-    return NextResponse.json(data);
+    return withServerTiming(NextResponse.json(data), timer);
   }
 
   const months = (params.get("months") ?? "").split(",").filter((month) => MONTH_KEY.test(month));
@@ -74,7 +78,12 @@ export async function GET(request: Request) {
   }
 
   // loadCalendarData は Google / Notion の失敗を errors に載せて返すため、ここでは投げない。
-  const data = await loadCalendarData(userId, getMonthsFetchRange(months), { todayKey });
+  const data = await loadCalendarData(userId, getMonthsFetchRange(months), { todayKey, timer });
 
-  return NextResponse.json(data);
+  return withServerTiming(NextResponse.json(data), timer);
+}
+
+function withServerTiming(response: NextResponse, timer: LoadTimer): NextResponse {
+  response.headers.set("Server-Timing", serverTimingHeader(timer.spans(), timer.elapsed()));
+  return response;
 }

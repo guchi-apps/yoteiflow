@@ -1057,6 +1057,14 @@ MariaDBを利用する。
 
 外部APIへ過剰なアクセスを発生させないこと。
 
+### 取得時間の内訳（issue #1431）
+
+反映が遅いときにNotion・Google・回線のどれが原因かを切り分けるため、カレンダーの取得（`loadCalendarData()`）は取得元ごとの所要時間を測る（`src/lib/load-timing.ts`）。
+
+- `/api/calendar` の応答に `Server-Timing` を付ける。区間は `google`（カレンダー一覧と予定の取得）・`notion`（全体）と、その内訳の `notion-tasks`・`notion-reminders`・`notion-garbage`・`notion-work`・`notion-shopping`、DaySpanのDBの `db`（移動・紐づけ・持ち物・通知設定）、`total`。ブラウザの開発者ツールでは、応答の待ち時間から `total` を引いた残りが回線・Service Worker・認証で使った時間になる
+- 合計が1.5秒（`SLOW_LOAD_LOG_MS`）以上かかった回は、サーバーログ（PM2の `dayspan`）へ `[dayspan] calendar load slow (期間): total=…ms notion=…ms …` を遅い順で1行残す。初回描画（`page.tsx`）・サーバー間APIの取得も同じ関数を通るため対象になる
+- Notionの5つのDBは同じ連携トークンで並行に投げるため、Notionの回数制限（平均3回/秒）に掛かると個々の区間がそろって伸びる。`notion-*` がそろって長いときは1つのDBではなく往復の本数が原因と読む
+
 ## 21. オフライン
 
 PWA対応する。
