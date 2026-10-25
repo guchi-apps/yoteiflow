@@ -295,7 +295,7 @@ export function useWorkSyncFields({
                       <span className="type-title-small tabular-nums">
                         {toTime(train.departMinutes)} → {toTime((train.departMinutes + train.durationMinutes) % 1440)}
                         {train.isDefault && (
-                          <span className="type-label-small ml-2 rounded-full bg-primary px-2 py-0.5 text-on-primary">
+                          <span className="type-label-small ml-2 rounded-sm bg-primary px-2 py-0.5 text-on-primary">
                             デフォルト
                           </span>
                         )}

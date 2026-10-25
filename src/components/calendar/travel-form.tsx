@@ -880,7 +880,7 @@ export function TravelForm({
                 <li key={`${index}-${item}`}>
                   <button
                     type="button"
-                    className="type-label-medium max-w-full truncate rounded-full border border-outline-variant px-3 py-1 text-on-surface"
+                    className="type-label-medium max-w-full truncate rounded-md border border-outline-variant px-3 py-1 text-on-surface"
                     aria-label={`経由地「${placeDisplayName(item)}」を外す`}
                     onClick={() => {
                       touch("via");
@@ -899,7 +899,7 @@ export function TravelForm({
         <div className="relative z-10 -my-4 flex justify-end pr-2">
           <button
             type="button"
-            className="flex size-11 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-xl disabled:opacity-38"
+            className="flex size-11 items-center justify-center rounded-md border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-sm disabled:opacity-38"
             aria-label="出発地と目的地を入れ替える"
             title="出発地と目的地を入れ替える"
             disabled={!origin.trim() && !destination.trim()}
@@ -926,7 +926,7 @@ export function TravelForm({
             href={mapsLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="type-label-large inline-flex items-center gap-1.5 self-start rounded-full border border-outline-variant px-3 py-1.5 text-on-surface"
+            className="type-label-large inline-flex items-center gap-1.5 self-start rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
           >
             <ExternalLink className="size-4" aria-hidden />
             Googleマップで経路を開く
@@ -943,7 +943,6 @@ export function TravelForm({
                 variant={option === mode ? "secondary" : "outline"}
                 size="sm"
                 className={cn(
-                  "rounded-full",
                   option === mode && "bg-travel-container text-on-travel-container",
                 )}
                 onClick={() => editMode(option)}
@@ -976,7 +975,6 @@ export function TravelForm({
               type="button"
               variant="outline"
               size="sm"
-              className="rounded-full"
               disabled={!departAt || knownMinutes === null}
               onClick={() => calculateFrom("depart")}
             >
@@ -986,7 +984,6 @@ export function TravelForm({
               type="button"
               variant="outline"
               size="sm"
-              className="rounded-full"
               disabled={!arriveAt || knownMinutes === null}
               onClick={() => calculateFrom("arrive")}
             >
@@ -1016,7 +1013,6 @@ export function TravelForm({
                   aria-checked={purpose === option}
                   variant={purpose === option ? "secondary" : "outline"}
                   size="sm"
-                  className="rounded-full"
                   onClick={() => choosePurpose(option)}
                 >
                   {option === "BEFORE_EVENT" ? "予定前（行き）" : "予定後（帰り・次へ）"}
@@ -1114,7 +1110,6 @@ export function TravelForm({
                   aria-checked={basis === side}
                   variant={basis === side ? "secondary" : "outline"}
                   size="sm"
-                  className="rounded-full"
                   onClick={() => chooseTransitBasis(side)}
                 >
                   {side === "depart" ? "出発時刻で探す" : "到着時刻で探す"}
@@ -1150,7 +1145,7 @@ export function TravelForm({
                   {transitLinks.app && (
                     <a
                       href={transitLinks.app}
-                      className="type-label-large hidden items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-on-surface pointer-coarse:inline-flex"
+                      className="type-label-large hidden items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface pointer-coarse:inline-flex"
                     >
                       <ExternalLink className="size-4" aria-hidden />
                       アプリで検索
@@ -1160,7 +1155,7 @@ export function TravelForm({
                     href={transitLinks.web}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="type-label-large inline-flex items-center gap-1.5 rounded-full border border-outline-variant px-3 py-1.5 text-on-surface"
+                    className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
                   >
                     <ExternalLink className="size-4" aria-hidden />
                     Yahoo!乗換案内（Web版）で検索

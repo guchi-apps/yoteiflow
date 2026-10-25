@@ -404,7 +404,7 @@ export function TileMap({
             type="button"
             aria-label="全体を表示"
             title="全体を表示"
-            className="grid size-10 place-items-center rounded-full border border-outline-variant bg-surface-container text-primary shadow-sm"
+            className="grid size-10 place-items-center rounded-md border border-outline-variant bg-surface-container text-primary shadow-sm"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={onFitAll}
           >
@@ -416,14 +416,14 @@ export function TileMap({
             type="button"
             aria-label="現在地へ"
             disabled={locating}
-            className="grid size-10 place-items-center rounded-full border border-outline-variant bg-surface-container text-primary shadow-sm disabled:opacity-38"
+            className="grid size-10 place-items-center rounded-md border border-outline-variant bg-surface-container text-primary shadow-sm disabled:opacity-38"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={onLocate}
           >
             <LocateFixed className={cn("size-5", locating && "animate-pulse")} />
           </button>
         )}
-        <div className="flex flex-col overflow-hidden rounded-[20px] border border-outline-variant shadow-sm">
+        <div className="flex flex-col overflow-hidden rounded-md border border-outline-variant shadow-sm">
           <button
             type="button"
             aria-label="拡大"

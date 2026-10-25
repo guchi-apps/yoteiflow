@@ -555,7 +555,7 @@ function RecordGroup({
           </span>
           {/* 未申請はこの画面でも印だけ出す。片付けるのは勤務画面（押した先）。 */}
           {!record.preApplied && (
-            <span className="type-label-small shrink-0 rounded-full bg-error-container px-2 py-0.5 text-on-error-container">
+            <span className="type-label-small shrink-0 rounded-sm bg-error-container px-2 py-0.5 text-on-error-container">
               未申請
             </span>
           )}

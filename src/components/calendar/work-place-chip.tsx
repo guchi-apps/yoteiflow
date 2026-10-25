@@ -73,7 +73,7 @@ export function WorkPlaceChip({
       // このチップを包む勤務スロットのボタンへ届く（issue #532）。
       className={cn(
         // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
-        "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-full px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
+        "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-xs px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
         "@max-[31px]:px-0.5 @max-[31px]:text-[8px]",
         record.businessTrip
           ? TRIP_CHIP_CLASS

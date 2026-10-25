@@ -360,7 +360,6 @@ function PlaceCard({
                 type="button"
                 size="sm"
                 variant={candidate === form.mode ? "secondary" : "outline"}
-                className="rounded-full"
                 aria-pressed={candidate === form.mode}
                 onClick={() => patch({ mode: candidate })}
               >
