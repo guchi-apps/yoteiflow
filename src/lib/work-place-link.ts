@@ -27,12 +27,3 @@ export function withWorkPlaceLinks(places: PlaceItem[], links: WorkPlaceLinkRow[
   const names = new Set(aliases.map((alias) => alias.name));
   return [...aliases, ...places.filter((place) => !names.has(place.name))];
 }
-
-/** 狭い列で使う省略名。`chars` が 2 なら2文字用、1 なら1文字用。未設定は null。 */
-export function shortLabelOf(
-  link: Pick<WorkPlaceLinkRow, "shortLabel2" | "shortLabel1"> | undefined,
-  chars: 1 | 2,
-): string | null {
-  const value = (chars === 2 ? link?.shortLabel2 : link?.shortLabel1)?.trim();
-  return value ? value : null;
-}
