@@ -7,15 +7,19 @@ import { CircleAlert, MapPin } from "lucide-react";
 
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { Button } from "@/components/ui/button";
-import { formatCoordinates } from "@/lib/coordinates";
 import { hasPlaceAddress } from "@/lib/location-check";
 import { matchPlaceByText } from "@/lib/place-text";
+import { withWorkPlaceLinks, type WorkPlaceLinkRow } from "@/lib/work-place-link";
 import { addressCandidates } from "@/lib/work-place-address-candidates";
 import type { PlaceItem } from "@/services/notion/places";
 
 type Catalog = {
   ready: boolean;
+  /** 場所DBの実際の場所。候補の列挙に使う。 */
   places: PlaceItem[];
+  /** 勤務場所の結び付けを展開した一覧。住所の有無の判定に使う。 */
+  resolved: PlaceItem[];
+  links: WorkPlaceLinkRow[];
   remotePlaces: string[];
   homeOrigin: string | null;
 };
@@ -75,41 +79,41 @@ export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boole
             ...current,
             // 同じ名前の場所は置き換え、無ければ足す（住所の無い同名の場所へ住所を埋めた場合も含む）。
             places: [...current.places.filter((item) => item.id !== registered.id), registered],
+            resolved: [...current.resolved.filter((item) => item.id !== registered.id), registered],
           }
         : current,
     );
 
-  // 登録済みの場所の住所を、この勤務場所の名前の場所へ付ける。同名で住所の無い場所があれば `createPlace` が住所を埋め、無ければ登録する。
+  // 登録済みの場所を、この勤務場所の正式名称として結び付ける。新しい場所は作らない（issue #1382）。
   const pickAddress = async (source: PlaceItem) => {
     setSaving(true);
     setError(null);
     try {
-      const fields = {
-        address: source.address,
-        coordinates: source.coordinates ? formatCoordinates(source.coordinates) : null,
-        station: source.station,
-      };
-      const response = await fetch("/api/places", {
-        method: "POST",
+      const response = await fetch("/api/settings/work-place-links", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: value, ...fields }),
+        body: JSON.stringify({ workPlace: value, placeId: source.id }),
       });
-      if (!response.ok) {
-        setError("住所を登録できませんでした。もう一度お試しください。");
+      const body = (await response.json().catch(() => null)) as { links?: WorkPlaceLinkRow[] } | null;
+      if (!response.ok || !body?.links) {
+        setError("住所を結び付けられませんでした。もう一度お試しください。");
         return;
       }
-      registerCatalogPlace((await response.json()) as PlaceItem);
+      const links = body.links;
+      setCatalog((current) =>
+        current ? { ...current, links, resolved: withWorkPlaceLinks(current.places, links) } : current,
+      );
       setPickOpen(false);
     } catch {
-      setError("住所を登録できませんでした。もう一度お試しください。");
+      setError("住所を結び付けられませんでした。もう一度お試しください。");
     } finally {
       setSaving(false);
     }
   };
 
   const candidates = addressCandidates(catalog.places, value);
-  const place = matchPlaceByText(value, catalog.places);
-  if (hasPlaceAddress(value, catalog.places)) {
+  const place = matchPlaceByText(value, catalog.resolved);
+  if (hasPlaceAddress(value, catalog.resolved)) {
     return (
       <p className="type-body-small flex items-start gap-1.5 text-on-surface-variant">
         <MapPin className="mt-0.5 size-3.5 shrink-0" />
@@ -165,7 +169,7 @@ export function WorkPlaceAddress({ name, isTrip }: { name: string; isTrip: boole
                 </li>
               ))}
             </ul>
-            <span className="type-body-small">選ぶと「{value}」にこの住所を登録します。</span>
+            <span className="type-body-small">選ぶと「{value}」の正式名称の場所として結び付けます（新しい場所は作りません）。</span>
             {error && <span className="type-body-small text-error">{error}</span>}
           </div>
         )}

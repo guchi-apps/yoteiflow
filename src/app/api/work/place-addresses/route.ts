@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
+import { withWorkPlaceLinks } from "@/lib/work-place-link";
 import { getNotionPlaceConnection } from "@/services/calendar/write-context";
 import { listPlaces } from "@/services/notion/places";
+import { loadWorkPlaceLinks } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 
 /**
@@ -23,10 +25,18 @@ export async function GET() {
     getWorkAutoSettings(userId),
   ]);
   const base = { remotePlaces: settings.remotePlaces, homeOrigin: settings.homeOrigin };
-  if (!connection) return NextResponse.json({ ready: false, places: [], ...base });
+  if (!connection) return NextResponse.json({ ready: false, places: [], resolved: [], links: [], ...base });
 
   try {
-    return NextResponse.json({ ready: true, places: await listPlaces(connection), ...base });
+    const [places, links] = await Promise.all([listPlaces(connection), loadWorkPlaceLinks(userId)]);
+    // 実際の場所の一覧（`places`）と、結び付けを展開した一覧（`resolved`）の両方を返す。
+    return NextResponse.json({
+      ready: true,
+      places,
+      resolved: withWorkPlaceLinks(places, links),
+      links,
+      ...base,
+    });
   } catch (error) {
     return externalApiError("notion", "場所の取得", error);
   }
