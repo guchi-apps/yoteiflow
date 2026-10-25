@@ -41,7 +41,19 @@ export async function POST(request: Request) {
     return json({ error: "date must be a valid date in YYYY-MM-DD format" }, 400);
   }
 
-  const timeCheck = validateTimes(body.startTime, body.endTime);
+  // 終了日は任意。更新API（PATCH）の endDate と同じ基準で検査する（issue #1354）。
+  if (body.endDate != null && (typeof body.endDate !== "string" || !isRealDateKey(body.endDate))) {
+    return json({ error: "endDate must be a valid date in YYYY-MM-DD format" }, 400);
+  }
+  const endDate = body.endDate || body.date;
+  if (endDate < body.date) {
+    return json({ error: "endDate must not be before date" }, 400);
+  }
+  if (body.endDate && !body.startTime && !body.endTime) {
+    return json({ error: "endDate requires startTime and endTime (all-day events are not supported)" }, 400);
+  }
+
+  const timeCheck = validateTimes(body.startTime, body.endTime, endDate === body.date);
   if (timeCheck) return json(timeCheck, 400);
 
   try {
@@ -76,7 +88,7 @@ export async function POST(request: Request) {
       ? { start: body.date, end: body.date }
       : {
           start: localInputToIso(`${body.date}T${body.startTime}`, timeZone),
-          end: localInputToIso(`${body.date}T${body.endTime}`, timeZone),
+          end: localInputToIso(`${endDate}T${body.endTime}`, timeZone),
         };
 
     const created = await createEvent(target.account, calendarId, {
@@ -103,6 +115,7 @@ export async function POST(request: Request) {
 function validateTimes(
   startTime: string | null | undefined,
   endTime: string | null | undefined,
+  sameDay: boolean,
 ): { error: string; message?: string } | null {
   if (!startTime && !endTime) return null;
 
@@ -114,7 +127,7 @@ function validateTimes(
     return { error: "startTime and endTime must be in HH:MM format" };
   }
 
-  if (endTime <= startTime) {
+  if (sameDay && endTime <= startTime) {
     return { error: "endTime must be after startTime" };
   }
 
