@@ -142,3 +142,40 @@ async function requestOverpass(query: string): Promise<OverpassElement[] | null>
 
   return null;
 }
+
+/** 駅の候補を探す半径。徒歩圏より広めに取り、乗り換え先の駅も候補に入れる。 */
+const STATION_RADIUS_M = 2000;
+const STATION_MAX_ELEMENTS = 100;
+const STATION_LIMIT = 8;
+
+export type NearbyStation = { name: string; distanceM: number };
+
+/**
+ * 地点の近くの駅を距離順に返す（issue #1356）。同名の駅（路線ごとのノード）は近い1件にまとめる。
+ * 取れなければnull（候補なしで手入力のまま使える）。
+ */
+export async function nearbyStations(lat: number, lng: number): Promise<NearbyStation[] | null> {
+  const query = `[out:json][timeout:${Math.floor(TOTAL_BUDGET_MS / 1000)}];nwr(around:${STATION_RADIUS_M},${lat},${lng})["railway"="station"]["name"];out tags center ${STATION_MAX_ELEMENTS};`;
+  const elements = await requestOverpass(query);
+  if (!elements) return null;
+
+  const byName = new Map<string, number>();
+  for (const element of elements) {
+    const name = element.tags?.name?.trim();
+    const elementLat = element.lat ?? element.center?.lat;
+    const elementLng = element.lon ?? element.center?.lon;
+    if (!name || elementLat === undefined || elementLng === undefined) continue;
+
+    const dLat = (elementLat - lat) * 111_000;
+    const dLng = (elementLng - lng) * 111_000 * Math.cos((lat * Math.PI) / 180);
+    const distance = Math.round(Math.hypot(dLat, dLng));
+    const key = name.endsWith("駅") ? name : `${name}駅`;
+    const known = byName.get(key);
+    if (known === undefined || distance < known) byName.set(key, distance);
+  }
+
+  return [...byName.entries()]
+    .map(([name, distanceM]) => ({ name, distanceM }))
+    .sort((a, b) => a.distanceM - b.distanceM)
+    .slice(0, STATION_LIMIT);
+}

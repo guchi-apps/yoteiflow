@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useOffline } from "next/offline";
 import { MapPin, X } from "lucide-react";
 
@@ -67,6 +67,36 @@ export function PlaceDialog({
   const [coordinatesTouched, setCoordinatesTouched] = useState(false);
 
   const offline = useOffline();
+
+  // 最寄り駅の候補（issue #1356）。欄を開いたとき1回だけ、地点（無ければ住所）から取る。
+  const [stationCandidates, setStationCandidates] = useState<{ name: string; distanceM: number }[]>([]);
+  const [stationFocused, setStationFocused] = useState(false);
+  const stationLoaded = useRef(false);
+  const loadStationCandidates = async () => {
+    if (stationLoaded.current || offline) return;
+    const params = new URLSearchParams();
+    if (coordinates) {
+      params.set("lat", String(coordinates.lat));
+      params.set("lon", String(coordinates.lng));
+    } else if (address.trim()) {
+      params.set("q", address.trim());
+    } else {
+      return;
+    }
+    stationLoaded.current = true;
+    try {
+      const response = await fetch(`/api/places/stations?${params.toString()}`);
+      if (!response.ok) return;
+      const json = (await response.json()) as { stations?: { name: string; distanceM: number }[] };
+      setStationCandidates(json.stations ?? []);
+    } catch {
+      // 候補は補助。取れなくても手入力は使える。
+    }
+  };
+  const typedStation = station.trim();
+  const visibleStations = stationCandidates.filter(
+    (candidate) => candidate.name !== typedStation && candidate.name.includes(typedStation.replace(/駅$/, "")),
+  );
 
   const close = () => {
     setOpen(false);
@@ -261,9 +291,34 @@ export function PlaceDialog({
                 value={station}
                 onChange={(event) => setStation(event.target.value)}
                 onClear={() => setStation("")}
+                onFocus={() => {
+                  setStationFocused(true);
+                  void loadStationCandidates();
+                }}
+                onBlur={() => setStationFocused(false)}
               />
+              {stationFocused && visibleStations.length > 0 && (
+                <ul className="overflow-hidden rounded-xl border border-outline-variant">
+                  {visibleStations.map((candidate) => (
+                    <li key={candidate.name} className="border-t border-outline-variant first:border-t-0">
+                      <button
+                        type="button"
+                        // blurより先に選択を確定させる（候補が消えて押せなくなるのを防ぐ）。
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => setStation(candidate.name)}
+                        className="type-body-medium flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-surface-container"
+                      >
+                        <span>{candidate.name}</span>
+                        <span className="type-body-small text-on-surface-variant">
+                          約{candidate.distanceM}m
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <p className="type-body-small text-on-surface-variant">
-                入れておくと、電車の移動でYahoo!乗換案内をこの駅から探します。空のときは地点（無ければ住所）で探します。
+                「梅田」と入れると「梅田駅」で保存します。入れておくと、電車の移動でYahoo!乗換案内をこの駅から探します。空のときは地点（無ければ住所）で探します。
               </p>
             </div>
           )}
