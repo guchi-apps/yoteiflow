@@ -51,7 +51,10 @@ const WARM_MAX_AGE_MS = 10 * 60 * 1000;
  */
 const SLOW_NETWORK_TIMEOUT_MS = 3000;
 
-/** レスポンスがタイムアウトによる保存済みの代用であることを示すヘッダー（issue #718）。 */
+/**
+ * レスポンスが保存済みの代用であることを示すヘッダー（issue #718）。タイムアウトに限らず、
+ * 通信の失敗・5xxで保存済みを返すときも付ける（issue #1408）。
+ */
 const STALE_HEADER = "X-Dayspan-Stale";
 
 /**
@@ -61,7 +64,7 @@ const STALE_HEADER = "X-Dayspan-Stale";
  * 保存直後に保存前の保存済みを返すと、保存した予定の入っていない内容で「取り直せた」ことになり、
  * 次の自動更新まで画面に出なくなるため。待っている間も、保存した予定は画面側が楽観的に
  * 重ねて描いている（src/components/calendar/optimistic-events.ts）。通信に失敗したとき・
- * 5xxのときに保存済みへ倒すのは通常と同じ。
+ * 5xxのときに保存済みへ倒すのは通常と同じで、そのときも STALE_HEADER を付ける（issue #1408）。
  */
 const FRESH_HEADER = "X-Dayspan-Fresh";
 
@@ -406,9 +409,11 @@ async function networkFirst(event, cacheName, limit, allowOtherQuery) {
     winner = await Promise.race(racers);
   } catch (cause) {
     // タイムアウトより前に失敗した（オフライン等）。これまでどおり即座に保存済みへ倒す。
+    // 保存済みであることは必ず伝える（issue #1408）。印が無いと画面が最新の応答とみなして
+    // 表示を丸ごと置き換え、保存したばかりの予定・移動が保存前の内容で消える。
     clearTimeout(timer);
     const cached = await matchCached(cache, request, allowOtherQuery);
-    if (cached) return cached;
+    if (cached) return withStaleHeader(cached);
     throw cause;
   }
   clearTimeout(timer);
@@ -437,13 +442,13 @@ async function networkFirst(event, cacheName, limit, allowOtherQuery) {
   // 通信が不安定なだけの利用者に「ログアウトされた」と受け取られる。
   if (response.status >= 500) {
     const cached = await matchCached(cache, request, allowOtherQuery);
-    if (cached) return cached;
+    if (cached) return withStaleHeader(cached);
   }
   return response;
 }
 
 /**
- * タイムアウトで保存済みを代わりに返すとき、その旨をヘッダーで伝える（issue #718）。
+ * 保存済みを代わりに返すとき、その旨をヘッダーで伝える（issue #718・#1408）。
  *
  * ページ（ハードナビゲーション）はこのヘッダーを読む手立てがクライアント側に無いため
  * 実質使われないが、データAPI（/api/calendar 等）はレスポンスを直接読む呼び出し元

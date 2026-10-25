@@ -21,12 +21,15 @@ import {
   taskOccurrences,
   type CalendarDateUtils,
 } from "./item-layout";
+import { mergeStaleItems } from "./range-data-merge";
 
 /**
  * 1ヶ月ぶんの保持データ。
  *
  * 継ぎ足すだけにすると、外部で削除された予定がいつまでも残る。月ごとに丸ごと差し替える
  * 単位にしておくことで、取り直した月からは消えたものが確実に消える。
+ * ただし保存済み（`X-Dayspan-Stale`）の応答だけは差し替えず、表示中の項目を残して足し合わせる
+ * （issue #1408）。差し替えるのは確かな応答が届いたとき。
  */
 type MonthChunk = {
   events: CalendarEventItem[];
@@ -53,6 +56,12 @@ export const FRESH_REQUEST_HEADER = "X-Dayspan-Fresh";
 
 /** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
 const MIN_REFRESH_SECONDS = 30;
+
+/**
+ * 保存済みの応答で足し合わせたあと、確かな応答で置き換えるために取り直すまでの待ち
+ * （issue #1408。日・3日・週表示の `UNCERTAIN_RETRY_MS` と同じ値）。
+ */
+const STALE_RETRY_MS = 30_000;
 
 /** 日時文字列（YYYY-MM-DD または ISO 8601）の先頭は必ず YYYY-MM。 */
 function monthKeysBetween(start: string, end: string): string[] {
@@ -375,6 +384,46 @@ export function useCalendarChunks({
     };
   }, [seedPromise, seedMonths, seedEnabled, utils]);
 
+  // 保存済みの応答で足し合わせた月を、少し後に1回だけ取り直す（issue #1408）。取り直しも
+  // 保存済みだったとき（通信の失敗が続くとき）に30秒ごとの要求を出し続けないよう、確かな応答が
+  // 届くまでは同じ月を2回目には積まない。
+  const staleRetried = useRef(new Set<string>());
+  // 次のタイマーで取り直す月。取り直し済み（staleRetried）とは分け、前に取り直した月を巻き込まない。
+  const staleRetryPending = useRef(new Set<string>());
+  const staleRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const invalidateRef = useRef<(months: string[] | null) => void>(() => {});
+
+  useEffect(
+    () => () => {
+      if (staleRetryTimer.current) clearTimeout(staleRetryTimer.current);
+    },
+    [],
+  );
+
+  const scheduleStaleRetry = useCallback((months: string[], responseStale: boolean) => {
+    if (!responseStale) {
+      months.forEach((month) => staleRetried.current.delete(month));
+      return;
+    }
+
+    const targets = months.filter((month) => !staleRetried.current.has(month));
+    if (targets.length === 0) return;
+    targets.forEach((month) => {
+      staleRetried.current.add(month);
+      staleRetryPending.current.add(month);
+    });
+
+    if (staleRetryTimer.current) clearTimeout(staleRetryTimer.current);
+    staleRetryTimer.current = setTimeout(() => {
+      staleRetryTimer.current = null;
+      // 取り直しは invalidate と同じ経路に乗せる。FRESH_REQUEST_HEADER が付くため、
+      // 遅い回線でもタイムアウトで再び保存済みへ倒れず最新を待てる。
+      const months = [...staleRetryPending.current];
+      staleRetryPending.current.clear();
+      invalidateRef.current(months);
+    }, STALE_RETRY_MS);
+  }, []);
+
   const fetchMonths = useCallback(async (months: string[]) => {
     months.forEach((month) => inFlight.current.add(month));
     onLoadingChangeRef.current(true);
@@ -416,11 +465,15 @@ export function useCalendarChunks({
         const next = new Map(prev);
         const now = Date.now();
         for (const [month, chunk] of fetched) {
+          const existing = prev.get(month);
           next.set(month, {
-            ...chunk,
+            // 保存済みの応答は、保存したばかりの予定・移動が入っていない古い内容のことがある。
+            // 置き換えると表示中の項目が消え、次の取り直しで戻る（点滅して見える・issue #1408）。
+            // 表示中の項目を残して足し合わせ、少し後に取り直して確かな応答で置き換える。
+            ...(responseStale && existing ? mergeStaleItems(existing, chunk) : chunk),
             fetchedAt: fetchedAtFor(month, now),
             // 保存済みが返ったときは、前に最新を取れた時点のまま据え置く。
-            syncedAt: responseStale ? (prev.get(month)?.syncedAt ?? 0) : requestedAt,
+            syncedAt: responseStale ? (existing?.syncedAt ?? 0) : requestedAt,
           });
         }
         return pruneToWindow(next, windowRef.current);
@@ -432,6 +485,7 @@ export function useCalendarChunks({
         errors: data.errors,
       });
       setLoadError(null);
+      scheduleStaleRetry(months, responseStale);
     } catch {
       const fetchedAt = Date.now();
 
@@ -468,7 +522,7 @@ export function useCalendarChunks({
       months.forEach((month) => inFlight.current.delete(month));
       onLoadingChangeRef.current(inFlight.current.size > 0);
     }
-  }, [utils]);
+  }, [utils, scheduleStaleRetry]);
 
   // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
   // 「足りない月なし」で止まる。種（dataPromise）の解決を待つのは、まだ判定していない
@@ -576,6 +630,10 @@ export function useCalendarChunks({
       return changed ? next : prev;
     });
   }, []);
+
+  useEffect(() => {
+    invalidateRef.current = invalidate;
+  }, [invalidate]);
 
   const isSyncedSince = useCallback(
     (ranges: TouchedRange[], since: number) =>

@@ -29,8 +29,6 @@ export default async function TravelSettingsPage() {
     <SettingsShell
       title="移動"
       description="出発地から目的地までの移動です。予定の詳細から「移動を足す」で作れます。Googleカレンダーへも書き出すと、他の端末のカレンダーからも見られます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <TravelSection settings={settings} calendars={calendars} placeCatalog={placeCatalog} />
     </SettingsShell>

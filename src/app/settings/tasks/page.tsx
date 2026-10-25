@@ -47,8 +47,6 @@ export default async function TaskSettingsPage() {
     <SettingsShell
       title="タスク"
       description="タスクのタグと進捗の選択肢を、色つきで登録しておけます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <TagSection state={state} />
       <TagSection state={progressState} />

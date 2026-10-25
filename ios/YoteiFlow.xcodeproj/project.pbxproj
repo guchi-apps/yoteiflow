@@ -450,7 +450,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -476,7 +476,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.intents;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -621,6 +621,7 @@
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "場所の地図に現在地を表示するために使います。位置情報は端末の中だけで使い、サーバーへ送信・保存しません。";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -634,7 +635,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -661,6 +662,7 @@
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "場所の地図に現在地を表示するために使います。位置情報は端末の中だけで使い、サーバーへ送信・保存しません。";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -674,7 +676,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -703,7 +705,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -729,7 +731,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -755,7 +757,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -781,7 +783,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -798,7 +800,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6AA3WFTR94;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -814,7 +816,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6AA3WFTR94;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 4.29.0;
+				MARKETING_VERSION = 4.30.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

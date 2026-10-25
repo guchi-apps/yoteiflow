@@ -30,8 +30,6 @@ export default async function NotificationSettingsPage() {
     <SettingsShell
       title="通知"
       description="予定の前とタスクの期限に知らせます。iPhoneではYoteiFlowのアプリ、またはホーム画面に追加したアプリで受け取れます（アプリでは通知を許可すると自動で登録されます）。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <NotificationSection
         settings={settings}

@@ -1,11 +1,9 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { SettingsFrame } from "@/components/nav/settings-frame";
 import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
+import { SettingsMenuButton } from "@/components/nav/settings-menu-button";
 import { OfflineNotice } from "@/components/offline/offline-notice";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,13 +11,11 @@ import { cn } from "@/lib/utils";
  *
  * 設定は一覧から個別の画面へ入る形にしている（すべてを1画面に展開すると、
  * 目当ての項目にたどり着くまで縦に長くスクロールすることになるため）。
- * どの階層にいても戻り先が1つ上に固定されるよう、戻り先はここで受け取る。
+ * 左上は他の画面と同じメニュー（768px未満はドロワー、以上は左端のサイドバー）。戻るボタンは持たない（issue #1404）。
  */
 export function SettingsShell({
   title,
   description,
-  backHref,
-  backLabel,
   actions,
   wide = false,
   columns = false,
@@ -27,8 +23,6 @@ export function SettingsShell({
 }: {
   title: string;
   description?: string;
-  backHref: string;
-  backLabel: string;
   /** 見出しの右へ置く操作（場所の「＋」など）。持たない画面がほとんどなので任意にする。 */
   actions?: ReactNode;
   /**
@@ -47,12 +41,7 @@ export function SettingsShell({
     <SettingsFrame>
     <div className="flex min-h-app flex-col">
       <header className="sticky top-[env(safe-area-inset-top,0px)] z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={backHref}>
-            <ArrowLeft className="size-4" />
-            {backLabel}
-          </Link>
-        </Button>
+        <SettingsMenuButton />
         <h1 className="type-title-large min-w-0 flex-1 truncate px-1">{title}</h1>
         {actions}
       </header>

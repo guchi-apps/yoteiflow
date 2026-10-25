@@ -26,9 +26,9 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "relative block size-4 translate-x-0 rounded-full bg-outline transition-all",
-          // 選択時はつまみが24dpまで大きくなり、トラック右側へ寄る。
-          "group-data-checked/switch:size-6 group-data-checked/switch:translate-x-4 group-data-checked/switch:bg-primary-foreground",
+          "relative block size-4 translate-x-1.5 rounded-full bg-outline transition-all",
+          // 選択時はつまみが24dpまで大きくなり、右端から4dpの位置に寄る（縁2px＋22px）。未選択は左端から8dp（縁2px＋6px）。
+          "group-data-checked/switch:size-6 group-data-checked/switch:translate-x-[22px] group-data-checked/switch:bg-primary-foreground",
           // 状態レイヤー。つまみを40dp円で囲み、ホバー・フォーカス・押下で薄く色を乗せる。
           "before:absolute before:inset-[-12px] before:rounded-full before:bg-on-surface before:opacity-0 before:transition-opacity",
           "group-hover/switch:before:opacity-8 group-focus-visible/switch:before:opacity-10 group-active/switch:before:opacity-10",

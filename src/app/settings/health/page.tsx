@@ -30,8 +30,6 @@ export default async function HealthSettingsPage() {
     <SettingsShell
       title="ヘルスケア"
       description="iPhoneのヘルスケアと睡眠を連携します。iOSアプリで利用できます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <HealthSection
         title={sleep.title}

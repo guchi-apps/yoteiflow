@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { ArrowLeft, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@/components/calendar/item-layout";
 import { toReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
+import { SettingsMenuButton } from "@/components/nav/settings-menu-button";
 import { SettingsFrame } from "@/components/nav/settings-frame";
 import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
 import { TagChip } from "@/components/tags/tag-chip";
@@ -125,12 +125,7 @@ export function ReminderList({
       {/* 日付リマインドは下部ナビの5枠から外れ、ドロワーの「そのほか」に移った（issue #508）。
           一度登録すれば数年触らないため、勤務・場所・設定と同じ「戻るボタン付き」の骨格にする。 */}
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/activity">
-            <ArrowLeft className="size-4" />
-            記録
-          </Link>
-        </Button>
+        <SettingsMenuButton />
         <h1 className="type-title-large min-w-0 flex-1 truncate px-1">日付</h1>
         {/* 取得中はこのアイコンが回る（issue #1271）。 */}
         <RefreshButton spinning={pending} disabled={offline} onClick={() => startTransition(() => router.refresh())} />
