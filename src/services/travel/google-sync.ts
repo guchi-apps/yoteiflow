@@ -20,7 +20,17 @@ import { createEvent, deleteEvent, updateEvent } from "@/services/google-calenda
 export type TravelExportResult =
   | { status: "exported"; calendarId: string; eventId: string }
   | { status: "skipped"; reason: "no_calendar" | "write_disabled" }
-  | { status: "failed"; message: string };
+  | {
+      status: "failed";
+      message: string;
+      /**
+       * Googleでの予定作成を試みた後に失敗した（作成が成功していたか分からない）。
+       * 同じ移動をそのまま書き出し直すと予定が重複するため、自動で再書出しせず照合する。
+       * 作成の成功が分かっているときだけ `createdEventId` を添える。
+       */
+      createUncertain?: true;
+      createdEventId?: string;
+    };
 
 /**
  * 移動をGoogleへ書き出し、書き出せたIDをDBへ控える。
@@ -58,6 +68,8 @@ export async function exportTravelToGoogle(
     timeZone,
   };
 
+  let createAttempted = false;
+  let createdEventId: string | undefined;
   try {
     // 書き出し先を変えた場合は、前のカレンダーに残った予定を先に消す。
     // 残すと同じ移動が2つのカレンダーに並ぶ。
@@ -78,7 +90,9 @@ export async function exportTravelToGoogle(
     }
 
     if (!eventId) {
+      createAttempted = true;
       eventId = (await createEvent(target.account, calendarId, input)).id;
+      createdEventId = eventId;
     }
 
     await db.travelPlan.update({
@@ -92,6 +106,8 @@ export async function exportTravelToGoogle(
     return {
       status: "failed",
       message: error instanceof Error ? error.message : String(error),
+      ...(createAttempted ? { createUncertain: true as const } : {}),
+      ...(createdEventId ? { createdEventId } : {}),
     };
   }
 }

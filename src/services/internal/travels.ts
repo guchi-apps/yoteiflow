@@ -217,6 +217,11 @@ export async function runTravelCreate(
     // 書き出しに失敗していた回の再送は、書き出しだけをやり直す（移動は作り直さない）。
     const plan = await gateway.load(userId, stored.travelId);
     if (!plan) return { kind: "succeeded", result: stored, replayed: true };
+    // Google予定の作成を試みた後の失敗（作成の成否・ID保存の成否が不明）で、移動にイベントIDが無いときは
+    // 再実行すると createEvent が重複した予定を作る。自動で書き出し直さず失敗のまま返す。
+    if (stored.googleExport.createUncertain && !plan.googleEventId) {
+      return { kind: "succeeded", result: stored, replayed: true };
+    }
     const googleExport = await gateway.export(userId, plan);
     const result: TravelCreateResult = { ...stored, googleExport };
     await store.update(await recordId(store, identity), { result: result as object });

@@ -149,6 +149,20 @@ test("同じキーの再送は二重に作らず、書き出し失敗なら書�
   assert.equal(third.kind, "succeeded");
 });
 
+test("予定作成を試みた後の書き出し失敗（作成の成否が不明）は、同じキーの再送で書き出し直さない", async () => {
+  const { gateway, run } = setup();
+  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true, createdEventId: "ev-1" };
+  await run("key-1");
+  gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-2" };
+  const second = await run("key-1");
+  assert.equal(gateway.exports, 1);
+  assert.ok(second.kind === "succeeded");
+  if (second.kind === "succeeded") {
+    assert.equal(second.replayed, true);
+    assert.equal(second.result.googleExport.status, "failed");
+  }
+});
+
 test("同時の同一要求は1件だけ作る", async () => {
   const { gateway, run } = setup();
   const outcomes = await Promise.all([run("key-1"), run("key-1"), run("key-1")]);
