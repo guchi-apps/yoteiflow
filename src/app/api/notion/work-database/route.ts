@@ -34,20 +34,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "missing_properties", ...validation }, { status: 422 });
   }
 
-  await db.notionConnection.update({
-    where: { userId },
-    data: {
-      workDataSourceId: dataSourceId,
-      workDatabaseId: validation.databaseId,
-      workTitle: validation.title,
-      workPropertyMap: validation.propertyMap,
-      // 別のDBへ切り替えると勤務場所の選択肢ごと入れ替わる。前のDBの名前で出張扱いが残ると、
-      // 一覧に出ていない名前が設定に居座る。同じDBを選び直したときは設定を残す
-      // （プロパティを足してから選び直す経路があるため）。
-      ...(connection.workDataSourceId === dataSourceId ? {} : { workTripPlaces: [], workPlaceShortLabels: {} }),
-      lastValidatedAt: new Date(),
-    },
-  });
+  const switched = connection.workDataSourceId !== dataSourceId;
+  await db.$transaction([
+    db.notionConnection.update({
+      where: { userId },
+      data: {
+        workDataSourceId: dataSourceId,
+        workDatabaseId: validation.databaseId,
+        workTitle: validation.title,
+        workPropertyMap: validation.propertyMap,
+        // 別のDBへ切り替えると勤務場所の選択肢ごと入れ替わる。前のDBの名前で出張扱いが残ると、
+        // 一覧に出ていない名前が設定に居座る。同じDBを選び直したときは設定を残す
+        // （プロパティを足してから選び直す経路があるため）。
+        ...(switched ? { workTripPlaces: [], workPlaceShortLabels: {} } : {}),
+        lastValidatedAt: new Date(),
+      },
+    }),
+    // 名前キーの正式名称・既定値も前のDBの選択肢のもの（issue #1417）。出張の行き先（isTrip）は残す。
+    ...(switched
+      ? [
+          db.workPlaceLink.deleteMany({ where: { userId } }),
+          db.workPlaceDefault.deleteMany({ where: { userId, isTrip: false } }),
+        ]
+      : []),
+  ]);
 
   return NextResponse.json(validation);
 }

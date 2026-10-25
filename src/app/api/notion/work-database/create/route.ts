@@ -36,19 +36,24 @@ export async function POST(request: Request) {
     return externalApiError("notion", "勤務記録DBの作成", error);
   }
 
-  await db.notionConnection.update({
-    where: { userId },
-    data: {
-      workDataSourceId: created.dataSourceId,
-      workDatabaseId: created.databaseId,
-      workTitle: created.title,
-      workPropertyMap: created.propertyMap,
-      // 初期の選択肢に「出張」が入るため、その場所を選んだら出張になる状態から始める。
-      workTripPlaces: DEFAULT_TRIP_PLACES,
-      workPlaceShortLabels: {},
-      lastValidatedAt: new Date(),
-    },
-  });
+  await db.$transaction([
+    db.notionConnection.update({
+      where: { userId },
+      data: {
+        workDataSourceId: created.dataSourceId,
+        workDatabaseId: created.databaseId,
+        workTitle: created.title,
+        workPropertyMap: created.propertyMap,
+        // 初期の選択肢に「出張」が入るため、その場所を選んだら出張になる状態から始める。
+        workTripPlaces: DEFAULT_TRIP_PLACES,
+        workPlaceShortLabels: {},
+        lastValidatedAt: new Date(),
+      },
+    }),
+    // 新しいDBでは前のDBの勤務場所名は無効（issue #1417）。
+    db.workPlaceLink.deleteMany({ where: { userId } }),
+    db.workPlaceDefault.deleteMany({ where: { userId, isTrip: false } }),
+  ]);
 
   return NextResponse.json({ workDataSourceId: created.dataSourceId, workTitle: created.title });
 }
