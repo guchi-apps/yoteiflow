@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 const ITEM_CLASS = "flex w-full min-w-0 flex-col items-center gap-1";
 
 /** アイコンを置く枠。中央の記録の円もこの高さの枠から上へはみ出させ、ラベルの高さを揃える。 */
-const ICON_SLOT_CLASS = "flex h-8 w-16 items-center justify-center rounded-full transition-colors";
+const ICON_SLOT_CLASS = "flex h-8 w-16 items-center justify-center rounded-md transition-colors";
 
 const LABEL_CLASS =
   // 狭い画面では「カレンダー」の幅が1項目分を超える。min-w-0 と truncate が無いと、
@@ -181,7 +181,7 @@ export function BottomNav({
     // 重なると、z-indexを持たない<nav>（z-index: auto）はDOM順に関係なく必ず見出しの背後に
     // 沈み、円の上側が隠れる（issue #857）。見出し（z-10）より高く、ダイアログ（z-50）より低い
     // z-20を持たせて防ぐ。他画面のFAB（タスク/買い物/日付リマインドがz-20）と同じ帯に揃える。
-    <nav className="relative z-20 grid shrink-0 grid-cols-5 items-start rounded-t-[28px] bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+    <nav className="relative z-20 grid shrink-0 grid-cols-5 items-start rounded-t-xl bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
       {NAV_ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;

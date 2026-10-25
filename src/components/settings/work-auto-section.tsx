@@ -21,9 +21,7 @@ import {
   type WorkPlaceDefaultRow,
   type WorkRouteRow,
 } from "@/components/settings/work-place-defaults";
-import { WorkTrains } from "@/components/settings/work-trains";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
-import { cn } from "@/lib/utils";
 import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -190,7 +188,6 @@ export function WorkAutoSection({
                     type="button"
                     size="sm"
                     variant={selected ? "secondary" : "outline"}
-                    className={cn("rounded-full")}
                     disabled={busy}
                     aria-pressed={selected}
                     onClick={() =>
@@ -218,19 +215,12 @@ export function WorkAutoSection({
           remotePlaces={value.remotePlaces}
           defaults={placeDefaults}
           routes={routes}
+          trains={trains}
           links={links}
           linkablePlaces={linkablePlaces}
           home={home}
           commonStart={value.startMinutes}
           commonEnd={value.endMinutes}
-        />
-
-        <WorkTrains
-          trains={trains}
-          home={home}
-          destinations={[...new Set([...placeNames, ...tripPlaces, ...routes.map((r) => r.destination)])].filter(
-            (name) => name !== home,
-          )}
         />
       </CardContent>
     </Card>

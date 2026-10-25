@@ -61,7 +61,7 @@ export function MonthPickerDialog({
                 aria-current={key === thisMonth ? "date" : undefined}
                 onClick={() => onPick(key)}
                 className={cn(
-                  "type-label-large h-10 rounded-full tabular-nums transition-colors",
+                  "type-label-large h-10 rounded-md tabular-nums transition-colors",
                   selected
                     ? "bg-primary font-bold text-primary-foreground"
                     : "text-on-surface hover:bg-on-surface/8",

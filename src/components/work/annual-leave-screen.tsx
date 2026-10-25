@@ -114,13 +114,13 @@ export function AnnualLeaveScreen({
     // 2段目に置き、年度の数字をスクロールせずに見比べられるようにする。
     <SettingsShell title="年休" backHref="/work" backLabel="勤務" wide columns>
       {loadError && (
-        <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container lg:col-span-2">
+        <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container @3xl/main:col-span-2">
           {loadError}
         </p>
       )}
 
       {/* 年度切替。勤務画面の月切替（issue #510）と同じ形にする。右端は付与日数の設定。 */}
-      <div className="flex items-center justify-between gap-1 lg:col-span-2">
+      <div className="flex items-center justify-between gap-1 @3xl/main:col-span-2">
         <Button variant="ghost" size="sm" asChild>
           <Link href={`/work/leave?year=${fiscalYear - 1}`} aria-label="前の年度">
             <ChevronLeft className="size-4" />
@@ -555,7 +555,7 @@ function RecordGroup({
           </span>
           {/* 未申請はこの画面でも印だけ出す。片付けるのは勤務画面（押した先）。 */}
           {!record.preApplied && (
-            <span className="type-label-small shrink-0 rounded-full bg-error-container px-2 py-0.5 text-on-error-container">
+            <span className="type-label-small shrink-0 rounded-sm bg-error-container px-2 py-0.5 text-on-error-container">
               未申請
             </span>
           )}

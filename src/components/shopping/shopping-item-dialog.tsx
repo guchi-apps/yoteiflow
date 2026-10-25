@@ -364,7 +364,7 @@ export function ShoppingItemDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 rounded-full px-2.5"
+                className="h-7 rounded-md px-2.5"
                 disabled={busy || offline}
                 onClick={() => setAddingCategory(true)}
               >
@@ -546,7 +546,7 @@ function ChoiceChip({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        "type-label-large flex items-center gap-1 rounded-full border px-3 py-1 transition-colors",
+        "type-label-large flex items-center gap-1 rounded-md border px-3 py-1 transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
         selected
           ? cn(

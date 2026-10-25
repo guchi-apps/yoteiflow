@@ -11,7 +11,7 @@ export default function Loading() {
   return (
     <div className="flex min-h-app flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        <SkeletonBlock className="h-8 w-20 rounded-full" />
+        <SkeletonBlock className="h-8 w-20 rounded-md" />
         <SkeletonBlock className="h-6 w-16" />
         <span className="flex-1" />
         <LoadingRefreshMark className="size-8 md:size-8" />
@@ -30,8 +30,8 @@ export default function Loading() {
 
         {/* 期間のチップ。 */}
         <div className="flex gap-1.5">
-          <SkeletonBlock className="h-8 w-16 rounded-full" />
-          <SkeletonBlock className="h-8 w-16 rounded-full" />
+          <SkeletonBlock className="h-8 w-16 rounded-md" />
+          <SkeletonBlock className="h-8 w-16 rounded-md" />
         </div>
 
         {/* 夜ごとの行。 */}
