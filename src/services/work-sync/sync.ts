@@ -34,7 +34,9 @@ import {
   deleteRecordOverride,
   getRecordOverride,
   loadPlaceDefaultRows,
+  loadTrains,
   placeDefaultsLookup,
+  trainLookup,
 } from "./config";
 import { getWorkAutoSettings, resolveWorkCalendarId } from "./settings";
 
@@ -54,6 +56,8 @@ export type WorkSyncResult = {
   manual: number;
   /** 既定の移動時間が未設定で作れなかった移動。設定へ誘導する。 */
   missingRoutes: MissingRoute[];
+  /** 選ばれていたが見つからなかった電車の数（削除された等）。移動は所要時間の逆算で作る。 */
+  missingTrains: number;
   errors: string[];
 };
 
@@ -64,6 +68,7 @@ const emptyResult = (status: WorkSyncResult["status"]): WorkSyncResult => ({
   deleted: 0,
   manual: 0,
   missingRoutes: [],
+  missingTrains: 0,
   errors: [],
 });
 
@@ -360,15 +365,18 @@ export async function syncWorkRecord(
     const { places, available } = preloaded ?? (await loadPlacesForSync(userId));
     // 記録ごとの指定（入力画面で保存した値）を、勤務先の既定・共通設定より優先する。
     // 再同期でも同じ値を使うので、OFFにした予定を作り直さず、当日の時刻も既定で上書きしない。
-    const [override, defaultRows] = await Promise.all([
+    const [override, defaultRows, trains] = await Promise.all([
       getRecordOverride(userId, record.id),
       loadPlaceDefaultRows(userId),
+      loadTrains(userId),
     ]);
     const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
       override,
       placeDefaults: placeDefaultsLookup(defaultRows),
+      trains: trainLookup(trains),
     });
     result.missingRoutes = plan.missingRoutes;
+    result.missingTrains = plan.missingTrains.length;
     await reconcile(userId, record.id, plan.items, settings.timeZone, result, !available);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -405,11 +413,16 @@ export async function validateOverrideForRecord(
 ): Promise<string | null> {
   const settings = await getWorkAutoSettings(userId);
   const { places } = await loadPlacesForSync(userId);
-  const defaultRows = await loadPlaceDefaultRows(userId);
+  const [defaultRows, trains] = await Promise.all([loadPlaceDefaultRows(userId), loadTrains(userId)]);
   const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
     override,
     placeDefaults: placeDefaultsLookup(defaultRows),
+    trains: trainLookup(trains),
   });
+  // 保存前に選んだ電車が無い（直前に削除された・区間が違う）ときは、黙って逆算に戻さず選び直させる。
+  if (plan.missingTrains.length > 0) {
+    return "選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。";
+  }
   // 時間帯の内訳（issue #1155）では、この画面に所要時間の欄が無く、1日に移動が複数ありうる。
   // どの組の既定の移動時間が無いのかを名指しして、設定で入れるか反映をオフにしてもらう。
   if (record.segments.length > 0 && plan.missingRoutes.length > 0) {

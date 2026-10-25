@@ -43,7 +43,15 @@ export type PlaceDefaultsLookup = (key: string, isTrip: boolean) => WorkPlaceDef
  * その勤務記録だけの指定（`WorkRecordSetting`）。指定した項目は既定・共通設定より優先する。
  * 未指定（undefined）の項目は既定へ落ちる。`minutes` が null は「指定なし＝経路の既定」。
  */
-export type WorkLegOverride = { enabled?: boolean; minutes?: number | null };
+export type WorkLegOverride = {
+  enabled?: boolean;
+  minutes?: number | null;
+  /**
+   * 選んだ「よく使う電車」（`WorkTrain.id`・issue #1347）。指定すると所要時間からの逆算ではなく、
+   * 電車の出発時刻で移動を作る。時間帯の内訳のある記録では使わない。
+   */
+  trainId?: string | null;
+};
 export type WorkRecordOverride = {
   workEnabled?: boolean;
   startMinutes?: number | null;
@@ -58,9 +66,21 @@ export type WorkRecordOverride = {
   return?: WorkLegOverride;
 };
 
+/** 利用者が登録した電車（`WorkTrain`）。時刻は出発が0時からの分、到着は出発 + 所要分。 */
+export type WorkTrainItem = {
+  id: string;
+  origin: string;
+  destination: string;
+  label: string;
+  departMinutes: number;
+  durationMinutes: number;
+};
+export type TrainLookup = (id: string) => WorkTrainItem | null;
+
 export type PlanContext = {
   placeDefaults?: PlaceDefaultsLookup;
   override?: WorkRecordOverride | null;
+  trains?: TrainLookup;
 };
 
 export type WorkRoute = { minutes: number; mode: TravelMode };
@@ -89,7 +109,15 @@ export type ExpectedItem = {
 
 export type MissingRoute = { origin: string | null; destination: string };
 
-export type PlanResult = { items: ExpectedItem[]; missingRoutes: MissingRoute[] };
+export type PlanResult = {
+  items: ExpectedItem[];
+  missingRoutes: MissingRoute[];
+  /**
+   * 選ばれているのに見つからない（削除された・出発地/行き先が合わない）電車のID。
+   * 黙って所要時間の逆算に戻すと電車の時刻のつもりで見てしまうため、呼び出し側が知らせる。
+   */
+  missingTrains: string[];
+};
 
 /** 期間の勤務記録で一度に展開する日数の上限。壊れた期間で大量に作らないため。 */
 const MAX_DAYS = 31;
@@ -219,6 +247,7 @@ export function planWorkItems(
 ): PlanResult {
   const items: ExpectedItem[] = [];
   const missingRoutes: MissingRoute[] = [];
+  const missingTrains: string[] = [];
 
   const trip = record.businessTrip;
   const destination = trip
@@ -264,7 +293,7 @@ export function planWorkItems(
     .filter((day): day is { date: string; window: { start: number; end: number } } =>
       day.window !== null,
     );
-  if (days.length === 0) return { items, missingRoutes };
+  if (days.length === 0) return { items, missingRoutes, missingTrains };
 
   const label = trip ? "出張" : "勤務";
   const title = destination ? `${label}（${destination}）` : label;
@@ -287,7 +316,7 @@ export function planWorkItems(
   // 通勤・出張移動は、在宅でも場所未選択でもないときだけ。
   const commutes = Boolean(destination) && (trip || !settings.remotePlaces.includes(destination!));
   if (!commutes || !destination || (!outboundEnabled && !returnEnabled)) {
-    return { items, missingRoutes };
+    return { items, missingRoutes, missingTrains };
   }
 
   const home = settings.homeOrigin?.trim() || null;
@@ -295,8 +324,17 @@ export function planWorkItems(
   const destinationText = placeLocationText(destination, places);
   if (!home) {
     missingRoutes.push({ origin: null, destination });
-    return { items, missingRoutes };
+    return { items, missingRoutes, missingTrains };
   }
+
+  /** 選んだ電車。見つからない・区間が違うときは null にして `missingTrains` へ挙げる。 */
+  const pickTrain = (trainId: string | null | undefined, origin: string, to: string) => {
+    if (!trainId) return null;
+    const train = context.trains?.(trainId) ?? null;
+    if (train && train.origin === origin && train.destination === to) return train;
+    missingTrains.push(trainId);
+    return null;
+  };
 
   // 出張は初日に往路、最終日に復路。出社は単日なので同じ日に両方。
   const first = days[0];
@@ -304,8 +342,22 @@ export function planWorkItems(
 
   if (outboundEnabled) {
     const route = lookup(home, destination);
+    const train = pickTrain(override?.outbound?.trainId, home, destination);
     const minutes = override?.outbound?.minutes ?? route?.minutes ?? null;
-    if (minutes) {
+    if (train) {
+      const departAt = zonedTime(first.date, train.departMinutes, settings.timeZone);
+      items.push({
+        kind: "OUTBOUND",
+        date: first.date,
+        seq: 0,
+        start: departAt,
+        end: new Date(departAt.getTime() + train.durationMinutes * 60_000),
+        title: `${home} → ${destination}`,
+        origin: homeText!,
+        destination: destinationText,
+        mode: "PUBLIC_TRANSIT",
+      });
+    } else if (minutes) {
       const arrive = zonedTime(first.date, first.window.start, settings.timeZone);
       items.push({
         kind: "OUTBOUND",
@@ -325,8 +377,22 @@ export function planWorkItems(
 
   if (returnEnabled) {
     const route = lookup(destination, home);
+    const train = pickTrain(override?.return?.trainId, destination, home);
     const minutes = override?.return?.minutes ?? route?.minutes ?? null;
-    if (minutes) {
+    if (train) {
+      const departAt = zonedTime(last.date, train.departMinutes, settings.timeZone);
+      items.push({
+        kind: "RETURN",
+        date: last.date,
+        seq: 0,
+        start: departAt,
+        end: new Date(departAt.getTime() + train.durationMinutes * 60_000),
+        title: `${destination} → ${home}`,
+        origin: destinationText,
+        destination: homeText!,
+        mode: "PUBLIC_TRANSIT",
+      });
+    } else if (minutes) {
       const depart = zonedTime(last.date, last.window.end, settings.timeZone);
       items.push({
         kind: "RETURN",
@@ -344,7 +410,7 @@ export function planWorkItems(
     }
   }
 
-  return { items, missingRoutes };
+  return { items, missingRoutes, missingTrains };
 }
 
 /** その日の勤務時間帯。日ごとの指定（`days`）があればそれを、無ければ記録全体の時間帯を使う。 */
@@ -498,5 +564,6 @@ function planSegmentedItems(
     seen.add(key);
     return true;
   });
-  return { items, missingRoutes: unique };
+  // 内訳のある記録は電車を選ばせない（どの移動の電車か決まらない）ため、missingTrains は常に空。
+  return { items, missingRoutes: unique, missingTrains: [] };
 }

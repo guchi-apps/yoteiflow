@@ -16,6 +16,11 @@ import {
   type DayEdits,
   rebase,
   resolveKey,
+  trainMissing,
+  trainsFor,
+  trainWarnings,
+  toTime,
+  type Leg,
   type SyncConfig,
   type SyncContext,
   type SyncField,
@@ -31,6 +36,8 @@ const FIELD_LABELS: Record<SyncField, string> = {
   outMinutes: "往路の所要時間",
   backEnabled: "復路の反映",
   backMinutes: "復路の所要時間",
+  outTrainId: "往路の電車",
+  backTrainId: "復路の電車",
 };
 
 /**
@@ -166,6 +173,10 @@ export function useWorkSyncFields({
 
   const withCommute = config ? commutes(config, context) : false;
   const lines = config && form && !fullDayOff ? describePlan(form, config, context, { startDate, endDate }, daysEnabled ? dayEdits : {}) : [];
+  const warnings =
+    config && form && !fullDayOff && !segmented
+      ? trainWarnings(form, config, context, { startDate, endDate }, daysEnabled ? dayEdits : {})
+      : [];
 
   const node = (() => {
     if (!config) {
@@ -208,27 +219,100 @@ export function useWorkSyncFields({
 
     const leg = (
       label: string,
+      kind: Leg,
       enabledField: "outEnabled" | "backEnabled",
       minutesField: "outMinutes" | "backMinutes",
-    ) => (
-      <div className="flex items-center gap-3">
-        <Switch
-          aria-label={`${label}をカレンダーへ反映`}
-          checked={form[enabledField]}
-          onCheckedChange={(checked) => change({ [enabledField]: checked })}
-        />
-        <span className="type-body-medium w-8 shrink-0">{label}</span>
-        <Input
-          aria-label={`${label}の所要時間（分）`}
-          inputMode="numeric"
-          placeholder="所要（分）"
-          className="min-w-0 flex-1"
-          disabled={!form[enabledField]}
-          value={form[minutesField]}
-          onChange={(event) => change({ [minutesField]: event.target.value })}
-        />
-      </div>
-    );
+      trainField: "outTrainId" | "backTrainId",
+    ) => {
+      const trains = trainsFor(config, context, kind);
+      const trainId = form[trainField];
+      const useTrain = trainId !== "";
+      const missing = useTrain && trainMissing(config, context, kind, trainId);
+      const enabled = form[enabledField];
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <Switch
+              aria-label={`${label}をカレンダーへ反映`}
+              checked={enabled}
+              onCheckedChange={(checked) => change({ [enabledField]: checked })}
+            />
+            <span className="type-body-medium w-8 shrink-0">{label}</span>
+            <div role="group" aria-label={`${label}の指定方法`} className="inline-flex overflow-hidden rounded-lg border border-outline-variant">
+              {(
+                [
+                  ["duration", "所要時間"],
+                  ["train", "電車"],
+                ] as const
+              ).map(([value, text]) => {
+                const selected = (value === "train") === useTrain;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={!enabled || (value === "train" && trains.length === 0 && !useTrain)}
+                    className={`type-label-large px-3 py-1.5 disabled:opacity-38 ${selected ? "bg-secondary-container text-on-secondary-container" : ""}`}
+                    onClick={() =>
+                      change({ [trainField]: value === "train" ? (trains[0]?.id ?? "") : "" })
+                    }
+                  >
+                    {text}
+                  </button>
+                );
+              })}
+            </div>
+            {!useTrain && (
+              <Input
+                aria-label={`${label}の所要時間（分）`}
+                inputMode="numeric"
+                placeholder="所要（分）"
+                className="min-w-0 flex-1"
+                disabled={!enabled}
+                value={form[minutesField]}
+                onChange={(event) => change({ [minutesField]: event.target.value })}
+              />
+            )}
+          </div>
+          {useTrain && (
+            <div className="flex flex-col gap-2 pl-1">
+              <div className="flex flex-wrap gap-2">
+                {trains.map((train) => {
+                  const selected = train.id === trainId;
+                  return (
+                    <button
+                      key={train.id}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={!enabled}
+                      className={`type-body-small flex min-w-40 flex-1 flex-col rounded-lg border px-3 py-2 text-left disabled:opacity-38 ${selected ? "border-primary bg-secondary-container" : "border-outline-variant"}`}
+                      onClick={() => change({ [trainField]: train.id })}
+                    >
+                      <span className="type-title-small tabular-nums">
+                        {toTime(train.departMinutes)} → {toTime((train.departMinutes + train.durationMinutes) % 1440)}
+                      </span>
+                      <span className="text-on-surface-variant">
+                        {train.label}・{train.durationMinutes}分
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {missing && (
+                <p className="type-body-small text-error">
+                  選んでいた電車が見つかりません（削除されたか、勤務先が変わりました）。電車を選び直すか、所要時間に切り替えてください。
+                </p>
+              )}
+            </div>
+          )}
+          {!useTrain && enabled && trains.length === 0 && (
+            <p className="type-body-small text-on-surface-variant">
+              設定の「勤務」で電車を登録すると、時刻を指定して作れます。
+            </p>
+          )}
+        </div>
+      );
+    };
 
     if (segmented) {
       const toggle = (
@@ -253,6 +337,7 @@ export function useWorkSyncFields({
           <p className="type-body-small text-on-surface-variant">
             時間帯を分けている間は、区切りごとに勤務予定を作り、場所が変わるたびに移動を作ります。
             時刻は区切りから決まり、所要時間は設定の「勤務」の既定の移動時間を使います。
+            電車の時刻を指定するには、時間帯の内訳を使わない記録にしてください。
           </p>
         </div>
       );
@@ -305,10 +390,15 @@ export function useWorkSyncFields({
         )}
         {withCommute && (
           <div className="flex flex-col gap-2">
-            {leg("往路", "outEnabled", "outMinutes")}
-            {leg("復路", "backEnabled", "backMinutes")}
+            {leg("往路", "out", "outEnabled", "outMinutes", "outTrainId")}
+            {leg("復路", "back", "backEnabled", "backMinutes", "backTrainId")}
+            {warnings.map((warning) => (
+              <p key={warning} role="alert" className="type-body-small text-error">
+                {warning}
+              </p>
+            ))}
             <p className="type-body-small text-on-surface-variant">
-              往路は勤務開始に着く時刻、復路は勤務終了に出発する時刻で作ります。
+              所要時間は、往路が勤務開始に着く時刻、復路が勤務終了に出発する時刻で作ります。電車は選んだ電車の時刻で作ります。
               {isTrip && "出張は初日に往路、最終日に復路です。"}
             </p>
           </div>

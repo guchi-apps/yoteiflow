@@ -36,6 +36,7 @@ model User {
   sleepHealthExport    SleepHealthExport?
   travelPlans          TravelPlan[]
   workRouteDefaults    WorkRouteDefault[]
+  workTrains           WorkTrain[]
   workGenerated        WorkGenerated[]
   workPlaceDefaults    WorkPlaceDefault[]
   workRecordSettings   WorkRecordSetting[]
@@ -460,6 +461,28 @@ model WorkRouteDefault {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, origin, destination])
+}
+
+/// よく使う電車（issue #1347）。「出発地 → 行き先」の組ごとに、名前・出発時刻・所要分を複数持つ。
+/// 勤務の入力で往路・復路に選ぶと、勤務開始/終了からの逆算ではなくこの時刻で移動を作る。
+/// 時刻表を取りにいくものではなく、利用者が登録した値だけを使う（Yahoo!乗換案内は機械取得しない）。
+model WorkTrain {
+  id     String @id @default(cuid())
+  userId String
+
+  origin      String
+  destination String
+  label       String
+  /// 出発時刻（0時からの分）。到着は出発 + durationMinutes（日をまたぎうる）。
+  departMinutes   Int
+  durationMinutes Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, origin, destination])
 }
 
 /// 勤務先・出張先ごとの既定（issue #1099）。往路・復路の所要時間は WorkRouteDefault が持つので、

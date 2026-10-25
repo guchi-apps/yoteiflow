@@ -3,7 +3,9 @@ import {
   workWindow,
   type WorkLegOverride,
   type WorkRecordOverride,
+  type WorkTrainItem,
 } from "@/lib/work-sync/plan";
+import { earlyByForReturn, lateByForOutbound } from "@/lib/work-sync/train";
 
 /**
  * 勤務入力ダイアログの「勤務予定・移動の反映」欄の状態を作る・検証する純粋関数
@@ -30,6 +32,8 @@ export type SyncConfig = {
   homeOrigin: string | null;
   defaults: SyncConfigPlaceDefault[];
   routes: Array<{ origin: string; destination: string; minutes: number }>;
+  /** よく使う電車（issue #1347）。古い応答には無いので欠けても受ける。 */
+  trains?: WorkTrainItem[];
   override: WorkRecordOverride | null;
 };
 
@@ -42,6 +46,9 @@ export type SyncForm = {
   outMinutes: string;
   backEnabled: boolean;
   backMinutes: string;
+  /** 選んだ電車のID。空は「所要時間」で作る（issue #1347）。 */
+  outTrainId: string;
+  backTrainId: string;
 };
 
 export type SyncField = keyof SyncForm;
@@ -79,6 +86,29 @@ export function commutes(config: SyncConfig, context: SyncContext): boolean {
   return Boolean(context.key) && (context.isTrip || !config.remotePlaces.includes(context.key));
 }
 
+export type Leg = "out" | "back";
+
+/** その勤務先の往路・復路に選べる電車。往路は自宅→勤務先、復路は勤務先→自宅。出発時刻順。 */
+export function trainsFor(config: SyncConfig, context: SyncContext, leg: Leg): WorkTrainItem[] {
+  const home = config.homeOrigin?.trim();
+  if (!home || !context.key) return [];
+  const origin = leg === "out" ? home : context.key;
+  const destination = leg === "out" ? context.key : home;
+  return (config.trains ?? [])
+    .filter((train) => train.origin === origin && train.destination === destination)
+    .sort((a, b) => a.departMinutes - b.departMinutes);
+}
+
+/** 保存済みの電車が、いまの勤務先の候補に無い（削除された・勤務先が変わった）か。 */
+export function trainMissing(
+  config: SyncConfig,
+  context: SyncContext,
+  leg: Leg,
+  trainId: string,
+): boolean {
+  return Boolean(trainId) && !trainsFor(config, context, leg).some((train) => train.id === trainId);
+}
+
 /** 設定（既定）だけから作る初期値。 */
 export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm {
   const def =
@@ -106,18 +136,27 @@ export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm 
     outMinutes: out ? String(out) : "",
     backEnabled: def?.returnEnabled ?? true,
     backMinutes: back ? String(back) : "",
+    outTrainId: "",
+    backTrainId: "",
   };
 }
 
 /** 記録で保存した指定を、既定の上に重ねる。 */
 export function applyOverride(base: SyncForm, override: WorkRecordOverride | null): SyncForm {
   if (!override) return base;
-  const leg = (value: WorkLegOverride | undefined, enabled: boolean, minutes: string) => ({
+  const leg = (
+    value: WorkLegOverride | undefined,
+    enabled: boolean,
+    minutes: string,
+    trainId: string,
+  ) => ({
     enabled: value?.enabled ?? enabled,
     minutes: value?.minutes != null ? String(value.minutes) : minutes,
+    // 保存した電車はそのまま持つ（削除されていても消さず、画面で選び直しを促す）。
+    trainId: value?.trainId ?? trainId,
   });
-  const out = leg(override.outbound, base.outEnabled, base.outMinutes);
-  const back = leg(override.return, base.backEnabled, base.backMinutes);
+  const out = leg(override.outbound, base.outEnabled, base.outMinutes, base.outTrainId);
+  const back = leg(override.return, base.backEnabled, base.backMinutes, base.backTrainId);
   return {
     workEnabled: override.workEnabled ?? base.workEnabled,
     start: override.startMinutes != null ? toTime(override.startMinutes) : base.start,
@@ -126,6 +165,8 @@ export function applyOverride(base: SyncForm, override: WorkRecordOverride | nul
     outMinutes: out.minutes,
     backEnabled: back.enabled,
     backMinutes: back.minutes,
+    outTrainId: out.trainId,
+    backTrainId: back.trainId,
   };
 }
 
@@ -191,19 +232,27 @@ export function checkForm(
     }
     const leg = (
       label: string,
+      kind: Leg,
       enabled: boolean,
       text: string,
+      trainId: string,
     ): WorkLegOverride | string => {
       if (!enabled) return { enabled: false, minutes: null };
+      if (trainId) {
+        if (trainMissing(config, context, kind, trainId)) {
+          return `${label}で選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。`;
+        }
+        return { enabled: true, minutes: null, trainId };
+      }
       const minutes = Number(text);
       if (text.trim() === "" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
         return `${label}の所要時間（分）を入力してください。入力しない場合は${label}の反映をオフにしてください。`;
       }
       return { enabled: true, minutes };
     };
-    const out = leg("往路", form.outEnabled, form.outMinutes);
+    const out = leg("往路", "out", form.outEnabled, form.outMinutes, form.outTrainId);
     if (typeof out === "string") return { ok: false, message: out };
-    const back = leg("復路", form.backEnabled, form.backMinutes);
+    const back = leg("復路", "back", form.backEnabled, form.backMinutes, form.backTrainId);
     if (typeof back === "string") return { ok: false, message: back };
     payload.outbound = out;
     payload.return = back;
@@ -282,14 +331,76 @@ export function describePlan(
     }
   }
   if (commutes(config, context)) {
+    const outTrain = form.outTrainId ? pickedTrain(config, context, "out", form.outTrainId) : null;
     const out = Number(form.outMinutes);
-    if (first && form.outEnabled && out > 0) {
+    if (form.outEnabled && outTrain) {
+      lines.push(
+        `往路 ${range(outTrain.departMinutes, outTrain.departMinutes + outTrain.durationMinutes)}（${outTrain.label}）${span ? `（${dates.startDate}）` : ""}`,
+      );
+    } else if (first && form.outEnabled && !form.outTrainId && out > 0) {
       lines.push(`往路 ${range(first.start - out, first.start)}${span ? `（${dates.startDate}）` : ""}`);
     }
+    const backTrain = form.backTrainId ? pickedTrain(config, context, "back", form.backTrainId) : null;
     const back = Number(form.backMinutes);
-    if (last && form.backEnabled && back > 0) {
+    if (form.backEnabled && backTrain) {
+      lines.push(
+        `復路 ${range(backTrain.departMinutes, backTrain.departMinutes + backTrain.durationMinutes)}（${backTrain.label}）${span ? `（${dates.endDate}）` : ""}`,
+      );
+    } else if (last && form.backEnabled && !form.backTrainId && back > 0) {
       lines.push(`復路 ${range(last.end, last.end + back)}${span ? `（${dates.endDate}）` : ""}`);
     }
   }
   return lines;
+}
+
+function pickedTrain(
+  config: SyncConfig,
+  context: SyncContext,
+  leg: Leg,
+  trainId: string,
+): WorkTrainItem | null {
+  return trainsFor(config, context, leg).find((train) => train.id === trainId) ?? null;
+}
+
+/**
+ * 選んだ電車と勤務時間のずれの警告（保存は止めない・issue #1347）。往路は到着が勤務開始より後、
+ * 復路は出発が勤務終了より前のとき。往路は初日、復路は最終日の勤務時間に合わせる。
+ */
+export function trainWarnings(
+  form: SyncForm,
+  config: SyncConfig,
+  context: SyncContext,
+  dates: { startDate: string; endDate: string },
+  dayEdits: DayEdits = {},
+): string[] {
+  if (!commutes(config, context)) return [];
+  const span = dates.endDate && dates.endDate !== dates.startDate;
+  const windowOn = (date: string) => {
+    const edit = dayEdits[date];
+    const start = edit ? fromTime(edit.start) : fromTime(form.start);
+    const end = edit ? fromTime(edit.end) : fromTime(form.end);
+    return start !== null && end !== null && end > start ? { start, end } : null;
+  };
+  const warnings: string[] = [];
+  const outTrain = form.outEnabled && form.outTrainId ? pickedTrain(config, context, "out", form.outTrainId) : null;
+  const first = windowOn(dates.startDate);
+  if (outTrain && first) {
+    const late = lateByForOutbound(outTrain, first.start);
+    if (late !== null) {
+      warnings.push(
+        `往路の電車は勤務開始 ${toTime(first.start)} に間に合いません（到着 ${toTime((outTrain.departMinutes + outTrain.durationMinutes) % 1440)}・${late}分遅れ）。別の電車を選ぶか、勤務開始を直してください。`,
+      );
+    }
+  }
+  const backTrain = form.backEnabled && form.backTrainId ? pickedTrain(config, context, "back", form.backTrainId) : null;
+  const last = windowOn(span ? dates.endDate : dates.startDate);
+  if (backTrain && last) {
+    const early = earlyByForReturn(backTrain, last.end);
+    if (early !== null) {
+      warnings.push(
+        `復路の電車（${toTime(backTrain.departMinutes)}発）は勤務終了 ${toTime(last.end)} より前に出ます（${early}分早い）。別の電車を選ぶか、勤務終了を直してください。`,
+      );
+    }
+  }
+  return warnings;
 }
