@@ -11,7 +11,7 @@ import { listPlaces } from "@/services/notion/places";
 import { loadPlaceDefaultRows, loadTrains, loadWorkPlaceLinks } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { loadTagOptions } from "@/services/notion/tag-options";
-import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
+import { workCapabilities, workPlaceShortLabels, workTripPlaces } from "@/services/notion/work-logs";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
@@ -54,6 +54,7 @@ export default async function WorkSettingsPage() {
     databaseUrl: notionUrl(connection.workDatabaseId),
     // 行けば必ず出張になる勤務先は、場所を選んだ時点で出張の既定を立てる（docs/spec.md §34）。
     // 選択肢の一覧がここにあるため、場所ごとの設定も同じ行に添える。
+    shortLabels: workPlaceShortLabels(connection),
     trip: {
       places: workTripPlaces(connection),
       available: workCapabilities(connection).businessTrip,

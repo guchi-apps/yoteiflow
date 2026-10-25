@@ -33,6 +33,7 @@ import { loadTagCatalog } from "@/services/notion/tag-options";
 import {
   workCapabilities,
   workDatabaseReady,
+  workPlaceShortLabels,
   workTripPlaces,
 } from "@/services/notion/work-logs";
 import { getTravelSettings } from "@/services/travel/settings";
@@ -161,6 +162,7 @@ export default async function CalendarPage({
         work={{
           writable: workDatabaseReady(notionConnection),
           tripPlaces: workTripPlaces(notionConnection),
+          shortLabels: workPlaceShortLabels(notionConnection),
           capabilities: workCapabilities(notionConnection),
           minutesPerDay: normalizeWorkMinutes(uiSetting?.workMinutesPerDay),
         }}

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       // 別のDBへ切り替えると勤務場所の選択肢ごと入れ替わる。前のDBの名前で出張扱いが残ると、
       // 一覧に出ていない名前が設定に居座る。同じDBを選び直したときは設定を残す
       // （プロパティを足してから選び直す経路があるため）。
-      ...(connection.workDataSourceId === dataSourceId ? {} : { workTripPlaces: [] }),
+      ...(connection.workDataSourceId === dataSourceId ? {} : { workTripPlaces: [], workPlaceShortLabels: {} }),
       lastValidatedAt: new Date(),
     },
   });
