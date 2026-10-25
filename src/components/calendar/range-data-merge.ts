@@ -52,8 +52,8 @@ function union<T>(preferred: T[], other: T[], keyOf: (item: T) => string): T[] {
 
 function unionKind<K extends ItemKind>(
   kind: K,
-  preferred: CalendarLoadResult,
-  other: CalendarLoadResult,
+  preferred: Pick<CalendarLoadResult, ItemKind>,
+  other: Pick<CalendarLoadResult, ItemKind>,
 ): CalendarLoadResult[K] {
   const keyOf = KEY_OF[kind] as (item: CalendarLoadResult[K][number]) => string;
   return union(
@@ -61,6 +61,21 @@ function unionKind<K extends ItemKind>(
     (other[kind] ?? []) as CalendarLoadResult[K][number][],
     keyOf,
   ) as CalendarLoadResult[K];
+}
+
+type RangeItems = Pick<CalendarLoadResult, ItemKind>;
+
+/**
+ * 保存済み（`stale`）の応答の項目を、表示中の項目を消さずに足し合わせる。同じ項目は表示中を
+ * 優先する（保存済みは表示中より古いことが多い）。月表示の月ごとの保持（`use-calendar-chunks.ts`）
+ * でも同じ規則で使う（issue #1408）。
+ */
+export function mergeStaleItems(current: RangeItems, incoming: RangeItems): RangeItems {
+  const merged = {} as Record<ItemKind, unknown>;
+  for (const kind of ALL_KINDS) {
+    merged[kind] = unionKind(kind, current, incoming);
+  }
+  return merged as RangeItems;
 }
 
 export type RangeMergeResult = {
@@ -86,10 +101,7 @@ export function mergeRangeResponse(
   { stale }: { stale: boolean },
 ): RangeMergeResult {
   if (stale) {
-    const data: CalendarLoadResult = { ...incoming };
-    for (const kind of ALL_KINDS) {
-      (data as Record<ItemKind, unknown>)[kind] = unionKind(kind, current, incoming);
-    }
+    const data: CalendarLoadResult = { ...incoming, ...mergeStaleItems(current, incoming) };
     data.calendars = union(current.calendars, incoming.calendars, (c) => c.calendarId);
     return { data, merged: true };
   }

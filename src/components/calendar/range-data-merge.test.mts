@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeRangeResponse } from "@/components/calendar/range-data-merge";
+import { mergeRangeResponse, mergeStaleItems } from "@/components/calendar/range-data-merge";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -146,4 +146,23 @@ test("毎年のリマインドは展開済みID（日付入り）ごとに残し
     data.reminders.map((item) => `${item.source}:${item.id}`),
     ["reminder:p1:2026-10-26", "reminder:p1:2027-10-26", "garbage:x", "shopping:x"],
   );
+});
+
+test("mergeStaleItems: 月表示の保存済みでも、保存したばかりの予定・移動を消さない（issue #1408）", () => {
+  const current = result({
+    events: [event("old"), event("new", "main", "新しい予定")],
+    travels: [travel("new-travel")],
+    tasks: [task("t1", "表示中")],
+  });
+  // 保存前に保存された古い内容。新しい予定・移動が入っていない。
+  const incoming = result({ events: [event("old", "main", "古い題名"), event("other")], tasks: [task("t1", "古い")] });
+
+  const merged = mergeStaleItems(current, incoming);
+
+  assert.deepEqual(
+    merged.events.map((e) => `${e.id}:${e.title}`),
+    ["old:old", "new:新しい予定", "other:other"],
+  );
+  assert.deepEqual(merged.travels.map((t) => t.id), ["new-travel"]);
+  assert.equal(merged.tasks[0].title, "表示中");
 });
