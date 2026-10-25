@@ -7,15 +7,13 @@ import { ArrowRight, ArrowUpDown, Eye, EyeOff, Heart, Plus, ShoppingCart } from 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
+import { HeaderActions, useShellRunning } from "@/components/nav/main-shell";
 import {
   WIDE_SECTION_CARD_CLASS,
   WIDE_SECTION_HEADING_CLASS,
   WIDE_SECTION_LIST_CLASS,
 } from "@/components/ui/wide-section";
-import { BottomNav } from "@/components/nav/main-nav";
-import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { fabBottomOffsetClass } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
@@ -44,7 +42,6 @@ import {
   unboughtCounts,
   type ShoppingItem,
 } from "@/types/shopping";
-import type { RunningActivitySummary } from "@/types/activity";
 
 /**
  * 買い物リストの画面（docs/spec.md §36）。
@@ -60,16 +57,12 @@ const EMPTY_OPTIONS: TagOption[] = [];
 
 export function ShoppingScreen({
   timeZone,
-  runningActivity = null,
 }: {
-  /** ナビの「カレンダー」が今日へ移るのに使う（端末の時計任せにしない）。 */
+  /** 「今日」「明日」の判定に使う（端末の時計任せにしない）。 */
   timeZone: string;
-  /**
-   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
-   * 出すために使う（docs/spec.md §27）。
-   */
-  runningActivity?: RunningActivitySummary | null;
 }) {
+  // 記録中の項目は常駐シェルが持つ（issue #1395）。FABを記録中バーの上へ逃がすのに使う。
+  const runningActivity = useShellRunning();
   // 一覧はページが待たずに、ここで背景取得する（issue #724）。追加ボタン・ナビは取得を待たない。
   const resource = useApiResource<ShoppingData>(
     "/api/shopping",
@@ -237,15 +230,8 @@ export function ShoppingScreen({
   const nextSort = () => setSort(SHOPPING_SORTS[(SHOPPING_SORTS.indexOf(sort) + 1) % SHOPPING_SORTS.length]);
 
   return (
-    <AppFrame
-      current="shopping"
-      activityRunning={runningActivity !== null}
-      running={runningActivity}
-    >
-      <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="shopping" activityRunning={runningActivity !== null} />
+    <>
+      <HeaderActions>
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -278,7 +264,7 @@ export function ShoppingScreen({
         {/* 右上の端の再取得。取得中・保存中はこのアイコンが回る（issue #1271）。オフライン中に
             押しても、再接続まで終わらない読み込みが始まるだけになる。 */}
         <RefreshButton spinning={pending || busyId !== null} disabled={offline} onClick={reload} />
-      </header>
+      </HeaderActions>
 
       <OfflineNotice />
       {!offline && resource.stale && <SlowNetworkNotice />}
@@ -416,9 +402,6 @@ export function ShoppingScreen({
 
       {data && <AppBadgeSync shopping={dueCount} />}
 
-      <RunningActivityBar running={runningActivity} />
-      <BottomNav current="shopping" activityRunning={runningActivity !== null} timeZone={timeZone} />
-
       {dialog && (
         <ShoppingItemDialog
           draft={dialog}
@@ -452,7 +435,7 @@ export function ShoppingScreen({
           }}
         />
       )}
-    </AppFrame>
+    </>
   );
 }
 

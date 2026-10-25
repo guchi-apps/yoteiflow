@@ -1,5 +1,4 @@
-import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
-import { LoadingRefreshMark } from "@/components/ui/refresh-button";
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 
 /**
  * 活動記録の骨組み（issue #352）。
@@ -13,16 +12,8 @@ import { LoadingRefreshMark } from "@/components/ui/refresh-button";
  */
 export default function Loading() {
   return (
-    <AppFrameSkeleton>
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-md md:hidden" />
-        <SkeletonBlock className="h-6 w-20" />
-        <span className="flex-1" />
-        <SkeletonBlock className="h-8 w-24 rounded-md" />
-        <LoadingRefreshMark />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden">
+    <>
+            <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 @4xl/main:grid @4xl/main:max-w-6xl @4xl/main:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] @4xl/main:items-start @4xl/main:gap-6 @4xl/main:p-6">
           {/* 記録中のカード、または「いま記録しているものはありません」の枠 */}
           <SkeletonBlock className="h-32 w-full rounded-lg @4xl/main:row-span-2" />
@@ -41,8 +32,6 @@ export default function Loading() {
           <SkeletonBlock className="h-14 w-full rounded-sm @4xl/main:col-start-2" />
         </div>
       </div>
-
-      <BottomNavSkeleton />
-    </AppFrameSkeleton>
+    </>
   );
 }

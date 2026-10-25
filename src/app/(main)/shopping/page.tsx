@@ -8,19 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { shoppingDatabaseReady } from "@/services/notion/shopping-items";
-import { getRunningActivity } from "@/services/activity/running";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function ShoppingPage() {
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
-  const [uiSetting, connection, runningActivity] = await Promise.all([
+  const [uiSetting, connection] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
-    // ナビの記録の項目へ印を出し、記録中バー（issue #629）に項目名・開始時刻を出すために読む
-    // （docs/spec.md §27）。DaySpanのDBだけで完結するため、外部APIの往復は増えない。
-    getRunningActivity(user.id),
   ]);
 
   // データソースと項目名のプロパティが揃っていないと、読むことも書くこともできない。
@@ -28,12 +24,7 @@ export default async function ShoppingPage() {
 
   // 一覧とカテゴリはここで待たない。Notionが遅いと追加ボタンまで出なくなるため、画面の枠だけを
   // すぐ返し、一覧はクライアントが /api/shopping から背景取得する（issue #724）。
-  return (
-    <ShoppingScreen
-      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-      runningActivity={runningActivity}
-    />
-  );
+  return <ShoppingScreen timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"} />;
 }
 
 /** 買い物リストDBが未設定のとき。何を用意すればここが使えるようになるのかまで出す。 */

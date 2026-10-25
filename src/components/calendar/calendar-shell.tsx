@@ -20,10 +20,8 @@ import {
   TrainFront,
 } from "lucide-react";
 
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
-import { BottomNav } from "@/components/nav/main-nav";
-import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { HeaderActions, useRegisterCalendarNav, useShellRunning } from "@/components/nav/main-shell";
+import { fabBottomOffsetClass } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -1095,17 +1093,22 @@ export function CalendarShell({
     navigate(view, viewSwitchAnchorKey());
   };
 
-  return (
-    <AppFrame
-      current="calendar"
-      activityRunning={initialRunningActivity !== null}
-      running={initialRunningActivity}
-    >
-      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2 md:max-lg:flex-wrap md:max-lg:justify-end">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="calendar" activityRunning={initialRunningActivity !== null} />
+  // 下部ナビの「カレンダー」の押下（今日へ）と長押し（予定追加）は常駐シェルのナビが受ける。
+  // この画面が持つ動きを登録する（issue #1395）。
+  useRegisterCalendarNav({
+    onClick: goToday,
+    // カレンダー画面ではすでにcalendars/timeZoneを持っているため、他画面向けの
+    // 自己完結シート（取得を伴う）を使わず、既存のquickDraftへそのまま合流させる。
+    // 保存後の再取得も変更範囲だけに絞られた既存のhandleSavedへ乗る。
+    onLongPress: () => {
+      if (offline || navigator.onLine === false) return;
+      setQuickDraft(toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES, undefined, false));
+    },
+  });
 
+  return (
+    <>
+      <HeaderActions>
         {/*
           アイコンはPCだけに出す。他の画面（タスク・日付リマインド）も同じ位置にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
@@ -1238,7 +1241,7 @@ export function CalendarShell({
         />
         {/* 勤務・場所・設定はヘッダーに置かない（issue #463）。どの画面幅でもドロワーが開くように
             なったため、この帯に3つ並べる理由が無くなった（docs/spec.md §4・§9・§34）。 */}
-      </header>
+      </HeaderActions>
 
       <OfflineNotice />
 
@@ -1347,23 +1350,9 @@ export function CalendarShell({
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
 
-      <RunningActivityBar running={initialRunningActivity} />
-      <BottomNav
-        current="calendar"
-        activityRunning={initialRunningActivity !== null}
-        onCalendarClick={goToday}
-        // カレンダー画面ではすでにcalendars/timeZoneを持っているため、他画面向けの
-        // 自己完結シート（取得を伴う）を使わず、既存のquickDraftへそのまま合流させる。
-        // 保存後の再取得も変更範囲だけに絞られた既存のhandleSavedへ乗る。
-        onLongPressCalendar={() => {
-          if (offline || navigator.onLine === false) return;
-          setQuickDraft(toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES, undefined, false));
-        }}
-      />
-
       {/* Suspenseの外に置く。取得中でもショートカット一覧はいつでも開けてよいため。 */}
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-    </AppFrame>
+    </>
   );
 }
 
@@ -1878,6 +1867,9 @@ function CalendarBody({
     data.invalidate(taskRanges(task));
   };
 
+  // FABを記録中バーの上へ逃がすため、常駐シェルが持つ記録中の値を見る（issue #1395）。
+  const shellRunning = useShellRunning();
+
   // 記録中の帯は、記録済みの活動と同じ茶系（保存先カレンダーの色）で描く（issue #1279）。
   const runningWithColor = useMemo(() => {
     if (!runningActivity) return null;
@@ -1998,7 +1990,7 @@ function CalendarBody({
       <AddButton
         available={addAvailable}
         onAdd={onAdd}
-        hasRunningBar={runningActivity !== null}
+        hasRunningBar={shellRunning !== null}
       />
 
       {/*

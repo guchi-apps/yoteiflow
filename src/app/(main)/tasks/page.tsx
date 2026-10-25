@@ -7,20 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { getRunningActivity } from "@/services/activity/running";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 export default async function TasksPage() {
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
-  const [uiSetting, connection, runningActivity] = await Promise.all([
+  const [uiSetting, connection] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
-    // ナビの記録の項目へ印を出し、記録中バー（issue #629）に項目名・開始時刻を出すために読む
-    // （docs/spec.md §27）。止め忘れたまま別の画面で作業していると、その間ずっと同じ項目を
-    // 記録し続けてしまう。DaySpanのDBだけで完結するため、外部APIの往復は増えない。
-    getRunningActivity(user.id),
   ]);
 
   if (!connection?.taskDataSourceId) return <ConnectPrompt />;
@@ -31,7 +26,6 @@ export default async function TasksPage() {
     <TaskList
       weekStartsOn={uiSetting?.weekStartsOn ?? 0}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-      runningActivity={runningActivity}
     />
   );
 }

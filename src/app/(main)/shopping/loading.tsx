@@ -1,5 +1,4 @@
-import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
-import { LoadingRefreshMark } from "@/components/ui/refresh-button";
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 import { WIDE_SECTION_CARD_CLASS } from "@/components/ui/wide-section";
 import { cn } from "@/lib/utils";
 
@@ -12,16 +11,8 @@ import { cn } from "@/lib/utils";
  */
 export default function Loading() {
   return (
-    <AppFrameSkeleton>
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-md md:hidden" />
-        <span className="flex-1" />
-        <SkeletonBlock className="h-8 w-20 rounded-md" />
-        <SkeletonBlock className="h-8 w-8 rounded-md" />
-        <LoadingRefreshMark />
-      </div>
-
-      {/* カテゴリのタブ。件数はDBによって違うため、幅を揃えず3つだけ置く。 */}
+    <>
+            {/* カテゴリのタブ。件数はDBによって違うため、幅を揃えず3つだけ置く。 */}
       <div className="flex gap-2 border-b border-rule bg-surface-container-low px-3 pt-1 pb-2">
         <SkeletonBlock className="h-7 w-20 rounded-md" />
         <SkeletonBlock className="h-7 w-16 rounded-md" />
@@ -49,8 +40,6 @@ export default function Loading() {
           </div>
         ))}
       </div>
-
-      <BottomNavSkeleton />
-    </AppFrameSkeleton>
+    </>
   );
 }

@@ -3,9 +3,6 @@ import { redirect } from "next/navigation";
 import { Timer } from "lucide-react";
 
 import { ActivityScreen } from "@/components/activity/activity-screen";
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
-import { BottomNav } from "@/components/nav/main-nav";
 import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,12 +46,10 @@ export default async function ActivityPage() {
 
 function ConnectPrompt() {
   return (
-    // 未接続でも画面を移れるよう、他の記録画面と同じ枠（1024px以上のサイドバー・それ未満のメニュー
-    // ボタン）を持たせる。持たせないと、広い画面では下部ナビも無く、設定以外へ移る手段が無い（issue #636）。
-    <AppFrame current="activity" activityRunning={false}>
+    // 画面を移る枠（サイドバー・メニュー・下部ナビ）は共通レイアウトが持つ（issue #1395）。
+    <>
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <div className="flex items-center gap-2 text-xl font-semibold">
-          <AppMenuButton current="activity" />
           <Timer className="size-6 text-primary" />
           活動記録
         </div>
@@ -73,8 +68,6 @@ function ConnectPrompt() {
           </CardContent>
         </Card>
       </div>
-
-      <BottomNav current="activity" />
-    </AppFrame>
+    </>
   );
 }
