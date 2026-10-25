@@ -365,6 +365,67 @@ curl -s -X DELETE -H "Authorization: Bearer $DAYSPAN_INTERNAL_EVENTS_API_KEY" -G
   "http://127.0.0.1:3113/api/internal/events/EVENT_ID" | jq .
 ```
 
+## `POST /api/internal/travels` / `GET /api/internal/travels/[id]`
+
+AIDEが会話から航空便などの移動を登録し、登録結果を読み戻すための入口（issue #1432）。通常のGoogle予定（`POST /api/internal/events`）では移動（`TravelPlan`）にならないため、既存の `createTravel`（DB保存→Google書き出し）と `validateTravelInput` を通す。既存の通常予定・推定移動は変更も削除もしない（作成専用で、更新・削除の口は持たない）。
+
+### 認証
+
+- `POST`: 予定の書き込み鍵 `DAYSPAN_INTERNAL_EVENTS_API_KEY`（読み取り鍵では書けない）。この鍵が漏れると、予定の作成・更新に加えて移動の作成もできる
+- `GET`: 読み取り鍵 `DAYSPAN_INTERNAL_API_KEY`
+- 対象ユーザーは `X-Target-Email`（他の内部APIと同じ）。他ユーザーの移動は `GET` でも引けない（`404`）
+
+### `POST` リクエスト
+
+必須ヘッダー: `Idempotency-Key`（印字可能ASCII・191文字まで）。
+
+```jsonc
+{
+  "origin": "伊丹空港",
+  "destination": "羽田空港",
+  "via": ["梅田"],                           // 任意（10件まで）
+  "mode": "PUBLIC_TRANSIT",                  // CAR / PUBLIC_TRANSIT / WALK / OTHER
+  "departAt": "2026-11-01T09:30:00+09:00",   // タイムゾーン（Z か ±hh:mm）必須。無いと 400
+  "arriveAt": "2026-11-01T11:00:00+09:00",
+  "note": "NH22 座席12A",                    // 任意。便名・予約番号などはここへ
+  "linkedEventId": "abc", "linkedCalendarId": "primary", // 任意。両方揃えたときだけ。実在と書き込み可否を確認する
+  "confirmDuplicate": false                  // 任意。同一内容の既存があっても作るとき true
+}
+```
+
+許可項目以外（`userId` 等）は `400`（`unsupported_field`）。所要時間の出どころは `MANUAL` 固定。
+
+### 応答
+
+```jsonc
+// 201（再送で保存済みを返したときは 200 と "replayed": true）
+{
+  "saved": true,                 // DB（TravelPlan）への保存成否。書き出し失敗でも true
+  "travelId": "cm...",
+  "googleExport": { "status": "exported", "calendarId": "...", "eventId": "..." },
+  // status: exported | skipped（reason: no_calendar / write_disabled）| failed（message）
+  "replayed": false
+}
+```
+
+### エラーと再送
+
+| 応答 | 意味 | 再送 |
+| --- | --- | --- |
+| `400` `invalid_datetime` / `invalid_request` / `unsupported_field` / `invalid_idempotency_key` / `linked_calendar_not_writable`、`executed: false` | 入力不正（未実行） | 内容を直して送る（同じキーでよい） |
+| `404` `linked_event_not_found`、`executed: false` | 紐づけ先の予定が無い（未実行） | 予定を確かめて送る |
+| `409` `duplicate_travel`、`existingTravelId`、`executed: false` | 同じ出発地・目的地・経由・出発・到着の移動が既にある | 同じ移動なら何もしない。別の移動として作るなら `confirmDuplicate: true` |
+| `409` `idempotency_key_reused` | 同じキーで内容が違う | 新しいキーを使う |
+| `409` `operation_in_progress`（`Retry-After`） | 同じキーの処理が実行中 | `retryAfterSeconds` 後に**同じキー**で再送 |
+| `502` `result_unknown`、`executed: "unknown"` | 保存されたか不明 | **同じキー・同じ内容**で再送。同一内容が既にあればそれを採り、二重には作らない |
+| `500` `target_user_not_resolvable` | 対象ユーザーを決められない | `X-Target-Email` を確かめる |
+
+Google書き出しが `failed` でも移動は保存済み（`saved: true`）。同じキーで再送すると書き出しだけをやり直す。移動未登録と取り違えて作り直さないこと。冪等の記録は `InternalTaskOperation`（`operation: "travel-create"`）に置く。ログには本文・メモ・鍵を出さない。
+
+### `GET /api/internal/travels/[id]`
+
+`{ "travel": { id, title, origin, destination, via, mode, start, end, note, estimated, estimateSource, linkedEventId, returnLeg }, "googleExport": { exported, calendarId, eventId } }` を返す。`GET /api/internal/schedule` の `travels` と同じ正本（`TravelPlan`）で、同じ `id`・日時・交通手段・メモで現れる。無ければ `404`（`travel_not_found`）。
+
 ## `POST /api/internal/notifications/dispatch`
 
 通知の送信を1回ぶん走らせる（docs/spec.md §32・docs/notifications.md）。時刻が来た下書きを送り、

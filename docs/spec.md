@@ -2138,6 +2138,10 @@ Yahoo!乗換案内を開く・コピー経路を取り込む画面入力、Googl
 予定から移動を作ったときだけでなく、あとからでも結べる。予定の表示画面の「既存の移動を紐づける」と、移動の表示画面の「予定と紐づける」（紐づき済みなら「付け替える」「外す」）から行う。相手を選んで確認するだけで結べる（往路・復路は選ばせない。issue #1137）。紐づけで移動の経路・日時は変わらない。`PUT` の `returnLeg` は旧クライアントのため受けて無視し、予定の時刻（`eventStart` / `eventEnd` / `eventAllDay`）は任意で、持ち物の期限の自動判断にだけ使う。別の予定に紐づいている移動を選ぶと付け替えになる（元の紐づけは外れる）。外しても移動は消えない。API は `PUT` / `DELETE /api/travels/[id]/link`。移動の編集（`PATCH`）は紐づけに触らない。
 
 
+### AIDEからの作成（issue #1432）
+
+サーバー間API（`POST /api/internal/travels`・`GET /api/internal/travels/[id]`。契約は `docs/internal-api.md`）から移動を1件作れる。通常のGoogle予定の作成では `TravelPlan` にならないため、`createTravel` と同じ保存・書き出しを `Idempotency-Key` 付きで通す。保存（DB）とGoogle書き出しの成否は別々に返し、書き出し失敗は移動未登録ではない。同一内容の既存があれば作らず確認（`confirmDuplicate`）を求める。作成専用で、既存の予定・推定移動は変更・削除しない。冪等の記録は `InternalTaskOperation` を流用する（マイグレーション無し）。
+
 ## 30. サーバー間参照用API
 
 同一VPS上で動く他アプリ（現状はAIDE）が、その日の予定・タスク・日付リマインド・移動をまとめて
