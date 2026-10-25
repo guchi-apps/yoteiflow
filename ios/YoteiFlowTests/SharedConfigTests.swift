@@ -47,4 +47,39 @@ final class SharedConfigTests: XCTestCase {
         c.queryItems = [URLQueryItem(name: "path", value: "/calendar"), URLQueryItem(name: "title", value: long)]
         XCTAssertEqual(SharedConfig.path(fromDeepLink: c.url!), "/calendar")
     }
+
+    // Universal Link（issue #1366）
+    func testUniversalLinkOpensCalendarDate() {
+        let url = URL(string: "https://dayspan.gucchii.com/calendar?date=2026-11-09")!
+        XCTAssertEqual(SharedConfig.path(fromUniversalLink: url), "/calendar?date=2026-11-09")
+        XCTAssertEqual(SharedConfig.path(fromUniversalLink: URL(string: "https://dayspan.gucchii.com/calendar")!), "/calendar")
+    }
+
+    func testUniversalLinkDropsOtherQuery() {
+        let url = URL(string: "https://dayspan.gucchii.com/calendar?date=2026-11-09&next=//evil.com")!
+        XCTAssertEqual(SharedConfig.path(fromUniversalLink: url), "/calendar?date=2026-11-09")
+    }
+
+    func testUniversalLinkRejectsOthers() {
+        for text in [
+            "http://dayspan.gucchii.com/calendar?date=2026-11-09",
+            "https://evil.com/calendar?date=2026-11-09",
+            "https://dayspan.gucchii.com:8443/calendar?date=2026-11-09",
+            "https://dayspan.gucchii.com/tasks",
+            "https://dayspan.gucchii.com/calendar/x",
+            "https://dayspan.gucchii.com/calendar?date=2026-11-9",
+            "https://dayspan.gucchii.com/calendar?date=tomorrow",
+            "https://dayspan.gucchii.com/calendar?date=2026-11-09&date=2026-11-10",
+            "yoteiflow://open?path=/calendar",
+        ] {
+            XCTAssertNil(SharedConfig.path(fromUniversalLink: URL(string: text)!), text)
+        }
+    }
+
+    func testWidgetDeepLinkIsNotUniversalLink() {
+        // 既存のウィジェットの経路は従来どおり path(fromDeepLink:) だけが受ける
+        let deepLink = SharedConfig.deepLink(path: "/tasks")
+        XCTAssertEqual(SharedConfig.path(fromDeepLink: deepLink), "/tasks")
+        XCTAssertNil(SharedConfig.path(fromDeepLink: URL(string: "https://dayspan.gucchii.com/calendar?date=2026-11-09")!))
+    }
 }

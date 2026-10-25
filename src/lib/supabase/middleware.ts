@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isUserAllowed } from "@/lib/access/client";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
+import { loginCallbackPath } from "@/lib/login-callback";
 import { isLoginError } from "@/lib/login-errors";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { isPublicPath, isTokenAuthApiPath } from "@/lib/supabase/public-paths";
@@ -116,7 +117,7 @@ export async function updateSession(request: NextRequest) {
 
   if (!user) {
     const loginUrl = new URL("/login", getRequestOrigin(request));
-    loginUrl.searchParams.set("callbackUrl", pathname);
+    loginUrl.searchParams.set("callbackUrl", loginCallbackPath(pathname, request.nextUrl.search));
     return withRefreshedCookies(NextResponse.redirect(loginUrl));
   }
 

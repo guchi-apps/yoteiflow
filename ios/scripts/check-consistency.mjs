@@ -285,6 +285,26 @@ export function checkConsistency() {
     problems.push(`APNsのtopic（DEFAULT_APNS_TOPIC）が Bundle ID と一致しません: TS=${apnsTopic} / Xcode=${bundleId}`);
   }
 
+  // Universal Link（#1366）: entitlement のドメイン・AASA の appID・対象パスが揃っている
+  const universalLinks = read("src/lib/universal-links.ts");
+  const appEntitlements = read("ios/Config/YoteiFlow.entitlements");
+  if (!baseHost || !appEntitlements.includes(`<string>applinks:${baseHost}</string>`)) {
+    problems.push(`YoteiFlow.entitlements の Associated Domains に applinks:${baseHost} がありません`);
+  }
+  const appleAppId = universalLinks.match(/APPLE_APP_ID = "([^"]+)"/)?.[1];
+  const team = pbxproj.match(/DEVELOPMENT_TEAM = ([A-Z0-9]+);/)?.[1];
+  if (!appleAppId || appleAppId !== `${team}.com.gucchii.yoteiflow` || !pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;")) {
+    problems.push(`AASA の appID（${appleAppId}）が Team ID・アプリの Bundle ID と一致しません`);
+  }
+  const tsLinkPaths = parseList(universalLinks.match(/UNIVERSAL_LINK_PATHS = \[([^\]]*)\]/)?.[1]);
+  const swiftLinkPaths = parseList(sharedConfig.match(/universalLinkPaths: Set<String> = \[([^\]]*)\]/)?.[1]);
+  if (!tsLinkPaths || tsLinkPaths !== swiftLinkPaths) {
+    problems.push(`Universal Link の対象パスが一致しません: Swift=${swiftLinkPaths} / TS=${tsLinkPaths}`);
+  }
+  if (!/url\.scheme == "https"[\s\S]*?openUniversalLink[\s\S]*?openFromWidget/.test(read("ios/YoteiFlow/YoteiFlowApp.swift"))) {
+    problems.push("YoteiFlowApp.swift が https を openUniversalLink、それ以外を openFromWidget へ分けていません");
+  }
+
   return problems;
 }
 

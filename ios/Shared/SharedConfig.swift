@@ -58,6 +58,25 @@ enum SharedConfig {
         return components.url!
     }
 
+    /// Universal Link（issue #1366）でアプリが開く画面。サーバーの AASA（`src/lib/universal-links.ts` の
+    /// `UNIVERSAL_LINK_PATHS`）と揃えること（`ios/scripts/check-consistency.mjs` が照合する）
+    static let universalLinkPaths: Set<String> = ["/calendar"]
+
+    /// Universal Link（`https://dayspan.gucchii.com/calendar?date=2026-11-09`）から開く先のパス。
+    /// `baseURL` とスキーム・ホスト・ポートが一致し、許可した画面のときだけ返す。引き継ぐクエリは
+    /// `date`（`YYYY-MM-DD` の形）だけで、形が違えば nil（開かない）。`yoteiflow://` の経路はここを通らない
+    static func path(fromUniversalLink url: URL) -> String? {
+        guard url.scheme == "https", url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port,
+              universalLinkPaths.contains(url.path)
+        else { return nil }
+        let dates = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).filter { $0.name == "date" }
+        if dates.isEmpty { return url.path }
+        guard dates.count == 1, let date = dates[0].value,
+              date.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil
+        else { return nil }
+        return "\(url.path)?date=\(date)"
+    }
+
     /// ウィジェット・共有拡張のディープリンクから開く先のパス。許可した画面でなければ nil。
     /// パスは許可リストの完全一致で検証し、`/calendar` のときだけ許可したキーのクエリを引き継ぐ
     /// （値の検証はWeb側でも行う）

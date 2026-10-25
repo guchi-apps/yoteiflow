@@ -129,6 +129,17 @@ final class WebViewModel: NSObject, ObservableObject {
         }
     }
 
+    /// Universal Link（`https://…/calendar?date=…`・issue #1366）。ウィジェットの経路（`openFromWidget`）とは
+    /// 受けるURLの形が違うため分ける。未ログインでも開けば `/login?callbackUrl=` に日付が残り、ログイン後にその日へ戻る
+    func openUniversalLink(_ url: URL) {
+        guard let path = SharedConfig.path(fromUniversalLink: url) else { return }
+        if hasStarted {
+            loadAppPath(path)
+        } else {
+            pendingPath = path
+        }
+    }
+
     func retry() {
         isRetrying = true
         load(lastRequestedURL ?? AppConfig.baseURL)
