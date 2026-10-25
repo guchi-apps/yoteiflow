@@ -15,3 +15,8 @@ export function disallowedPlaceTags(next: readonly string[], current: readonly s
   const allowed = new Set<string>([...PLACE_TAGS, ...current]);
   return next.filter((name) => !allowed.has(name));
 }
+
+/** 場所そのものが駅・空港であることを示すタグ。付いている場所は最寄り駅を持たない（issue #1370）。 */
+export const STATION_PLACE_TAG = "駅・空港";
+
+export const isStationPlace = (tags: readonly string[]): boolean => tags.includes(STATION_PLACE_TAG);

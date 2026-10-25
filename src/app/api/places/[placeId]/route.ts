@@ -64,6 +64,8 @@ export async function PATCH(
     coordinates?: string | null;
     /** 最寄り駅。空文字・null は「消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
     station?: string | null;
+    /** 最寄り駅までの徒歩（分）。null は「消す」、項目ごと渡さないのは「触らない」。 */
+    stationMinutes?: number | null;
     /** 付けるタグの名前。固定のタグか、その場所に既に付いているタグだけ受ける（issue #1361）。 */
     tags?: unknown;
   };
@@ -77,6 +79,9 @@ export async function PATCH(
       ...("address" in body ? { address: body.address?.trim() || null } : {}),
       ...("coordinates" in body ? { coordinates: parseCoordinates(body.coordinates) } : {}),
       ...("station" in body ? { station: body.station?.trim() || null } : {}),
+      ...("stationMinutes" in body
+        ? { stationMinutes: typeof body.stationMinutes === "number" ? body.stationMinutes : null }
+        : {}),
       ...("tags" in body ? { tags: readTags(body.tags) } : {}),
     });
     return NextResponse.json(place);

@@ -58,6 +58,7 @@ export default async function PlacesPage() {
         tags: Boolean(map.tags),
         coordinates: Boolean(map.coordinates),
         station: Boolean(map.station),
+        stationMinutes: Boolean(map.stationMinutes),
       }}
       tagOptions={tagOptions ?? []}
     />

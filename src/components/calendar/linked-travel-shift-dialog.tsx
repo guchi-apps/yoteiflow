@@ -18,6 +18,7 @@ import { hasNativeTransit, openTransitInNativeApp } from "@/lib/native-transit";
 import { placeDisplayName } from "@/lib/place-text";
 import { followSearchCondition, type TransitFollow } from "@/lib/transit-follow";
 import { rememberTransitSession } from "@/lib/transit-search-session";
+import { stationWalkMinutes } from "@/lib/station-walk";
 import { suggestTransitSearch, type ContextEvent, type ContextTravel } from "@/lib/transit-suggest";
 import { shiftAmountLabel, type TravelShift } from "@/lib/travel-follow";
 import { cn } from "@/lib/utils";
@@ -272,6 +273,7 @@ function TransitFollowCard({
           travels: context?.travels ?? [],
           home,
           excludeTravelId: travel.id,
+          walkMinutes: stationWalkMinutes(event.location, places),
           formatTime: formatClock,
         })
       : null;
