@@ -162,3 +162,25 @@ export function fitBounds(
 
   return { center, zoom };
 }
+
+/**
+ * 中心・ズーム・枠の大きさ（px）で決まる表示範囲に入っている地点の数（場所画面の地図・issue #1386）。
+ *
+ * 地図の件数ラベルで「この範囲に◯件」を出すために使う。`TileMap` がピンを置くのと同じ
+ * 計算（端数のズームのまま `project` し、中心を枠の中心へ置く）で判定し、画面に見えている
+ * ピンと数が食い違わないようにする。ピンの絵ではなく地点そのものが枠の内側かで数える。
+ * 経度は `TileMap` のピンと同じく折り返さない（日付変更線をまたぐ表示は考えない）。
+ */
+export function countInView(
+  points: LatLng[],
+  view: { center: LatLng; zoom: number },
+  size: { width: number; height: number },
+): number {
+  const center = project(view.center, view.zoom);
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  return points.filter((point) => {
+    const p = project(point, view.zoom);
+    return Math.abs(p.x - center.x) <= halfWidth && Math.abs(p.y - center.y) <= halfHeight;
+  }).length;
+}

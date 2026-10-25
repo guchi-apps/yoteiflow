@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fitBounds, project, type LatLng } from "@/lib/coordinates";
+import { countInView, fitBounds, project, type LatLng } from "@/lib/coordinates";
 
 const SIZE = { width: 600, height: 400 };
 
@@ -49,6 +49,31 @@ test("同じ地点が複数あっても上限のズームに留める", () => {
   const point = { lat: 35.681, lng: 139.767 };
   const result = fitBounds([point, point], SIZE, { maxZoom: 17 });
   assert.equal(result?.zoom, 17);
+});
+
+test("表示範囲の件数は枠の内側にある地点だけを数える", () => {
+  const center = { lat: 34.7025, lng: 135.4959 };
+  const zoom = 14;
+  const c = project(center, zoom);
+  const at = (dx: number, dy: number) => {
+    const scale = 256 * 2 ** zoom;
+    const lng = ((c.x + dx) / scale) * 360 - 180;
+    const n = Math.PI - (2 * Math.PI * (c.y + dy)) / scale;
+    return { lat: (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))), lng };
+  };
+  const points = [center, at(290, 0), at(310, 0), at(0, 190), at(0, -210)];
+  assert.equal(countInView(points, { center, zoom }, SIZE), 3);
+});
+
+test("拡大すると範囲の外へ出た地点は数えない", () => {
+  const points: LatLng[] = [
+    { lat: 34.7809, lng: 135.4697 },
+    { lat: 34.7025, lng: 135.4959 },
+    { lat: 34.6937, lng: 135.5023 },
+  ];
+  const fitted = fitBounds(points, SIZE)!;
+  assert.equal(countInView(points, fitted, SIZE), 3);
+  assert.equal(countInView(points, { center: points[0], zoom: 17 }, SIZE), 1);
 });
 
 test("精度円は距離を縮尺で割る（赤道・ズーム0は1ピクセル約156543m）", async () => {
