@@ -1,6 +1,7 @@
 import type { WorkGenerated } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { withWorkPlaceLinks } from "@/lib/work-place-link";
 import {
   createWithReservation,
   isReservation,
@@ -34,6 +35,7 @@ import {
   deleteRecordOverride,
   getRecordOverride,
   loadPlaceDefaultRows,
+  loadWorkPlaceLinks,
   loadTrains,
   placeDefaultsLookup,
   trainLookup,
@@ -160,7 +162,9 @@ export type SyncPlaces = { places: PlaceItem[]; available: boolean };
 export async function loadPlacesForSync(userId: string): Promise<SyncPlaces> {
   try {
     const connection = await getNotionPlaceConnection(userId);
-    return { places: await listPlaces(connection), available: true };
+    const [places, links] = await Promise.all([listPlaces(connection), loadWorkPlaceLinks(userId)]);
+    // 勤務場所の名前が場所DBの名前と違っても、結び付けた場所の住所で引けるようにする（issue #1382）。
+    return { places: withWorkPlaceLinks(places, links), available: true };
   } catch (error) {
     console.error("[dayspan] work sync places failed:", error instanceof Error ? error.message : error);
     return { places: [], available: false };
