@@ -21,10 +21,16 @@ export function applyGarbageLeaveTime(
   timeZone: string,
 ): ReminderItem[] {
   return items.map((item) => {
-    if (item.source !== "garbage" || item.hasTime) return item;
+    if (item.source !== "garbage") return item;
 
-    const fallback = zonedTime(item.date, GARBAGE_FALLBACK_MINUTES, timeZone);
-    const departure = departures.get(item.date);
+    // 時刻ありの枠（myroomの収集時刻）は参考値＝上限として持ち、出発が早い日だけ前倒しする（issue #1409）。
+    const dateKey = item.hasTime ? zonedDateKey(new Date(item.date), timeZone) : item.date;
+    const departure = departures.get(dateKey);
+    if (item.hasTime && !departure) return item;
+
+    const fallback = item.hasTime
+      ? new Date(item.date)
+      : zonedTime(item.date, GARBAGE_FALLBACK_MINUTES, timeZone);
     const leave = departure
       ? new Date(Math.min(departure.getTime() - GARBAGE_LEAD_MINUTES * 60_000, fallback.getTime()))
       : fallback;

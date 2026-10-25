@@ -39,12 +39,20 @@ test("遅い出発でも8:30が上限", () => {
   assert.equal(r.date, "2026-10-08T08:30:00+09:00");
 });
 
-test("時刻ありの枠・ゴミ以外は触らない", () => {
+test("出発が無い日の時刻ありの枠・ゴミ以外は触らない", () => {
   const timed = item({ hasTime: true, date: "2026-10-08T07:00:00+09:00" });
   const other = item({ source: "reminder" });
   const out = applyGarbageLeaveTime([timed, other], new Map(), TZ);
   assert.equal(out[0], timed);
   assert.equal(out[1], other);
+});
+
+test("時刻ありの枠は出発−15分が早ければ前倒しし、遅ければ元の時刻のまま", () => {
+  const timed = item({ hasTime: true, date: "2026-10-08T08:30:00+09:00" });
+  const early = new Map([["2026-10-08", new Date("2026-10-07T21:30:00Z")]]); // 6:30 JST
+  assert.equal(applyGarbageLeaveTime([timed], early, TZ)[0].date, "2026-10-08T06:15:00+09:00");
+  const late = new Map([["2026-10-08", new Date("2026-10-08T02:00:00Z")]]); // 11:00 JST
+  assert.equal(applyGarbageLeaveTime([timed], late, TZ)[0].date, "2026-10-08T08:30:00+09:00");
 });
 
 import { homeDepartures, isSamePlaceText } from "@/lib/garbage-time";
