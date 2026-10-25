@@ -219,10 +219,16 @@ export async function runTravelCreate(
     if (!plan) return { kind: "succeeded", result: stored, replayed: true };
     // Google予定の作成を試みた後の失敗（作成の成否・ID保存の成否が不明）で、移動にイベントIDが無いときは
     // 再実行すると createEvent が重複した予定を作る。自動で書き出し直さず失敗のまま返す。
-    if (stored.googleExport.createUncertain && !plan.googleEventId) {
-      return { kind: "succeeded", result: stored, replayed: true };
+    const failed = stored.googleExport;
+    let target = plan;
+    if (failed.status === "failed" && failed.createUncertain && !plan.googleEventId) {
+      // 作成済みのIDが分かっていれば控え直す（updateになるので重複しない）。分からなければ失敗のまま返す。
+      if (!failed.createdEventId || !failed.createdCalendarId) {
+        return { kind: "succeeded", result: stored, replayed: true };
+      }
+      target = { ...plan, googleEventId: failed.createdEventId, googleCalendarId: failed.createdCalendarId };
     }
-    const googleExport = await gateway.export(userId, plan);
+    const googleExport = await gateway.export(userId, target);
     const result: TravelCreateResult = { ...stored, googleExport };
     await store.update(await recordId(store, identity), { result: result as object });
     return { kind: "succeeded", result, replayed: true };

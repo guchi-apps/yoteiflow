@@ -151,7 +151,7 @@ test("同じキーの再送は二重に作らず、書き出し失敗なら書�
 
 test("予定作成を試みた後の書き出し失敗（作成の成否が不明）は、同じキーの再送で書き出し直さない", async () => {
   const { gateway, run } = setup();
-  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true, createdEventId: "ev-1" };
+  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true };
   await run("key-1");
   gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-2" };
   const second = await run("key-1");
@@ -161,6 +161,16 @@ test("予定作成を試みた後の書き出し失敗（作成の成否が不�
     assert.equal(second.replayed, true);
     assert.equal(second.result.googleExport.status, "failed");
   }
+});
+
+test("作成済みのIDが分かっている失敗は、そのIDで控え直す（新規作成にしない）", async () => {
+  const { gateway, run } = setup();
+  gateway.exportResult = { status: "failed", message: "db down", createUncertain: true, createdEventId: "ev-1", createdCalendarId: "cal" };
+  await run("key-1");
+  gateway.exportResult = { status: "exported", calendarId: "cal", eventId: "ev-1" };
+  const second = await run("key-1");
+  assert.equal(gateway.exports, 2);
+  assert.ok(second.kind === "succeeded");
 });
 
 test("同時の同一要求は1件だけ作る", async () => {

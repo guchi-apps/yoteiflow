@@ -30,6 +30,7 @@ export type TravelExportResult =
        */
       createUncertain?: true;
       createdEventId?: string;
+      createdCalendarId?: string;
     };
 
 /**
@@ -107,7 +108,7 @@ export async function exportTravelToGoogle(
       status: "failed",
       message: error instanceof Error ? error.message : String(error),
       ...(createAttempted ? { createUncertain: true as const } : {}),
-      ...(createdEventId ? { createdEventId } : {}),
+      ...(createdEventId ? { createdEventId, createdCalendarId: calendarId } : {}),
     };
   }
 }
