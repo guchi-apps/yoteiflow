@@ -279,8 +279,10 @@ export function useCalendarRangeData({
       setState((prev) => ({
         key: targetKey,
         data: mergeRangeResponse(prev.data, data, { stale: responseStale }).data,
-        // 保存済みが返ったときは、同じ期間で前に最新を取れた時点のまま据え置く。
-        syncedAt: responseStale ? (prev.key === targetKey ? prev.syncedAt : 0) : requestedAt,
+        // 保存済み・取得元の一部失敗が返ったときは、同じ期間で前に最新を取れた時点のまま
+        // 据え置く。一部失敗の応答には保存した予定が入っていないことがあり、そこで進めると
+        // 楽観的に重ねた予定が外れて消える（issue #1377 計画レビュー）。
+        syncedAt: uncertain ? (prev.key === targetKey ? prev.syncedAt : 0) : requestedAt,
         covered: coveredDays(targetView, targetAnchorKey),
       }));
       setLoadError(null);
