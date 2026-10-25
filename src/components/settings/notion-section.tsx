@@ -699,6 +699,23 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                       </Button>
                     </div>
                   )}
+                  {!state.placePropertyMap?.stationMinutes && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        最寄り駅までの時間（数値）のプロパティがありません。足すと、予定から電車の移動を
+                        追加するとき、駅からの徒歩ぶん検索時刻をずらせます。無いままでも登録はできます。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => addPlaceProperty("stationMinutes", "最寄り駅までの時間")}
+                      >
+                        <Plus className="size-4" />
+                        最寄り駅までの時間プロパティを追加
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
               <ul className="flex flex-wrap gap-2">

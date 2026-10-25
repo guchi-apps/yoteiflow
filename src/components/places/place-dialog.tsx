@@ -14,6 +14,7 @@ import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { isStationPlace } from "@/lib/place-tags";
 import { formatCoordinates, type LatLng } from "@/lib/coordinates";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -24,6 +25,7 @@ export type PlaceCapabilities = {
   tags: boolean;
   coordinates: boolean;
   station: boolean;
+  stationMinutes: boolean;
 };
 
 /**
@@ -62,7 +64,10 @@ export function PlaceDialog({
   const [name, setName] = useState(place.name);
   const [address, setAddress] = useState(place.address ?? "");
   const [station, setStation] = useState(place.station ?? "");
+  const [stationMinutes, setStationMinutes] = useState(place.stationMinutes == null ? "" : String(place.stationMinutes));
   const [tags, setTags] = useState<string[]>(place.tags);
+  // 場所そのものが駅のときは最寄り駅を持たない。欄を隠し、保存でも触らない（issue #1370）。
+  const isStation = isStationPlace(tags);
   const [coordinates, setCoordinates] = useState<LatLng | null>(place.coordinates);
   const [mapOpen, setMapOpen] = useState(false);
   /**
@@ -145,6 +150,12 @@ export function PlaceDialog({
       return;
     }
 
+    const minutes = stationMinutes.trim() === "" ? null : Number(stationMinutes);
+    if (minutes !== null && (!Number.isInteger(minutes) || minutes < 0 || minutes > 180)) {
+      setError("駅までの徒歩は0〜180分の整数で入力してください。");
+      return;
+    }
+
     await send(
       {
         method: "PATCH",
@@ -152,7 +163,8 @@ export function PlaceDialog({
         body: JSON.stringify({
           name: trimmed,
           ...(capabilities.address ? { address: address.trim() || null } : {}),
-          ...(capabilities.station ? { station: station.trim() || null } : {}),
+          ...(capabilities.station && !isStation ? { station: station.trim() || null } : {}),
+          ...(capabilities.stationMinutes && !isStation ? { stationMinutes: minutes } : {}),
           ...(capabilities.tags ? { tags } : {}),
           ...(capabilities.coordinates && (coordinatesTouched || place.coordinates)
             ? { coordinates: coordinates ? formatCoordinates(coordinates) : null }
@@ -292,7 +304,7 @@ export function PlaceDialog({
             駅名はそこへ混ぜると地図で選び直したときに一緒に入れ替わるように読める。
             実際には駅名だけが Yahoo!乗換案内 の発着地になり、地図とは関係が無い。
           */}
-          {capabilities.station && (
+          {capabilities.station && !isStation && (
             <div className="flex flex-col gap-1">
               <Input
                 label="最寄り駅"
@@ -327,6 +339,24 @@ export function PlaceDialog({
               )}
               <p className="type-body-small text-on-surface-variant">
                 「梅田」と入れると「梅田駅」で保存します。入れておくと、電車の移動でYahoo!乗換案内をこの駅から探します。空のときは地点（無ければ住所）で探します。
+              </p>
+            </div>
+          )}
+
+          {capabilities.station && capabilities.stationMinutes && !isStation && (
+            <div className="flex flex-col gap-1">
+              <Input
+                label="最寄り駅まで徒歩（分）"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={180}
+                value={stationMinutes}
+                onChange={(event) => setStationMinutes(event.target.value)}
+                onClear={() => setStationMinutes("")}
+              />
+              <p className="type-body-small text-on-surface-variant">
+                予定の移動を調べるとき、予定の場所が最寄り駅から離れているぶん、到着・出発の検索時刻をずらします。最寄り駅が空のときは使いません。
               </p>
             </div>
           )}

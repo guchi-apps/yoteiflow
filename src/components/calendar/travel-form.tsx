@@ -20,6 +20,7 @@ import { travelTitle } from "@/lib/travel-title";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
+import { stationWalkMinutes } from "@/lib/station-walk";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import {
   suggestTransitSearch,
@@ -299,6 +300,8 @@ export function TravelForm({
   })();
   const [transitContext, setTransitContext] = useState<TransitContext | "loading" | "error" | null>(null);
   const formatClock = (iso: string) => isoToLocalInput(iso, timeZone).slice(11, 16).replace(/^0/, "");
+  // 予定の場所の最寄り駅からの徒歩。余裕分には含めず、提案のたびに場所DBから引く（issue #1370）
+  const walkMinutes = stationWalkMinutes(suggestTarget?.location, placeCatalog.places);
   const buildSuggestion = (
     nextPurpose: TravelSearchPurpose,
     nextMargin: number,
@@ -313,6 +316,7 @@ export function TravelForm({
           travels: context?.travels ?? [],
           home: draft.home ?? null,
           excludeTravelId: editing?.id ?? null,
+          walkMinutes,
           formatTime: formatClock,
         })
       : null;
@@ -405,6 +409,7 @@ export function TravelForm({
           target: suggestTarget,
           purpose: suggestion.purpose,
           marginMinutes: marginMinutes ?? 0,
+          walkMinutes,
           departAt: localInputToIso(departAt, timeZone),
           arriveAt: localInputToIso(arriveAt, timeZone),
           nextEvent: suggestion.nextEvent,
@@ -1036,8 +1041,8 @@ export function TravelForm({
             {suggestion?.at && (
               <p className="type-body-small text-on-surface-variant">
                 {purpose === "BEFORE_EVENT"
-                  ? `おすすめの検索: ${formatClock(suggestion.at)} 到着（開始 ${formatClock(suggestTarget.start)} の${marginMinutes}分前）`
-                  : `おすすめの検索: ${formatClock(suggestion.at)} 出発（終了 ${formatClock(suggestTarget.end)}${marginMinutes ? ` の${marginMinutes}分後` : ""}）`}
+                  ? `おすすめの検索: ${formatClock(suggestion.at)} 到着（開始 ${formatClock(suggestTarget.start)} の${marginMinutes}分前${suggestion.walkMinutes ? `＋駅から徒歩${suggestion.walkMinutes}分` : ""}）`
+                  : `おすすめの検索: ${formatClock(suggestion.at)} 出発（終了 ${formatClock(suggestTarget.end)}${marginMinutes ? ` の${marginMinutes}分後` : ""}${suggestion.walkMinutes ? `＋駅まで徒歩${suggestion.walkMinutes}分` : ""}）`}
               </p>
             )}
             {suggestion?.nextEvent && (
