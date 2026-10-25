@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { ChevronRight, MapPin, Plus, Search, Tags } from "lucide-react";
+import { Check, ChevronRight, MapPin, Plus, Search, Tags } from "lucide-react";
 
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -12,11 +12,12 @@ import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh"
 import { PlaceDialog, type PlaceCapabilities } from "@/components/places/place-dialog";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TagChip } from "@/components/tags/tag-chip";
-import { tagColorOf } from "@/components/tags/tag-color";
+import { tagColorOf, tagSwatchClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { WIDE_TWO_COLUMN_ROW_CLASS } from "@/components/ui/wide-section";
 import { formatCoordinates } from "@/lib/coordinates";
+import { filterPlaces } from "@/lib/place-filter";
 import { cn } from "@/lib/utils";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -54,16 +55,26 @@ export function PlacesScreen({
   const [editing, setEditing] = useState<PlaceItem | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return places;
-    return places.filter((place) =>
-      [place.name, place.address ?? "", place.station ?? "", ...place.tags]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle),
+  // 絞り込みに使うタグ。Notionの選択肢の並びを先に、選択肢に無いが場所に付いているものを後に並べる。
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const filterTags = useMemo(() => {
+    const names = tagOptions.map((option) => option.name);
+    const extra = new Set<string>();
+    for (const place of places) {
+      for (const tag of place.tags) if (!names.includes(tag)) extra.add(tag);
+    }
+    return [...names, ...extra];
+  }, [places, tagOptions]);
+
+  const filtered = useMemo(
+    () => filterPlaces(places, query, selectedTags),
+    [places, query, selectedTags],
+  );
+
+  const toggleTag = (tag: string) =>
+    setSelectedTags((current) =>
+      current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag],
     );
-  }, [places, query]);
 
   const refresh = () => {
     setEditing(null);
@@ -140,6 +151,56 @@ export function PlacesScreen({
           </label>
         )}
 
+        {places.length > 0 && filterTags.length > 0 && (
+          // 複数選ぶと「いずれかのタグが付いた場所」を残す。狭い画面は横に送り、広い画面は折り返す。
+          // 選択はチェック・枠・塗りの3つで示す（色だけに意味を持たせない）。
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">
+              {filterTags.map((tag) => {
+                const on = selectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleTag(tag)}
+                    className={cn(
+                      "type-label-large inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors",
+                      on
+                        ? "border-primary bg-secondary-container font-semibold text-on-secondary-container"
+                        : "border-outline-variant text-on-surface hover:bg-on-surface/8",
+                    )}
+                  >
+                    {on ? (
+                      <Check className="size-3.5 text-primary" />
+                    ) : (
+                      <span
+                        className={cn("size-2 rounded-full", tagSwatchClass(tagColorOf(tagOptions, tag)))}
+                      />
+                    )}
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedTags.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedTags([])}
+                className="type-label-large shrink-0 px-1 text-primary"
+              >
+                解除
+              </button>
+            )}
+          </div>
+        )}
+
+        {places.length > 0 && selectedTags.length > 0 && (
+          <p className="type-body-small text-on-surface-variant">
+            {selectedTags.length}つのタグで絞り込み中 ・ 該当{filtered.length}件 / 全{places.length}件
+          </p>
+        )}
+
         {places.length === 0 ? (
           <p className="type-body-medium text-on-surface-variant">
             {loadError
@@ -148,7 +209,7 @@ export function PlacesScreen({
           </p>
         ) : filtered.length === 0 ? (
           <p className="type-body-medium text-on-surface-variant">
-            「{query.trim()}」に当たる場所はありません。
+            {query.trim() ? `「${query.trim()}」` : "選んだタグ"}に当たる場所はありません。
           </p>
         ) : (
           // 広い画面では行を2列に並べる（issue #636）。1行が画面幅いっぱいに伸びても名前と住所の
