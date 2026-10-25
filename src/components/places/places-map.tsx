@@ -5,6 +5,7 @@ import { useOffline } from "next/offline";
 import { ExternalLink, Pencil, X } from "lucide-react";
 
 import { TileMap, type MapMarker } from "@/components/calendar/tile-map";
+import { useCurrentLocation } from "@/components/calendar/use-current-location";
 import { Button } from "@/components/ui/button";
 import { countInView, fitBounds, type LatLng } from "@/lib/coordinates";
 import { mapLink } from "@/lib/map-link";
@@ -55,6 +56,23 @@ export function PlacesMap({
     () => located.map((place) => ({ id: place.id, position: place.coordinates, label: place.name })),
     [located],
   );
+
+  // 現在地は「現在地へ」を押したときにだけ取得する（開いた時点で許可を求めない）。
+  const { location: currentLocation, locating, locate } = useCurrentLocation();
+  const [locateNotice, setLocateNotice] = useState<string | null>(null);
+  const handleLocate = () => {
+    setLocateNotice(null);
+    locate({
+      onFix: (position) =>
+        setView((current) => ({ center: position, zoom: Math.max(current.zoom, FOCUS_ZOOM) })),
+      onError: (failure) =>
+        setLocateNotice(
+          failure === "unsupported"
+            ? "この端末では現在地を取得できません。"
+            : "現在地を取得できませんでした。位置情報の許可を確認してください。",
+        ),
+    });
+  };
 
   const [view, setView] = useState({ center: FALLBACK_CENTER, zoom: FALLBACK_ZOOM });
   const sizeRef = useRef<{ width: number; height: number } | null>(null);
@@ -141,6 +159,9 @@ export function PlacesMap({
           zoom={view.zoom}
           onCenterChange={(center) => setView((current) => ({ ...current, center }))}
           onZoomChange={(zoom) => setView((current) => ({ ...current, zoom }))}
+          onLocate={handleLocate}
+          locating={locating}
+          currentLocation={currentLocation}
           showCenterPin={false}
           markers={markers}
           selectedMarkerId={selectedId}
@@ -157,6 +178,8 @@ export function PlacesMap({
 
         {selected && <div className="absolute inset-x-2 bottom-6 z-10 lg:hidden">{detailBody(true)}</div>}
       </div>
+
+      {locateNotice && <p className="type-body-small text-on-surface-variant">{locateNotice}</p>}
 
       {missing > 0 && (
         <p className="type-body-small text-on-surface-variant">

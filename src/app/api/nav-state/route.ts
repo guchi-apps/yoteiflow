@@ -23,6 +23,7 @@ export async function GET() {
 
   return NextResponse.json({
     activityRunning: running !== null,
+    running: running ? { title: running.title, startedAt: running.startedAt } : null,
     timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
   });
 }

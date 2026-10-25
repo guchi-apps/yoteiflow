@@ -40,6 +40,7 @@ model User {
   workGenerated        WorkGenerated[]
   workPlaceDefaults    WorkPlaceDefault[]
   workRecordSettings   WorkRecordSetting[]
+  workPlaceLinks       WorkPlaceLink[]
   taskEventLinks       TaskEventLink[]
   taskBringItems       TaskBringItem[]
   eventOutcomes        EventOutcome[]
@@ -1075,4 +1076,27 @@ model GoogleConnectIntent {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// 勤務場所ごとの「正式名称の場所」と省略名（issue #1382）。勤務場所の名前が場所DBの名前と違っても、
+/// 場所DBの既存の場所（placeId）の住所・座標を使えるようにする。場所DBへは書かない。
+/// WorkPlaceDefault の行削除・部分更新と独立させるため別テーブルにしている。
+model WorkPlaceLink {
+  id     String @id @default(cuid())
+  userId String
+
+  /// 勤務場所の名前（勤務記録DBの選択肢）。
+  workPlace String
+  /// 場所DB（Notion）のページID。見つからなければ未結び付けとして扱う。
+  placeId   String?
+  /// カレンダーの勤務チップの省略名。2文字用・1文字用。
+  shortLabel2 String?
+  shortLabel1 String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workPlace])
 }

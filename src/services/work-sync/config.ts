@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import type { TrainInput } from "@/lib/work-sync/train";
 import { readStoredOverride } from "@/lib/work-sync/override";
 import type {
@@ -117,4 +118,15 @@ export async function saveTrain(
     }
     return { id: savedId };
   });
+}
+
+/** 勤務場所ごとの正式名称の場所と省略名（issue #1382）。 */
+export async function loadWorkPlaceLinks(userId: string): Promise<WorkPlaceLinkRow[]> {
+  const rows = await db.workPlaceLink.findMany({ where: { userId }, orderBy: { workPlace: "asc" } });
+  return rows.map((row) => ({
+    workPlace: row.workPlace,
+    placeId: row.placeId,
+    shortLabel2: row.shortLabel2,
+    shortLabel1: row.shortLabel1,
+  }));
 }
