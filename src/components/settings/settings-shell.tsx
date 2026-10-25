@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { SettingsFrame } from "@/components/nav/settings-frame";
 import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function SettingsShell({
   children: ReactNode;
 }) {
   return (
+    <SettingsFrame>
     <div className="flex min-h-app flex-col">
       <header className="sticky top-[env(safe-area-inset-top,0px)] z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <Button variant="ghost" size="sm" asChild>
@@ -60,12 +62,12 @@ export function SettingsShell({
       <div
         className={cn(
           "mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6",
-          wide && "lg:max-w-5xl",
-          columns && "lg:grid lg:grid-cols-2 lg:content-start lg:items-start",
+          wide && "@3xl/main:max-w-5xl",
+          columns && "@3xl/main:grid @3xl/main:grid-cols-2 @3xl/main:content-start @3xl/main:items-start",
         )}
       >
         {description && (
-          <p className={cn("type-body-medium text-on-surface-variant", columns && "lg:col-span-2")}>
+          <p className={cn("type-body-medium text-on-surface-variant", columns && "@3xl/main:col-span-2")}>
             {description}
           </p>
         )}
@@ -75,5 +77,6 @@ export function SettingsShell({
       {/* スマホ幅では下部ナビを下端に固定する（issue #1348）。本文が短くても flex-1 で下端へ押される。 */}
       <SettingsBottomNav />
     </div>
+    </SettingsFrame>
   );
 }

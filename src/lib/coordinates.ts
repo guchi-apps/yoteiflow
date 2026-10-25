@@ -104,6 +104,19 @@ export function unproject(pixel: { x: number; y: number }, zoom: number): LatLng
   };
 }
 
+/** 赤道上の地球1周（m）。Webメルカトルの縮尺の基準。 */
+const EARTH_CIRCUMFERENCE_METERS = 40_075_016.686;
+
+/**
+ * 実距離（m）→ そのズーム・緯度での画面上のピクセル数。現在地の精度円を描くのに使う。
+ * Webメルカトルは高緯度ほど引き伸ばされるため、緯度のcosで割り戻す。
+ */
+export function metersToPixels(meters: number, lat: number, zoom: number): number {
+  const cos = Math.cos((clampLatitude(lat) * Math.PI) / 180);
+  const metersPerPixel = (EARTH_CIRCUMFERENCE_METERS * cos) / (TILE_SIZE * 2 ** zoom);
+  return meters / metersPerPixel;
+}
+
 /** 2点がほぼ同じ地点か。住所を調べ直すかどうかの判定に使う（既定はおよそ1m）。 */
 export function isSamePoint(a: LatLng, b: LatLng, tolerance = 0.00001): boolean {
   return Math.abs(a.lat - b.lat) < tolerance && Math.abs(a.lng - b.lng) < tolerance;

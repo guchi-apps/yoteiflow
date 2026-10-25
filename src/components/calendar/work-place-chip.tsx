@@ -66,6 +66,13 @@ export function WorkPlaceChip({
 }) {
   const label = workPlaceLabel(record);
   if (!label) return null;
+  // 省略名は通常の勤務場所だけ（出張・年休・休みは対象外）。
+  const option = !record.businessTrip && !record.annualLeave && !record.companyHoliday
+    ? options.find((item) => item.name === record.place)
+    : undefined;
+  const two = option?.shortLabel2?.trim() || null;
+  const one = option?.shortLabel1?.trim() || null;
+  const short = two || one ? { two, one } : null;
 
   return (
     <span
@@ -102,13 +109,35 @@ export function WorkPlaceChip({
               : "勤務場所"}{" "}
         {label}
       </span>
-      <span
-        aria-hidden
-        // 1文字（8px）も入らない幅（余白4px＋文字8px）では名前ごと出さず、色だけを残す。
-        className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[12px]:hidden"
-      >
-        {label}
-      </span>
+      {short ? (
+        // 省略名を設定している通常の勤務場所（issue #1382）。幅が31px以上なら名前、20〜31pxなら2文字、
+        // 12〜20pxなら1文字、それより狭ければ色だけ。1文字用・2文字用が未設定のときは名前で代用する。
+        <>
+          <span aria-hidden className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[30px]:hidden">
+            {label}
+          </span>
+          <span
+            aria-hidden
+            className="hidden h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[30px]:inline @max-[19px]:hidden"
+          >
+            {short.two ?? short.one ?? label}
+          </span>
+          <span
+            aria-hidden
+            className="hidden h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[19px]:inline @max-[12px]:hidden"
+          >
+            {short.one ?? short.two ?? label}
+          </span>
+        </>
+      ) : (
+        <span
+          aria-hidden
+          // 1文字（8px）も入らない幅（余白4px＋文字8px）では名前ごと出さず、色だけを残す。
+          className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[12px]:hidden"
+        >
+          {label}
+        </span>
+      )}
     </span>
   );
 }

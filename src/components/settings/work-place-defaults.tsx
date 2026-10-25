@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import { fromTime, toTime } from "@/lib/work-sync/form";
+
+import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -55,6 +58,8 @@ export function WorkPlaceDefaults({
   remotePlaces,
   defaults: initialDefaults,
   routes: initialRoutes,
+  links: initialLinks,
+  linkablePlaces,
   home,
   commonStart,
   commonEnd,
@@ -64,12 +69,15 @@ export function WorkPlaceDefaults({
   remotePlaces: string[];
   defaults: WorkPlaceDefaultRow[];
   routes: WorkRouteRow[];
+  links: WorkPlaceLinkRow[];
+  linkablePlaces: LinkablePlace[];
   home: string | null;
   commonStart: number;
   commonEnd: number;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
   const [routes, setRoutes] = useState(initialRoutes);
+  const [links, setLinks] = useState(initialLinks);
   const [extra, setExtra] = useState<Entry[]>([]);
   const [newTrip, setNewTrip] = useState("");
 
@@ -117,6 +125,9 @@ export function WorkPlaceDefaults({
           entry={entry}
           remote={!entry.isTrip && remotePlaces.includes(entry.key)}
           home={home}
+          linkablePlaces={linkablePlaces}
+          link={links.find((item) => item.workPlace === entry.key) ?? null}
+          onSavedLinks={setLinks}
           row={defaults.find((row) => row.key === entry.key && row.isTrip === entry.isTrip) ?? null}
           out={home ? routes.find((r) => r.origin === home && r.destination === entry.key) ?? null : null}
           back={home ? routes.find((r) => r.origin === entry.key && r.destination === home) ?? null : null}
@@ -159,6 +170,9 @@ function PlaceCard({
   entry,
   remote,
   home,
+  linkablePlaces,
+  link,
+  onSavedLinks,
   row,
   out,
   back,
@@ -170,6 +184,9 @@ function PlaceCard({
   entry: Entry;
   remote: boolean;
   home: string | null;
+  linkablePlaces: LinkablePlace[];
+  link: WorkPlaceLinkRow | null;
+  onSavedLinks: (links: WorkPlaceLinkRow[]) => void;
   row: WorkPlaceDefaultRow | null;
   out: WorkRouteRow | null;
   back: WorkRouteRow | null;
@@ -368,6 +385,15 @@ function PlaceCard({
             ))}
           </div>
         </>
+      )}
+
+      {!entry.isTrip && (
+        <WorkPlaceLinkFields
+          workPlace={entry.key}
+          places={linkablePlaces}
+          link={link}
+          onSaved={onSavedLinks}
+        />
       )}
 
       <div className="flex items-center gap-3">

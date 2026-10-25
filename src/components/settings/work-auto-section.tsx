@@ -14,6 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
+import type { LinkablePlace } from "./work-place-link-fields";
 import {
   WorkPlaceDefaults,
   type WorkPlaceDefaultRow,
@@ -43,6 +45,8 @@ export function WorkAutoSection({
   settings,
   routes,
   placeDefaults,
+  links,
+  linkablePlaces,
   trains,
   tripPlaces,
   calendars,
@@ -51,6 +55,10 @@ export function WorkAutoSection({
   settings: WorkAutoSettings;
   routes: WorkRouteRow[];
   placeDefaults: WorkPlaceDefaultRow[];
+  /** 勤務場所ごとの正式名称の場所と省略名（issue #1382）。 */
+  links: WorkPlaceLinkRow[];
+  /** 正式名称に選べる場所DBの場所。読めなければ空。 */
+  linkablePlaces: LinkablePlace[];
   trains: WorkTrainItem[];
   /** 出張扱いの勤務場所。既定値の一覧では出張先として並べる。 */
   tripPlaces: string[];
@@ -208,6 +216,8 @@ export function WorkAutoSection({
           remotePlaces={value.remotePlaces}
           defaults={placeDefaults}
           routes={routes}
+          links={links}
+          linkablePlaces={linkablePlaces}
           home={home}
           commonStart={value.startMinutes}
           commonEnd={value.endMinutes}

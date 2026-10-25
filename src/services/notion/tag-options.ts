@@ -57,6 +57,9 @@ export type TagOption = {
   id: string;
   name: string;
   color: TagColor;
+  /** 勤務場所の省略名（2文字用・1文字用。DaySpanのDBの値。issue #1382）。 */
+  shortLabel2?: string | null;
+  shortLabel1?: string | null;
 };
 
 /**

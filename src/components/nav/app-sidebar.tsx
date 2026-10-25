@@ -29,7 +29,8 @@ export function AppSidebar({
   activityRunning,
   running,
 }: {
-  current: NavKey;
+  /** どの5画面でもない画面（睡眠・日付・場所・設定）では null。 */
+  current: NavKey | null;
   activityRunning: boolean;
   /** 下端に出す記録中の1件。記録画面ではカードが本文にあるため null を渡す。 */
   running: RunningActivitySummary | null;
@@ -49,7 +50,7 @@ export function AppSidebar({
         <Wordmark size={24} compact className="text-base" />
       </div>
       <DrawerNavContent
-        current={current}
+        current={current ?? undefined}
         activityRunning={activityRunning}
         workTodoCount={workTodoCount}
         footer={<SidebarRunningCard running={running} />}
