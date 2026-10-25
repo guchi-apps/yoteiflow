@@ -26,8 +26,6 @@ export default async function GoogleSettingsPage({
     <SettingsShell
       title="Google Calendar"
       description="カレンダーごとに、表示するか・書き込みに使うかと並び順を選びます。ログインとは別に、カレンダーの読み書き権限を接続します。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <GoogleCalendarSection result={result} connectResult={google} />
       <HolidayCalendarSection result={result} holidayCalendarId={holidayCalendarId} />

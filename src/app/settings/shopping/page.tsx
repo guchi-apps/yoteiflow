@@ -36,8 +36,6 @@ export default async function ShoppingSettingsPage() {
     <SettingsShell
       title="買い物リスト"
       description="買い物のカテゴリを色つきで登録しておけます。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <TagSection state={state} />
     </SettingsShell>

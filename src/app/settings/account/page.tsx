@@ -13,8 +13,6 @@ export default async function AccountSettingsPage() {
     <SettingsShell
       title="アカウント"
       description="YoteiFlowへのログインに使っているGoogleアカウントです。"
-      backHref="/settings"
-      backLabel="設定"
     >
       <AccountSection email={user.email} name={user.name} />
     </SettingsShell>
