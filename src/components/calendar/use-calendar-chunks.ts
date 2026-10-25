@@ -21,7 +21,12 @@ import {
   taskOccurrences,
   type CalendarDateUtils,
 } from "./item-layout";
-import { mergeStaleItems } from "./range-data-merge";
+import {
+  hasGoogleFailure,
+  mergeCalendars,
+  mergeFailedItems,
+  mergeStaleItems,
+} from "./range-data-merge";
 
 /**
  * 1ヶ月ぶんの保持データ。
@@ -58,10 +63,10 @@ export const FRESH_REQUEST_HEADER = "X-Dayspan-Fresh";
 const MIN_REFRESH_SECONDS = 30;
 
 /**
- * 保存済みの応答で足し合わせたあと、確かな応答で置き換えるために取り直すまでの待ち
- * （issue #1408。日・3日・週表示の `UNCERTAIN_RETRY_MS` と同じ値）。
+ * 保存済み・取得元の一部失敗の応答で足し合わせたあと、確かな応答で置き換えるために取り直すまでの
+ * 待ち（issue #1408・#1425。日・3日・週表示の `UNCERTAIN_RETRY_MS` と同じ値）。
  */
-const STALE_RETRY_MS = 30_000;
+const UNCERTAIN_RETRY_MS = 30_000;
 
 /** 日時文字列（YYYY-MM-DD または ISO 8601）の先頭は必ず YYYY-MM。 */
 function monthKeysBetween(start: string, end: string): string[] {
@@ -384,9 +389,9 @@ export function useCalendarChunks({
     };
   }, [seedPromise, seedMonths, seedEnabled, utils]);
 
-  // 保存済みの応答で足し合わせた月を、少し後に1回だけ取り直す（issue #1408）。取り直しも
-  // 保存済みだったとき（通信の失敗が続くとき）に30秒ごとの要求を出し続けないよう、確かな応答が
-  // 届くまでは同じ月を2回目には積まない。
+  // 保存済み・取得元の一部失敗の応答で足し合わせた月を、少し後に1回だけ取り直す（issue #1408・
+  // #1425）。取り直しも確かでなかったとき（通信・外部APIの失敗が続くとき）に30秒ごとの要求を
+  // 出し続けないよう、確かな応答が届くまでは同じ月を2回目には積まない。
   const staleRetried = useRef(new Set<string>());
   // 次のタイマーで取り直す月。取り直し済み（staleRetried）とは分け、前に取り直した月を巻き込まない。
   const staleRetryPending = useRef(new Set<string>());
@@ -400,8 +405,8 @@ export function useCalendarChunks({
     [],
   );
 
-  const scheduleStaleRetry = useCallback((months: string[], responseStale: boolean) => {
-    if (!responseStale) {
+  const scheduleUncertainRetry = useCallback((months: string[], uncertain: boolean) => {
+    if (!uncertain) {
       months.forEach((month) => staleRetried.current.delete(month));
       return;
     }
@@ -421,7 +426,7 @@ export function useCalendarChunks({
       const months = [...staleRetryPending.current];
       staleRetryPending.current.clear();
       invalidateRef.current(months);
-    }, STALE_RETRY_MS);
+    }, UNCERTAIN_RETRY_MS);
   }, []);
 
   const fetchMonths = useCallback(async (months: string[]) => {
@@ -450,6 +455,8 @@ export function useCalendarChunks({
       setStale(responseStale);
 
       const data = (await response.json()) as CalendarLoadResult;
+      // 保存済み・取得元の一部失敗の応答は、表示中の項目を消さずに足し合わせる（issue #1425）。
+      const uncertain = responseStale || data.errors.length > 0;
       const fetched = splitByMonth(
         {
           ...withWorkRecords(data),
@@ -469,23 +476,34 @@ export function useCalendarChunks({
           next.set(month, {
             // 保存済みの応答は、保存したばかりの予定・移動が入っていない古い内容のことがある。
             // 置き換えると表示中の項目が消え、次の取り直しで戻る（点滅して見える・issue #1408）。
-            // 表示中の項目を残して足し合わせ、少し後に取り直して確かな応答で置き換える。
-            ...(responseStale && existing ? mergeStaleItems(existing, chunk) : chunk),
+            // 取得元の一部失敗の応答も同じで、Notionが1つでも失敗するとサーバーはタスク・
+            // 日付リマインド・勤務場所をまとめて空で返す（issue #1425）。どちらも表示中の項目を
+            // 残して足し合わせ、少し後に取り直して確かな応答で置き換える（日・3日表示と同じ規則）。
+            ...(existing
+              ? responseStale
+                ? mergeStaleItems(existing, chunk)
+                : mergeFailedItems(existing, chunk, data.errors)
+              : chunk),
             fetchedAt: fetchedAtFor(month, now),
-            // 保存済みが返ったときは、前に最新を取れた時点のまま据え置く。
-            syncedAt: responseStale ? (existing?.syncedAt ?? 0) : requestedAt,
+            // 確かでない応答が返ったときは、前に最新を取れた時点のまま据え置く。
+            syncedAt: uncertain ? (existing?.syncedAt ?? 0) : requestedAt,
           });
         }
         return pruneToWindow(next, windowRef.current);
       });
-      setMeta({
-        calendars: data.calendars,
+      setMeta((prev) => ({
+        // 保存済みは表示中を、Googleの一部失敗は応答を優先して保存先の候補を残す。
+        calendars: responseStale
+          ? mergeCalendars(prev.calendars, data.calendars)
+          : hasGoogleFailure(data.errors)
+            ? mergeCalendars(data.calendars, prev.calendars)
+            : data.calendars,
         notionReady: data.notionReady,
         reminderReady: data.reminderReady,
         errors: data.errors,
-      });
+      }));
       setLoadError(null);
-      scheduleStaleRetry(months, responseStale);
+      scheduleUncertainRetry(months, uncertain);
     } catch {
       const fetchedAt = Date.now();
 
@@ -522,7 +540,7 @@ export function useCalendarChunks({
       months.forEach((month) => inFlight.current.delete(month));
       onLoadingChangeRef.current(inFlight.current.size > 0);
     }
-  }, [utils, scheduleStaleRetry]);
+  }, [utils, scheduleUncertainRetry]);
 
   // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
   // 「足りない月なし」で止まる。種（dataPromise）の解決を待つのは、まだ判定していない

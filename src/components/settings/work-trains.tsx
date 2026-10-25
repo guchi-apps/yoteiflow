@@ -21,11 +21,14 @@ export function WorkTrains({
   trains: initial,
   home,
   place,
+  canAdd,
 }: {
   trains: WorkTrainItem[];
   home: string | null;
   /** この電車の一覧が属する勤務先・出張先。往路は自宅 → place、復路は place → 自宅。 */
   place: string;
+  /** 追加フォームを出すか。交通手段が公共交通のときだけ true（登録済みの一覧は常に出す・issue #1427）。 */
+  canAdd: boolean;
 }) {
   const [trains, setTrains] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
@@ -34,9 +37,10 @@ export function WorkTrains({
   const [depart, setDepart] = useState("");
   const [arrive, setArrive] = useState("");
   const [note, setNote] = useState("");
-  const [pasted, setPasted] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [pasteInfo, setPasteInfo] = useState<string | null>(null);
+  // 貼り付けで入るのが基本。読み取れないとき・編集のときだけ時刻と詳細を手で直せるようにする。
+  const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,18 +50,20 @@ export function WorkTrains({
     setDepart("");
     setArrive("");
     setNote("");
-    setPasted("");
     setIsDefault(false);
     setPasteInfo(null);
+    setManual(false);
     setError(null);
   };
 
   // Yahoo!乗換案内の経路を貼ると、時刻と詳細を入れる（結果ページは取得しない・issue #1371）。
   const readPasted = (text: string) => {
-    setPasted(text);
-    if (!text.trim()) return setPasteInfo(null);
+    if (!text.trim()) return setPasteInfo("クリップボードが空です。Yahoo!乗換案内の共有 ▸ コピーのあとに押してください。");
     const parsed = trainFromYahooText(text);
-    if (!parsed) return setPasteInfo("経路を読み取れませんでした。時刻を手で入力してください。");
+    if (!parsed) {
+      setManual(true);
+      return setPasteInfo("経路を読み取れませんでした。時刻を手で入力してください。");
+    }
     setDepart(toTime(parsed.departMinutes));
     setArrive(toTime((parsed.departMinutes + parsed.durationMinutes) % 1440));
     setNote(parsed.note);
@@ -75,9 +81,18 @@ export function WorkTrains({
     setArrive(toTime((train.departMinutes + train.durationMinutes) % 1440));
     setNote(train.note ?? "");
     setIsDefault(train.isDefault);
-    setPasted("");
     setPasteInfo(null);
+    setManual(true);
     setError(null);
+  };
+
+  const pasteFromClipboard = async () => {
+    try {
+      readPasted(await navigator.clipboard.readText());
+    } catch {
+      setManual(true);
+      setPasteInfo("クリップボードを読み取れませんでした。時刻を手で入力してください。");
+    }
   };
 
   const setDefault = (train: WorkTrainItem) =>
@@ -144,15 +159,23 @@ export function WorkTrains({
       (train.origin === place && train.destination === home),
   );
 
+  if (shown.length === 0 && !canAdd) return null;
+  const formOpen = canAdd || editing !== null;
+
   return (
     <div className="flex flex-col gap-3 border-t border-dashed border-outline-variant pt-3">
       <Label>電車</Label>
       <p className="type-body-small text-on-surface-variant">
         この場所で使う電車を登録しておくと、勤務の入力で往路・復路に選べます。選ぶと、勤務開始からの
-        逆算ではなく、ここの出発時刻でカレンダーに移動を作ります。時刻表は取得しないので、時刻は
-        自分で入れてください。
+        逆算ではなく、ここの出発時刻でカレンダーに移動を作ります。時刻表は取得しないので、Yahoo!乗換案内の経路を
+        貼り付けて入れてください。
       </p>
 
+      {!canAdd && (
+        <p className="type-body-small text-on-surface-variant">
+          交通手段が公共交通ではありませんが、登録済みの電車は勤務の入力で選べます。
+        </p>
+      )}
       {shown.length === 0 && (
         <p className="type-body-small text-on-surface-variant">まだ登録がありません。</p>
       )}
@@ -203,9 +226,10 @@ export function WorkTrains({
         );
       })}
 
+      {formOpen && (
       <div className="flex flex-col gap-3 rounded-xl border border-dashed border-outline-variant p-3">
         <p className="type-title-small">{editing ? "電車を編集" : "電車を追加"}</p>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {(
             [
               ["out", "往路（自宅 → 行き先）"],
@@ -216,6 +240,7 @@ export function WorkTrains({
               key={value}
               type="button"
               size="sm"
+              className="h-auto min-w-0 whitespace-normal py-2"
               variant={direction === value ? "secondary" : "outline"}
               aria-pressed={direction === value}
               onClick={() => setDirection(value)}
@@ -225,34 +250,37 @@ export function WorkTrains({
           ))}
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor={`train-paste-${place}`}>Yahoo!乗換案内の経路（任意）</Label>
-          <Textarea
-            id={`train-paste-${place}`}
-            rows={3}
-            placeholder="Yahoo!乗換案内の共有 ▸ コピーで得た経路をここに貼り付けると、時刻と詳細が入ります"
-            value={pasted}
-            onChange={(event) => readPasted(event.target.value)}
+          <Label htmlFor={`train-label-${place}`}>名前（区別するための呼び名）</Label>
+          <Input
+            id={`train-label-${place}`}
+            placeholder="例: 朝の通勤、定時後の帰り"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
           />
-          {pasteInfo && <p className="type-body-small text-on-surface-variant">{pasteInfo}</p>}
         </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor={`train-label-${place}`}>名前（例: のぞみ）</Label>
-          <Input id={`train-label-${place}`} value={label} onChange={(event) => setLabel(event.target.value)} />
-        </div>
+        <Button type="button" disabled={busy} onClick={pasteFromClipboard}>
+          Yahoo!乗換案内の経路を貼り付け
+        </Button>
+        {pasteInfo && <p className="type-body-small text-on-surface-variant">{pasteInfo}</p>}
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
             <Label htmlFor={`train-depart-${place}`}>出発時刻</Label>
-            <Input id={`train-depart-${place}`} type="time" value={depart} onChange={(event) => setDepart(event.target.value)} />
+            <Input id={`train-depart-${place}`} type="time" readOnly={!manual} value={depart} onChange={(event) => setDepart(event.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor={`train-arrive-${place}`}>到着時刻</Label>
-            <Input id={`train-arrive-${place}`} type="time" value={arrive} onChange={(event) => setArrive(event.target.value)} />
+            <Input id={`train-arrive-${place}`} type="time" readOnly={!manual} value={arrive} onChange={(event) => setArrive(event.target.value)} />
           </div>
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor={`train-note-${place}`}>詳細（乗換・路線・運賃など）</Label>
-          <Textarea id={`train-note-${place}`} rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
+          <Textarea id={`train-note-${place}`} rows={3} readOnly={!manual} value={note} onChange={(event) => setNote(event.target.value)} />
         </div>
+        {!manual && (
+          <button type="button" className="type-body-small self-start text-primary underline" onClick={() => setManual(true)}>
+            手で入力する
+          </button>
+        )}
         <label className="type-body-medium flex items-center gap-2">
           <input type="checkbox" checked={isDefault} onChange={(event) => setIsDefault(event.target.checked)} />
           この区間のデフォルトにする（勤務の入力で最初から選ばれます）
@@ -269,6 +297,7 @@ export function WorkTrains({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

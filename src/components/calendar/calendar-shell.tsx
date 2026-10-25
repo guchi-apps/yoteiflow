@@ -6,7 +6,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useOptimistic,
   useRef,
   useState,
   useTransition,
@@ -31,9 +30,11 @@ import { RefreshButton } from "@/components/ui/refresh-button";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import {
   addDays,
+  CALENDAR_VIEWS,
   getContinuousMonthWeeks,
   getContinuousMonthSpan,
   getVisibleDays,
+  isRealDateKey,
   monthDistance,
   monthsOfWeeks,
   parseDateKey,
@@ -220,13 +221,6 @@ export function CalendarShell({
   const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
-  // いま描いている表示形式・日付を、次に開いたときの初期表示として覚える（issue #279）。
-  // 覚えるのは「URLに出ている状態」で、開いた直後（サーバーが描いた状態）と、前へ・次へ・
-  // スワイプ・表示形式の切り替えのあとがここを通る。月表示のスクロールだけは props が
-  // 変わらないため、URLを書き換えている syncMonthUrl の側で覚える。
-  useEffect(() => {
-    rememberCalendarView(view, anchorKey);
-  }, [view, anchorKey]);
 
   // 日ごとの列・終日エリアは memo で包んであるため、判定に使う集合の参照を保つ。
   // 描くたびに作り直すと、活動記録の有無に関わらず全ての列が描き直しになる。
@@ -238,8 +232,17 @@ export function CalendarShell({
   // 祝日カレンダーの判定も同じ理由でSet化しておく（issue #699）。
   const holidayCalendars = useMemo(() => new Set(holidayCalendarIds), [holidayCalendarIds]);
 
-  // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
-  const [nav, setNav] = useOptimistic({ view, anchorKey });
+  // いま描いている表示形式・日付。前へ・次へ・スワイプ・表示形式の切り替えはサーバーへ行かず
+  // ここだけを切り替える（issue #1425）。初期値はサーバーが描いた props。
+  const [nav, setNav] = useState({ view, anchorKey });
+  const navRef = useRef(nav);
+  useEffect(() => {
+    navRef.current = nav;
+  }, [nav]);
+  // URLに無い項目の既定値（サーバーが設定の初期表示・前回の日付から解決した props）。
+  const propsNavRef = useRef({ view, anchorKey });
+  // いまのURLが表している表示形式・日付（`navKeyOf`）。自分で書いたURLと、外から来たURLを見分ける。
+  const syncedKeyRef = useRef(navKeyOf(view, anchorKey));
 
   // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
   const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
@@ -936,12 +939,73 @@ export function CalendarShell({
     setItemDialog({ initialKind: "task", drafts: { task: draft } });
   };
 
+  /**
+   * 表示形式・日付の切り替え。サーバーへは行かず、画面の中で `nav` を切り替える（issue #1425）。
+   * URLは下の効果が `history.pushState` で合わせる。以前の `router.push` はそのたびにサーバーの
+   * `page.tsx` がGoogle・Notionを丸ごと取り直し（画面はその結果を使わず `/api/calendar` でもう一度
+   * 取る）、そのRSC要求が200以外で返るとNext.jsが全画面の再読み込みに倒していた。
+   */
   const navigate = (nextView: CalendarView, nextAnchorKey: string) => {
-    startTransition(() => {
-      setNav({ view: nextView, anchorKey: nextAnchorKey });
-      router.push(`/calendar?view=${nextView}&date=${nextAnchorKey}`);
-    });
+    setNav({ view: nextView, anchorKey: nextAnchorKey });
   };
+
+  /**
+   * URLやサーバーの props から決まった表示形式・日付を画面へ当てる（戻る・進む・外からの遷移）。
+   * 月表示は表示位置も合わせる（`enterMonthView` と同じ）。
+   */
+  const applyNav = (nextView: CalendarView, nextAnchorKey: string) => {
+    if (nextView === "month") {
+      const month = nextAnchorKey.slice(0, 7);
+      setScrolledMonth(month);
+      setMonthCenter(month);
+      setScrollTarget((prev) => ({ month, nonce: prev.nonce + 1 }));
+    }
+    setNav({ view: nextView, anchorKey: nextAnchorKey });
+  };
+  const applyNavRef = useRef(applyNav);
+  useEffect(() => {
+    applyNavRef.current = applyNav;
+  });
+
+  // 戻る・進む（issue #1425）。画面内の移動は `pushState` で履歴を積むため、戻ったときは
+  // URLから表示形式・日付を決め直す。URLに無い項目は、サーバーが解決した props（設定の初期表示・
+  // 前回の日付）を使い、既定の解決をクライアントへ複製しない。
+  useEffect(() => {
+    const onPopState = () => {
+      if (window.location.pathname !== "/calendar") return;
+      const params = new URLSearchParams(window.location.search);
+      const urlView = params.get("view");
+      const urlDate = params.get("date");
+      const nextView = CALENDAR_VIEWS.find((item) => item === urlView) ?? propsNavRef.current.view;
+      const nextAnchorKey =
+        urlDate && isRealDateKey(urlDate) ? urlDate : propsNavRef.current.anchorKey;
+      syncedKeyRef.current = navKeyOf(nextView, nextAnchorKey);
+      applyNavRef.current(nextView, nextAnchorKey);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // サーバーの props が変わったとき（外からの `/calendar?...` への遷移・通信の復帰の取り直し）。
+  // いまのURL（自分が書いたもの）や表示中と同じなら、サーバーが確かめ直しただけなので触らない。
+  // 再取得ボタンの取り直しの間に動かした場合、取り直しの props は動かす前のURLのもので、
+  // それで表示を戻さないよう `syncedKeyRef`（URLが表している値）と比べる。
+  const propsKeyRef = useRef(navKeyOf(view, anchorKey));
+  useEffect(() => {
+    propsNavRef.current = { view, anchorKey };
+    const key = navKeyOf(view, anchorKey);
+    if (key === propsKeyRef.current) return;
+    // 同期で setState しない（react-hooks/set-state-in-effect）。StrictMode の再実行で
+    // 取り消されても、2回目で同じ判定をやり直せるよう印もタイマーの中で付ける。
+    const timer = setTimeout(() => {
+      propsKeyRef.current = key;
+      if (key === syncedKeyRef.current) return;
+      syncedKeyRef.current = key;
+      if (key === navKeyOf(navRef.current.view, navRef.current.anchorKey)) return;
+      applyNavRef.current(view, anchorKey);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [view, anchorKey]);
 
   /**
    * 月表示の移動。読み込み済みの範囲の中なら、サーバーへ行かずスクロールするだけで済む。
@@ -1008,25 +1072,42 @@ export function CalendarShell({
   };
 
   /**
-   * 月表示で見ている月をURLへ反映する（issue #848）。
+   * 表示中の表示形式・日付（月表示は見ている月）をURLへ反映する（issue #848・#1425）。
    *
-   * `history.replaceState` は Next.js の App Router にパッチされており、呼ぶと `ACTION_RESTORE`
-   * が dispatch される。action queue は RESTORE を受けると保留中の action（`router.push` /
-   * `router.refresh`）を破棄するため、回線が遅く1日・3日表示→月表示の `router.push` が応答を
-   * 待っている間に月表示のスクロール通知からここが走ると、月表示への遷移そのものが捨てられる。
-   * 遷移が終わると `nav`（useOptimistic）はサーバーの props（元の表示形式）へ戻り、URLだけ
-   * `view=month` のまま画面は元の表示へ戻っていた。
+   * `history.pushState` / `replaceState` は Next.js の App Router にパッチされており、呼ぶと
+   * `ACTION_RESTORE` が dispatch される。action queue は RESTORE を受けると保留中の action
+   * （`router.push` / `router.refresh`）を破棄する。以前は1日・3日表示→月表示の `router.push` の
+   * 応答待ちの間に月表示のスクロールからここが走り、遷移そのものが捨てられていた（#848）。
+   * 遷移は画面内で済むようになったが（#1425）、再取得ボタンの `router.refresh()` は残る。
    *
-   * そのため、このシェルの transition（`navigate`・`refreshAll`・`openActivity`）が保留中の間は
-   * 書き換えず、明けてから見ている月で1回だけ反映する。見出し（`scrolledMonth`）と先読み
-   * （`monthCenter`）は従来どおり即時に動かす。なお別の `useTransition` で走る `router.refresh()`
+   * そのため、このシェルの transition（`refreshAll`・`openActivity`）が保留中の間は書き換えず、
+   * 明けてから表示中の値で1回だけ反映する。表示（`nav`・`scrolledMonth`・`monthCenter`）は
+   * 即時に動かす。なお別の `useTransition` で走る `router.refresh()`
    * （`useReconnectRefresh`・`useRunningActivityStop`）はこのガードの対象外で、保留中にスクロール
    * すると取り直しが捨てられうる（表示形式が戻る症状とは別のため、ここでは扱っていない）。
    */
   useEffect(() => {
-    if (pending || nav.view !== "month") return;
-    syncMonthUrl(scrolledMonth);
-  }, [pending, nav.view, scrolledMonth]);
+    if (pending) return;
+    const date = nav.view === "month" ? `${scrolledMonth}-01` : nav.anchorKey;
+    const key = navKeyOf(nav.view, date);
+    if (key === syncedKeyRef.current) return;
+    // 共有の引き継ぎが未処理のあいだは書き換えない。クエリごと消えて紐づけ画面が開かなくなる（issue #1143）。
+    if (hasHandoffQuery(window.location.search)) return;
+
+    // 月表示のスクロールは履歴を積まず置き換える（スクロールのたびに戻る先が増えないよう）。
+    // 表示形式の切り替えと、1日・3日・週表示の日付の移動は、以前の router.push と同じく積む。
+    const replace = nav.view === "month" && syncedKeyRef.current.startsWith("month:");
+    syncedKeyRef.current = key;
+    const url = `/calendar?view=${nav.view}&date=${date}`;
+    if (replace) window.history.replaceState(null, "", url);
+    else window.history.pushState(null, "", url);
+  }, [pending, nav.view, nav.anchorKey, scrolledMonth]);
+
+  // いま描いている表示形式・日付を、次に開いたときの初期表示として覚える（issue #279）。
+  // 開いた直後と、前へ・次へ・スワイプ・表示形式の切り替え・月表示のスクロールのあとがここを通る。
+  useEffect(() => {
+    rememberCalendarView(nav.view, nav.view === "month" ? `${scrolledMonth}-01` : nav.anchorKey);
+  }, [nav.view, nav.anchorKey, scrolledMonth]);
 
   /** スクロールで画面中央に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
@@ -1036,7 +1117,7 @@ export function CalendarShell({
   /**
    * 時間グリッドに並べる日。
    *
-   * サーバーが渡してきた期間ではなく、押した直後に更新される nav（楽観値）を起点にする。
+   * サーバーが渡してきた期間ではなく、押した直後に更新される nav を起点にする。
    * 前へ・次へ・スワイプだけでなく、表示形式そのものの切り替え（1日⇔3日⇔週）も含めて、
    * サーバーの応答（RSC往復・外部APIの取得）を待たずにその場で正しい日数へ切り替わる
    * 必要があるため（issue #697）。月表示では使わないので `days`（サーバー初期値）のままでよい。
@@ -1047,7 +1128,7 @@ export function CalendarShell({
   }, [nav.view, nav.anchorKey, weekStartsOn, days]);
 
   // 予定を追加するときの既定の日。月表示は広い範囲を並べているため、先頭の日ではなく今日を使う。
-  // nav（楽観値）で判定するのは、表示形式の切り替え中でも正しい方を指すようにするため。
+  // nav で判定するのは、表示形式の切り替え中でも正しい方を指すようにするため。
   const defaultDayKey = nav.view === "month" ? utils.todayKey() : gridDays[0];
 
   /** 右下の「＋」からの追加。予定の入力を下から開く（種類の切り替えは持たない・issue #729）。 */
@@ -1061,7 +1142,7 @@ export function CalendarShell({
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
-  const viewSwitchAnchorKey = () => (nav.view === "month" ? centerWeekRef.current : anchorKey);
+  const viewSwitchAnchorKey = () => (nav.view === "month" ? centerWeekRef.current : nav.anchorKey);
 
   /**
    * 月表示から3日・1日表示へ切り替えるときの日。中央の週の先頭日をそのまま使うと、
@@ -1247,12 +1328,12 @@ export function CalendarShell({
 
       {/*
         グリッドの枠組み（どちらのコンポーネントを、どんな日付/週の並びで描くか）は
-        `nav`（useOptimistic の楽観値）だけで決まり、予定・タスクの取得を待たない
+        `nav` だけで決まり、予定・タスクの取得を待たない
         （issue #697）。`CalendarBody` はもう `use()` でPromiseを消費しないため、
         ここをSuspenseで包む必要は無い。取得中かどうかは `onLoadingChange` で
         ヘッダー右上の再取得ボタン（回る印）へ伝える。
-        なお前へ・次へは startTransition の中で遷移するため、表示中の内容を保った
-        まま差し替わる（操作のたびに画面が消えることはない）。
+        前へ・次へ・スワイプはサーバーへ行かず `nav` だけを切り替えるため、表示中の内容を
+        保ったまま差し替わる（ページを読み直さない・issue #1425）。
       */}
       {sharedLink && (
         <EventPickerDialog
@@ -1275,7 +1356,7 @@ export function CalendarShell({
         seedView={view}
         seedAnchorKey={anchorKey}
         days={gridDays}
-        weeks={nav.view === "month" ? monthWeeks : weeks}
+        weeks={monthWeeks}
         weekStartsOn={weekStartsOn}
         utils={utils}
         timeZone={timeZone}
@@ -1357,20 +1438,12 @@ export function CalendarShell({
 }
 
 /**
- * 見ている月をURLへ反映する。
- * replaceState はサーバーへ行かないため、これ自体では再取得を起こさない
- * （リロードや保存後の再取得のときに、見ていた月が起点になる）。
+ * URLが表している表示形式・日付の比較用のキー。月表示は月まで（スクロールで日付は決まらない）。
+ * 書き換えるかどうかをこれで決め、マウント直後や日表示からの切り替え直後（`date=YYYY-MM-DD` で
+ * 同じ月）に余分な pushState / replaceState（Next.js の RESTORE になる）を走らせない。
  */
-function syncMonthUrl(month: string) {
-  // すでにその月を指しているなら書き換えない。replaceState は Next.js の RESTORE になるため、
-  // マウント直後や日表示からの切り替え直後（`date=YYYY-MM-DD` で同じ月）に余分に走らせない。
-  // 共有の引き継ぎが未処理のあいだは書き換えない。クエリごと消えて紐づけ画面が開かなくなる（issue #1143）。
-  if (hasHandoffQuery(window.location.search)) return;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("view") === "month" && params.get("date")?.slice(0, 7) === month) return;
-
-  window.history.replaceState(null, "", `/calendar?view=month&date=${month}-01`);
-  rememberCalendarView("month", `${month}-01`);
+function navKeyOf(view: CalendarView, dateKey: string): string {
+  return view === "month" ? `month:${dateKey.slice(0, 7)}` : `${view}:${dateKey}`;
 }
 
 /** 取得した予定とタスクに依存する部分。ここだけが読み込みを待つ。 */
@@ -1455,9 +1528,9 @@ function CalendarBody({
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
   placeCatalogPromise: Promise<PlaceCatalog>;
-  /** いま表示すべき形式。押した直後に更新される nav（楽観値）で、サーバーの応答を待たない。 */
+  /** いま表示すべき形式。押した直後に更新される nav で、サーバーの応答を待たない。 */
   view: CalendarView;
-  /** いま表示すべき起点の日。view と同じく nav（楽観値）。 */
+  /** いま表示すべき起点の日。view と同じく nav。 */
   anchorKey: string;
   /** dataPromise が対応する表示形式・日付（マウント時点のサーバー確定値）。 */
   seedView: CalendarView;
@@ -1609,7 +1682,31 @@ function CalendarBody({
    * ここで同じ形にそろえる。invalidate は「変わった期間」を受け取り、月表示では
    * かかる月へ変換し、それ以外ではいま表示中の期間をまるごと取り直す。
    */
-  const source = view === "month" ? monthData : rangeData;
+  /**
+   * 月表示から1日・3日・週表示へ初めて切り替えた直後は、範囲の取得が終わるまで何も持っていない。
+   * そのまま空のグリッドを出すと、勤務場所・予定まで一度消えて出直す（issue #1425）。月表示で
+   * 持っている内容（表示中の日を含む月）を先に出し、取得が終わった時点で範囲の内容へ入れ替える。
+   * 楽観的に重ねた予定を外す判定（isSyncedSince）は範囲のもののままにする。
+   */
+  const rangeShown = useMemo(
+    () =>
+      rangeData.empty
+        ? {
+            ...rangeData,
+            events: monthData.events,
+            tasks: monthData.tasks,
+            reminders: monthData.reminders,
+            travels: monthData.travels,
+            workRecords: monthData.workRecords,
+            calendars: monthData.calendars,
+            notionReady: monthData.notionReady,
+            reminderReady: monthData.reminderReady,
+          }
+        : rangeData,
+    [rangeData, monthData],
+  );
+
+  const source = view === "month" ? monthData : rangeShown;
 
   /**
    * 保存・削除・ドラッグのうち、まだ取り直しで確かめられていないものを重ねる（issue #787）。
@@ -1641,12 +1738,12 @@ function CalendarBody({
               monthData.invalidate(touched === null ? null : monthsOfRanges(touched)),
           }
         : {
-            ...rangeData,
+            ...rangeShown,
             events: overlaidEvents,
             travels: overlaidTravels,
             pendingMonths: NO_PENDING_MONTHS,
           },
-    [view, monthData, rangeData, overlaidEvents, overlaidTravels],
+    [view, monthData, rangeShown, overlaidEvents, overlaidTravels],
   );
 
   // ヘッダーの再取得ボタン・ドラッグ確定後の同期など、CalendarShell 側から
