@@ -26,6 +26,7 @@ export function TagPicker({
   options,
   value,
   multiple,
+  allowAdd = true,
   onChange,
 }: {
   label: string;
@@ -34,6 +35,8 @@ export function TagPicker({
   /** 選択中の名前。multiple が false のときは0件か1件。 */
   value: string[];
   multiple: boolean;
+  /** false のときは新しい名前を足す入力を出さない（選択肢が固定のとき）。 */
+  allowAdd?: boolean;
   onChange: (next: string[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -92,7 +95,7 @@ export function TagPicker({
           />
         ))}
 
-        {!adding && (
+        {allowAdd && !adding && (
           <Button
             type="button"
             variant="outline"
@@ -110,7 +113,7 @@ export function TagPicker({
         )}
       </div>
 
-      {adding && (
+      {allowAdd && adding && (
         <div className="flex min-w-0 items-center gap-2">
           <Input
             ref={inputRef}
