@@ -2,8 +2,10 @@ import { db } from "@/lib/db";
 import { readStoredOverride } from "@/lib/work-sync/override";
 import type {
   PlaceDefaultsLookup,
+  TrainLookup,
   WorkPlaceDefaults,
   WorkRecordOverride,
+  WorkTrainItem,
 } from "@/lib/work-sync/plan";
 
 /** 勤務先別の既定（issue #1099）と、勤務記録ごとの指定の読み書き。 */
@@ -29,6 +31,27 @@ export async function loadPlaceDefaultRows(userId: string): Promise<WorkPlaceDef
 export function placeDefaultsLookup(rows: WorkPlaceDefaultRow[]): PlaceDefaultsLookup {
   const map = new Map(rows.map((row) => [`${row.isTrip ? "T" : "W"}\n${row.key}`, row]));
   return (key, isTrip) => map.get(`${isTrip ? "T" : "W"}\n${key}`) ?? null;
+}
+
+/** よく使う電車（issue #1347）。出発地・行き先・出発時刻の順に並べる。 */
+export async function loadTrains(userId: string): Promise<WorkTrainItem[]> {
+  const rows = await db.workTrain.findMany({
+    where: { userId },
+    orderBy: [{ origin: "asc" }, { destination: "asc" }, { departMinutes: "asc" }],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    origin: row.origin,
+    destination: row.destination,
+    label: row.label,
+    departMinutes: row.departMinutes,
+    durationMinutes: row.durationMinutes,
+  }));
+}
+
+export function trainLookup(rows: WorkTrainItem[]): TrainLookup {
+  const map = new Map(rows.map((row) => [row.id, row]));
+  return (id) => map.get(id) ?? null;
 }
 
 export async function getRecordOverride(

@@ -1,0 +1,210 @@
+"use client";
+
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { WorkTrainItem } from "@/lib/work-sync/plan";
+import { fromTime, toTime } from "@/lib/work-sync/form";
+import { trainDuration } from "@/lib/work-sync/train";
+
+type Direction = "out" | "back";
+
+/**
+ * よく使う電車（issue #1347・docs/spec.md §46）。出発地 → 行き先ごとに、名前・出発時刻・到着時刻を
+ * 複数登録する。勤務の入力で往路・復路に選ぶと、その時刻で移動を作る。時刻表は取りにいかず、
+ * ここに入れた値だけを使う。所要時間は出発と到着から求める（到着が出発以前なら翌日着）。
+ */
+export function WorkTrains({
+  trains: initial,
+  home,
+  destinations,
+}: {
+  trains: WorkTrainItem[];
+  home: string | null;
+  /** 行き先の候補（勤務場所・出張先）。 */
+  destinations: string[];
+}) {
+  const [trains, setTrains] = useState(initial);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [direction, setDirection] = useState<Direction>("out");
+  const [place, setPlace] = useState("");
+  const [label, setLabel] = useState("");
+  const [depart, setDepart] = useState("");
+  const [arrive, setArrive] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setEditing(null);
+    setLabel("");
+    setDepart("");
+    setArrive("");
+    setError(null);
+  };
+
+  const startEdit = (train: WorkTrainItem) => {
+    setEditing(train.id);
+    setDirection(train.origin === home ? "out" : "back");
+    setPlace(train.origin === home ? train.destination : train.origin);
+    setLabel(train.label);
+    setDepart(toTime(train.departMinutes));
+    setArrive(toTime((train.departMinutes + train.durationMinutes) % 1440));
+    setError(null);
+  };
+
+  const request = async (init: RequestInit, url = "/api/settings/work-trains") => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(url, init);
+      const body = (await response.json().catch(() => null)) as {
+        trains?: WorkTrainItem[];
+        message?: string;
+      } | null;
+      if (!response.ok || !body?.trains) throw new Error(body?.message ?? "保存できませんでした。");
+      setTrains(body.trains);
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "保存できませんでした。");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!home) return setError("先に設定の「移動」で既定の出発地を入れてください。");
+    const target = place.trim();
+    if (!target) return setError("行き先を入力してください。");
+    const departMinutes = fromTime(depart);
+    const arriveMinutes = fromTime(arrive);
+    if (departMinutes === null || arriveMinutes === null) {
+      return setError("出発・到着の時刻を入力してください。");
+    }
+    const ok = await request({
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editing ?? undefined,
+        origin: direction === "out" ? home : target,
+        destination: direction === "out" ? target : home,
+        label: label.trim(),
+        departMinutes,
+        durationMinutes: trainDuration(departMinutes, arriveMinutes),
+      }),
+    });
+    if (ok) reset();
+  };
+
+  const remove = async (id: string) => {
+    if (await request({ method: "DELETE" }, `/api/settings/work-trains?id=${encodeURIComponent(id)}`)) {
+      if (editing === id) reset();
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Label>よく使う電車</Label>
+      <p className="type-body-small text-on-surface-variant">
+        出張などで使う電車を登録しておくと、勤務の入力で往路・復路に選べます。選ぶと、勤務開始からの
+        逆算ではなく、ここの出発時刻でカレンダーに移動を作ります。時刻表は取得しないので、時刻は
+        自分で入れてください。
+      </p>
+
+      {trains.length === 0 && (
+        <p className="type-body-small text-on-surface-variant">まだ登録がありません。</p>
+      )}
+      {trains.map((train) => {
+        const out = train.origin === home;
+        const arriveAt = (train.departMinutes + train.durationMinutes) % 1440;
+        return (
+          <div
+            key={train.id}
+            className="flex items-center gap-3 rounded-xl border border-outline-variant p-3"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="type-title-small tabular-nums">
+                {toTime(train.departMinutes)} 発 → {toTime(arriveAt)} 着
+              </p>
+              <p className="type-body-small truncate text-on-surface-variant">
+                {train.label}・{train.origin} → {train.destination}・{train.durationMinutes}分
+                {out ? "（往路）" : train.destination === home ? "（復路）" : ""}
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => startEdit(train)}>
+              編集
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => remove(train.id)}>
+              削除
+            </Button>
+          </div>
+        );
+      })}
+
+      <div className="flex flex-col gap-3 rounded-xl border border-dashed border-outline-variant p-3">
+        <p className="type-title-small">{editing ? "電車を編集" : "電車を追加"}</p>
+        <div className="flex gap-2">
+          {(
+            [
+              ["out", "往路（自宅 → 行き先）"],
+              ["back", "復路（行き先 → 自宅）"],
+            ] as const
+          ).map(([value, text]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              className="rounded-full"
+              variant={direction === value ? "secondary" : "outline"}
+              aria-pressed={direction === value}
+              onClick={() => setDirection(value)}
+            >
+              {text}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="train-place">行き先（出張先・勤務先）</Label>
+          <Input
+            id="train-place"
+            list="train-place-options"
+            value={place}
+            onChange={(event) => setPlace(event.target.value)}
+          />
+          <datalist id="train-place-options">
+            {destinations.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="train-label">名前（例: のぞみ）</Label>
+          <Input id="train-label" value={label} onChange={(event) => setLabel(event.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="train-depart">出発時刻</Label>
+            <Input id="train-depart" type="time" value={depart} onChange={(event) => setDepart(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="train-arrive">到着時刻</Label>
+            <Input id="train-arrive" type="time" value={arrive} onChange={(event) => setArrive(event.target.value)} />
+          </div>
+        </div>
+        {error && <p className="type-body-small text-error">{error}</p>}
+        <div className="flex gap-2">
+          <Button type="button" size="sm" disabled={busy} onClick={save}>
+            {editing ? "更新" : "追加"}
+          </Button>
+          {editing && (
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={reset}>
+              やめる
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

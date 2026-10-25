@@ -6,7 +6,7 @@ import { TagSection, type TagSectionState } from "@/components/settings/tag-sect
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { loadWritableCalendars } from "@/services/calendar/load";
-import { loadPlaceDefaultRows } from "@/services/work-sync/config";
+import { loadPlaceDefaultRows, loadTrains } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 import { loadTagOptions } from "@/services/notion/tag-options";
 import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
@@ -24,7 +24,7 @@ export default async function WorkSettingsPage() {
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");
 
-  const [options, autoSettings, routes, placeDefaults, calendars] = await Promise.all([
+  const [options, autoSettings, routes, placeDefaults, trains, calendars] = await Promise.all([
     loadTagOptions(connection, "work"),
     getWorkAutoSettings(user.id),
     db.workRouteDefault.findMany({
@@ -32,6 +32,7 @@ export default async function WorkSettingsPage() {
       orderBy: [{ destination: "asc" }, { origin: "asc" }],
     }),
     loadPlaceDefaultRows(user.id),
+    loadTrains(user.id),
     loadWritableCalendars(user.id),
   ]);
 
@@ -69,6 +70,7 @@ export default async function WorkSettingsPage() {
           minutes: route.minutes,
         }))}
         placeDefaults={placeDefaults}
+        trains={trains}
         tripPlaces={workTripPlaces(connection)}
         calendars={calendars}
         placeNames={(options ?? []).map((option) => option.name)}

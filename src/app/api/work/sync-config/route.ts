@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { getRecordOverride, loadPlaceDefaultRows } from "@/services/work-sync/config";
+import { getRecordOverride, loadPlaceDefaultRows, loadTrains } from "@/services/work-sync/config";
 import { getWorkAutoSettings } from "@/services/work-sync/settings";
 
 /**
@@ -15,10 +15,11 @@ export async function GET(request: Request) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const recordId = new URL(request.url).searchParams.get("recordId");
-  const [settings, defaults, routes, override] = await Promise.all([
+  const [settings, defaults, routes, trains, override] = await Promise.all([
     getWorkAutoSettings(userId),
     loadPlaceDefaultRows(userId),
     db.workRouteDefault.findMany({ where: { userId } }),
+    loadTrains(userId),
     recordId ? getRecordOverride(userId, recordId) : Promise.resolve(null),
   ]);
 
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
       destination: route.destination,
       minutes: route.minutes,
     })),
+    trains,
     override,
   });
 }

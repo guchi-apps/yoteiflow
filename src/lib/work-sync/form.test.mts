@@ -8,6 +8,9 @@ import {
   describePlan,
   rebase,
   resolveKey,
+  trainMissing,
+  trainsFor,
+  trainWarnings,
   type SyncConfig,
   type SyncField,
 } from "@/lib/work-sync/form";
@@ -98,4 +101,59 @@ test("確認用の文面は反映ONの項目だけで、期間では往路は初
 test("名前と住所が続く行き先から勤務先名を当てる", () => {
   assert.equal(resolveKey("門真 大阪府門真市1-1", ["門真", "栗東"]), "門真");
   assert.equal(resolveKey("大阪", ["門真"]), "大阪");
+});
+
+// --- よく使う電車（issue #1347） ---
+
+const trainConfig: SyncConfig = {
+  ...config,
+  trains: [
+    { id: "o2", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 483, durationMinutes: 140 },
+    { id: "o1", origin: "自宅", destination: "門真", label: "のぞみ", departMinutes: 450, durationMinutes: 140 },
+    { id: "b1", origin: "門真", destination: "自宅", label: "のぞみ", departMinutes: 1040, durationMinutes: 140 },
+  ],
+};
+const dates = { startDate: "2026-10-05", endDate: "2026-10-05" };
+
+test("電車は往路・復路で区間が合うものだけを出発時刻順に出す", () => {
+  assert.deepEqual(trainsFor(trainConfig, ctx("門真", true), "out").map((t) => t.id), ["o1", "o2"]);
+  assert.deepEqual(trainsFor(trainConfig, ctx("門真", true), "back").map((t) => t.id), ["b1"]);
+  assert.deepEqual(trainsFor(trainConfig, ctx("栗東"), "out"), []);
+});
+
+test("電車を選んだ送信内容は所要時間を持たず trainId を持つ", () => {
+  const form = { ...defaultForm(trainConfig, ctx("門真", true)), outTrainId: "o1" };
+  const result = checkForm(form, trainConfig, ctx("門真", true), { fullDayOff: false });
+  assert.ok(result.ok);
+  assert.deepEqual(result.payload.outbound, { enabled: true, minutes: null, trainId: "o1" });
+});
+
+test("選んだ電車が見つからないときは保存前に断る", () => {
+  const form = { ...defaultForm(trainConfig, ctx("門真", true)), outTrainId: "gone" };
+  assert.equal(trainMissing(trainConfig, ctx("門真", true), "out", "gone"), true);
+  const result = checkForm(form, trainConfig, ctx("門真", true), { fullDayOff: false });
+  assert.ok(!result.ok && result.message.includes("電車"));
+});
+
+test("保存した電車は既定の上に重なり、確認文面に電車の時刻が出る", () => {
+  const base = defaultForm(trainConfig, ctx("門真", true));
+  const form = applyOverride(base, { outbound: { trainId: "o1" } });
+  assert.equal(form.outTrainId, "o1");
+  const lines = describePlan(form, trainConfig, ctx("門真", true), dates);
+  assert.ok(lines.some((line) => line.startsWith("往路 07:30–09:50（のぞみ）")));
+});
+
+test("往路の電車が勤務開始に間に合わないときだけ警告する（勤務開始 10:00）", () => {
+  const base = { ...defaultForm(trainConfig, ctx("門真", true)), start: "10:00", end: "18:00" };
+  const late = trainWarnings({ ...base, outTrainId: "o2" }, trainConfig, ctx("門真", true), dates);
+  assert.equal(late.length, 1);
+  assert.ok(late[0].includes("間に合いません"));
+  assert.deepEqual(trainWarnings({ ...base, outTrainId: "o1" }, trainConfig, ctx("門真", true), dates), []);
+});
+
+test("復路の電車が勤務終了より前に出るときは警告する", () => {
+  const base = { ...defaultForm(trainConfig, ctx("門真", true)), start: "09:00", end: "18:00", backEnabled: true };
+  const warnings = trainWarnings({ ...base, backTrainId: "b1" }, trainConfig, ctx("門真", true), dates);
+  assert.equal(warnings.length, 1);
+  assert.ok(warnings[0].includes("勤務終了"));
 });
