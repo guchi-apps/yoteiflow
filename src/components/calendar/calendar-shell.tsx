@@ -114,6 +114,7 @@ import { useCalendarRangeData } from "./use-calendar-range-data";
 import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
+import { WorkShortLabelsContext } from "./work-place-chip";
 
 // 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
 // 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
@@ -143,6 +144,8 @@ export type CalendarWorkContext = {
   writable: boolean;
   /** 出張扱いにする勤務場所の名前。 */
   tripPlaces: string[];
+  /** 狭い月表示の勤務バッジに出す勤務場所ごとの1文字（#1381）。 */
+  shortLabels: Record<string, string>;
   /** 出張・年休・会社休業日・申請・メモが使えるか。 */
   capabilities: WorkCapabilities;
   /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
@@ -1906,7 +1909,7 @@ function CalendarBody({
   });
 
   return (
-    <>
+    <WorkShortLabelsContext.Provider value={work.shortLabels}>
       {/* オフラインならすでに OfflineNotice が出ているため、二重に出さない（issue #718）。 */}
       {!offline && data.stale && <SlowNetworkNotice />}
 
@@ -2186,7 +2189,7 @@ function CalendarBody({
           onDeleted={handleSaved}
         />
       )}
-    </>
+    </WorkShortLabelsContext.Provider>
   );
 }
 

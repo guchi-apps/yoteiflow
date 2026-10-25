@@ -189,6 +189,10 @@ model NotionConnection {
   // あとも古い場所名が残り、どの画面からも消せなくなる。
   workTripPlaces Json?
 
+  // 狭い月表示の勤務バッジに出す1文字（{ 勤務場所の名前: 1文字 }）。未設定の場所は名前の先頭1文字。
+  // workTripPlaces と同じく勤務場所の「名前」で覚えるため、DBの切り替え・改名・削除に追従させる（#1381）。
+  workPlaceShortLabels Json?
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())

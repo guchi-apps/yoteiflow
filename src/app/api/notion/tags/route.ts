@@ -15,7 +15,7 @@ import {
   type TagColor,
   type TagKind,
 } from "@/services/notion/tag-options";
-import { workTripPlaces } from "@/services/notion/work-logs";
+import { workPlaceShortLabels, workTripPlaces } from "@/services/notion/work-logs";
 
 // タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリ・場所のタグの選択肢を扱う。
 // 選択肢はNotion側のプロパティ定義が一次情報源のため、DaySpanのDBには保存しない。
@@ -148,15 +148,20 @@ export async function PATCH(request: Request) {
   // 一覧に出ていない名前が設定に残り、その勤務場所は出張扱いから外れる。
   if (prepared.kind === "work" && renamed.previousName !== name) {
     const tripPlaces = workTripPlaces(connection);
+    const shortLabels = workPlaceShortLabels(connection);
+    const data: { workTripPlaces?: string[]; workPlaceShortLabels?: Record<string, string> } = {};
     if (tripPlaces.includes(renamed.previousName)) {
-      await db.notionConnection.update({
-        where: { id: connection.id },
-        data: {
-          workTripPlaces: tripPlaces.map((place) =>
-            place === renamed.previousName ? name : place,
-          ),
-        },
-      });
+      data.workTripPlaces = tripPlaces.map((place) =>
+        place === renamed.previousName ? name : place,
+      );
+    }
+    // 狭い月表示の1文字も名前で覚えているため、改名に追従させる（issue #1381）。
+    if (renamed.previousName in shortLabels) {
+      const { [renamed.previousName]: label, ...rest } = shortLabels;
+      data.workPlaceShortLabels = { ...rest, [name]: label };
+    }
+    if (Object.keys(data).length > 0) {
+      await db.notionConnection.update({ where: { id: connection.id }, data });
     }
   }
 
@@ -179,11 +184,18 @@ export async function DELETE(request: Request) {
     // （出張扱いのスイッチは選択肢の一覧に添えて出しているため）。
     if (prepared.kind === "work") {
       const tripPlaces = workTripPlaces(prepared.connection);
+      const shortLabels = workPlaceShortLabels(prepared.connection);
+      const data: { workTripPlaces?: string[]; workPlaceShortLabels?: Record<string, string> } = {};
       if (tripPlaces.includes(name)) {
-        await db.notionConnection.update({
-          where: { id: prepared.connection.id },
-          data: { workTripPlaces: tripPlaces.filter((place) => place !== name) },
-        });
+        data.workTripPlaces = tripPlaces.filter((place) => place !== name);
+      }
+      if (name in shortLabels) {
+        data.workPlaceShortLabels = Object.fromEntries(
+          Object.entries(shortLabels).filter(([place]) => place !== name),
+        );
+      }
+      if (Object.keys(data).length > 0) {
+        await db.notionConnection.update({ where: { id: prepared.connection.id }, data });
       }
     }
 

@@ -1,8 +1,10 @@
 import { Briefcase, Plus } from "lucide-react";
+import { createContext, useContext } from "react";
 
 import { tagChipClass, tagColorOf } from "@/components/tags/tag-color";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
+import { workShortLabel } from "@/lib/work-short-label";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   HOLIDAY_TITLE,
@@ -52,6 +54,12 @@ import {
  * 印（ブリーフケース）が落ちる狭い列（31px未満）でも、色だけで出張だと分かる。
  */
 
+/**
+ * 狭い列（31px未満＝スマホ幅の月表示）で名前の代わりに出す1文字（issue #1381）。
+ * 設定 ▸ 勤務で勤務場所ごとに決めた文字を、画面ごとに配らず文脈で渡す。
+ */
+export const WorkShortLabelsContext = createContext<Record<string, string>>({});
+
 /** 出張のチップの色。行き先ごとには変えられないため1色に決める（issue #549）。 */
 const TRIP_CHIP_CLASS = "bg-travel/18 text-travel";
 export function WorkPlaceChip({
@@ -65,7 +73,9 @@ export function WorkPlaceChip({
   className?: string;
 }) {
   const label = workPlaceLabel(record);
+  const shortLabels = useContext(WorkShortLabelsContext);
   if (!label) return null;
+  const shortLabel = workShortLabel(record, shortLabels);
 
   return (
     <span
@@ -74,7 +84,7 @@ export function WorkPlaceChip({
       className={cn(
         // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
         "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-full px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
-        "@max-[31px]:px-0.5 @max-[31px]:text-[8px]",
+        "@max-[31px]:px-0.5",
         record.businessTrip
           ? TRIP_CHIP_CLASS
           : tagChipClass(tagColorOf(options, record.place ?? "")),
@@ -104,10 +114,17 @@ export function WorkPlaceChip({
       </span>
       <span
         aria-hidden
-        // 1文字（8px）も入らない幅（余白4px＋文字8px）では名前ごと出さず、色だけを残す。
-        className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[12px]:hidden"
+        // 31px以上は名前、31px未満は1文字へ切り替える（issue #1381）。1文字（10px）も入らない
+        // 幅（余白4px＋10px）では色だけを残す。
+        className="h-[15px] min-w-0 overflow-hidden break-all whitespace-normal @max-[31px]:hidden"
       >
         {label}
+      </span>
+      <span
+        aria-hidden
+        className="hidden h-[15px] min-w-0 overflow-hidden whitespace-nowrap @max-[31px]:inline @max-[14px]:hidden"
+      >
+        {shortLabel}
       </span>
     </span>
   );

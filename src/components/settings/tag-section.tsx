@@ -37,6 +37,11 @@ export type TagSectionState = {
    * 書き込む先が無いため、使えるかどうかも渡す。
    */
   trip?: { places: string[]; available: boolean };
+  /**
+   * 勤務場所だけが持つ、狭い月表示の勤務バッジに出す1文字（{ 名前: 1文字 }・issue #1381）。
+   * 未設定の場所は名前の先頭1文字。
+   */
+  shortLabels?: Record<string, string>;
 };
 
 /**
@@ -54,6 +59,7 @@ export function TagSection({ state }: { state: TagSectionState }) {
 
   const [options, setOptions] = useState(state.options);
   const [tripPlaces, setTripPlaces] = useState(state.trip?.places ?? []);
+  const [shortLabels, setShortLabels] = useState(state.shortLabels ?? {});
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("default");
   // 改名の欄は押されたときだけ出す。全行に入力欄を並べると、一覧を読むための画面が
@@ -118,6 +124,38 @@ export function TagSection({ state }: { state: TagSectionState }) {
     } catch {
       setTripPlaces(before);
       setError("出張扱いを保存できませんでした。");
+    }
+  };
+
+  /** 1文字は欄を離れたときに保存する。入力の途中（変換中）で何度も送らないため。 */
+  const saveShortLabel = async (place: string, value: string) => {
+    const trimmed = value.trim();
+    if ((shortLabels[place] ?? "") === trimmed) return;
+
+    const before = shortLabels;
+    const next = { ...before };
+    if (trimmed) next[place] = trimmed;
+    else delete next[place];
+
+    setShortLabels(next);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/work/place-short-labels", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels: next }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setShortLabels(before);
+        setError(body?.message ?? "月表示の1文字を保存できませんでした。");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setShortLabels(before);
+      setError("月表示の1文字を保存できませんでした。");
     }
   };
 
@@ -339,6 +377,23 @@ export function TagSection({ state }: { state: TagSectionState }) {
 
                   {/* 出張扱いは名前の下へ置く。同じ行に足すと、狭い画面で場所の名前が
                       押し出される（勤務場所の名前はそれ自体が何の記録かを示す）。 */}
+                  {state.shortLabels && (
+                    <label className="flex items-center gap-2 py-0.5">
+                      <Input
+                        key={`${option.name}:${shortLabels[option.name] ?? ""}`}
+                        className="h-9 w-12 px-0 text-center"
+                        aria-label={`${option.name} の月表示の1文字`}
+                        placeholder={Array.from(option.name)[0] ?? ""}
+                        defaultValue={shortLabels[option.name] ?? ""}
+                        maxLength={2}
+                        onBlur={(event) => saveShortLabel(option.name, event.target.value)}
+                      />
+                      <span className="type-body-small text-on-surface-variant">
+                        スマホの月表示に出す1文字（空欄は先頭の1文字）
+                      </span>
+                    </label>
+                  )}
+
                   {state.trip?.available && (
                     <label className="flex items-center gap-2 py-0.5">
                       <Switch
