@@ -506,6 +506,8 @@ const nozomi = {
   label: "のぞみ",
   departMinutes: 7 * 60 + 30,
   durationMinutes: 140,
+  isDefault: false,
+  note: null,
 };
 const nozomiBack = {
   id: "t2",
@@ -514,6 +516,8 @@ const nozomiBack = {
   label: "のぞみ",
   departMinutes: 17 * 60 + 20,
   durationMinutes: 140,
+  isDefault: false,
+  note: null,
 };
 const trains = (id: string) => [nozomi, nozomiBack].find((train) => train.id === id) ?? null;
 
