@@ -25,7 +25,7 @@ import {
   type EventWriteInput,
 } from "@/services/google-calendar/events";
 import { listPlaces, type PlaceItem } from "@/services/notion/places";
-import { createTravel, deleteTravel, updateTravel } from "@/services/travel/plans";
+import { createTravel, deleteTravel, setTravelLink, updateTravel } from "@/services/travel/plans";
 import { isTravelMode } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
 
@@ -200,6 +200,11 @@ async function reconcile(
     return { calendarId, target: await resolveGoogleAccountForCalendar(userId, calendarId) };
   };
 
+  // この回で新しく作った往路・復路（勤務予定へ紐づけるため。issue #1422）。
+  const createdTravels: { travelPlanId: string; item: ExpectedItem }[] = [];
+  // この回で削除した勤務予定のID。作り直されると旧IDに紐づいた移動が宙に浮くため付け替える。
+  const deletedWorkEventIds = new Set<string>();
+
   for (const key of keys) {
     let row = rowByKey.get(key) ?? null;
     const item = expectedByKey.get(key) ?? null;
@@ -287,6 +292,7 @@ async function reconcile(
                   where: { id },
                   data: { travelPlanId: saved.travels[0].id },
                 });
+                createdTravels.push({ travelPlanId: saved.travels[0].id, item: item! });
               },
               async (saved) => {
                 await deleteTravel(userId, saved.travels[0].id);
@@ -320,6 +326,7 @@ async function reconcile(
         }
         case "delete": {
           if (row!.kind === "WORK") {
+            if (row!.googleEventId) deletedWorkEventIds.add(row!.googleEventId);
             const target = await resolveGoogleAccountForCalendar(userId, row!.googleCalendarId!);
             if (!target.ok) throw new Error("勤務予定の保存先カレンダーに書き込めません。");
             await deleteEvent(target.account, row!.googleCalendarId!, row!.googleEventId!).catch(
@@ -340,6 +347,84 @@ async function reconcile(
       console.error("[dayspan] work sync failed:", message);
       result.errors.push(message);
     }
+  }
+
+  if (deletedWorkEventIds.size > 0) {
+    try {
+      const travelRows = await db.workGenerated.findMany({
+        where: { userId, workRecordId, kind: { not: "WORK" }, travelPlanId: { not: null } },
+      });
+      const stale = await db.travelPlan.findMany({
+        where: {
+          userId,
+          id: { in: travelRows.map((r) => r.travelPlanId!) },
+          linkedEventId: { in: [...deletedWorkEventIds] },
+        },
+        select: { id: true },
+      });
+      const staleIds = new Set(stale.map((plan) => plan.id));
+      for (const row of travelRows) {
+        const item = expectedByKey.get(`${row.date}|${row.kind}|${row.seq}`);
+        if (item && staleIds.has(row.travelPlanId!)) {
+          createdTravels.push({ travelPlanId: row.travelPlanId!, item });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[dayspan] work sync travel relink failed:", message);
+      result.errors.push(message);
+    }
+  }
+
+  await linkCreatedTravels(userId, workRecordId, createdTravels, expectedItems, result);
+}
+
+/**
+ * 新しく作った往路を直後の勤務予定へ、復路を直前の勤務予定へ紐づける（issue #1422）。
+ * 同じ日の勤務予定の時刻で決め、該当が無い（勤務予定の生成がオフ等）ときは何もしない。
+ * 紐づけの失敗は移動の生成を巻き戻さず `errors` に載せる。
+ */
+async function linkCreatedTravels(
+  userId: string,
+  workRecordId: string,
+  created: { travelPlanId: string; item: ExpectedItem }[],
+  expectedItems: ExpectedItem[],
+  result: WorkSyncResult,
+): Promise<void> {
+  if (created.length === 0) return;
+  try {
+    const workRows = await db.workGenerated.findMany({
+      where: { userId, workRecordId, kind: "WORK", googleEventId: { not: null } },
+    });
+    const works = expectedItems
+      .filter((item) => item.kind === "WORK")
+      .flatMap((item) => {
+        const row = workRows.find((r) => r.date === item.date && r.seq === item.seq);
+        return row?.googleEventId && row.googleCalendarId
+          ? [{ item, eventId: row.googleEventId, calendarId: row.googleCalendarId }]
+          : [];
+      });
+    for (const { travelPlanId, item } of created) {
+      const sameDay = works.filter((w) => w.item.date === item.date);
+      const target =
+        item.kind === "RETURN"
+          ? sameDay
+              .filter((w) => w.item.end.getTime() <= item.start.getTime())
+              .sort((a, b) => b.item.end.getTime() - a.item.end.getTime())[0]
+          : sameDay
+              .filter((w) => w.item.start.getTime() >= item.end.getTime())
+              .sort((a, b) => a.item.start.getTime() - b.item.start.getTime())[0];
+      if (!target) continue;
+      await setTravelLink(userId, travelPlanId, {
+        eventId: target.eventId,
+        calendarId: target.calendarId,
+        event: null,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[dayspan] work sync travel link failed:", message);
+    result.errors.push(message);
   }
 }
 
