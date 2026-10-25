@@ -107,6 +107,11 @@ export type CalendarRangeData = {
   /** いま表示中の期間を、まだ一度も取得できていない。予定が無いのか読み込み中なのかを描き分ける。 */
   pending: boolean;
   /**
+   * どの期間も一度も取得できていない（表示中の内容が空のまま）。月表示から初めて切り替えた
+   * 直後に、月表示が持っている内容で埋めるために使う（issue #1425）。
+   */
+  empty: boolean;
+  /**
    * 直近の取得が、通信が遅くてService Workerが代わりに返した保存済みだったか（issue #718）。
    * `use-calendar-chunks.ts` の `stale` と同じ判定・同じ扱い。
    */
@@ -258,8 +263,8 @@ export function useCalendarRangeData({
     }
     inFlightKeyRef.current = targetKey;
     onLoadingChangeRef.current(true);
-    // 取り直しを始めた時点で、前の期間ぶんの印は一旦下ろす。届いた応答で改めて判定し直す。
-    setStale(false);
+    // 「保存済みを表示中」の印は、届いた応答で切り替える。取り直しを始めた時点で下ろすと、
+    // 動かすたびに帯が消えて出直し、グリッドが上下にずれる（issue #1425）。
 
     try {
       const params = new URLSearchParams({ view: targetView, date: targetAnchorKey });
@@ -386,6 +391,7 @@ export function useCalendarRangeData({
     errors: showing.errors,
     loadError,
     pending: state.key !== key,
+    empty: state.key === null,
     stale,
     invalidate,
     isSyncedSince,
