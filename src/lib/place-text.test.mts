@@ -91,3 +91,14 @@ test("placeDisplayName: 住所を切り分けられれば名前だけを返す",
 test("placeDisplayName: 分けられなければそのまま返す", () => {
   assert.equal(placeDisplayName("梅田スカイビル"), "梅田スカイビル");
 });
+
+test("placeDisplayName は名前に続く郵便番号も落とす", async () => {
+  const { placeDisplayName } = await import("@/lib/place-text");
+  assert.equal(placeDisplayName("梅田駅 〒530-0001 大阪府大阪市北区梅田1"), "梅田駅");
+  assert.equal(placeDisplayName("梅田駅 5300001 大阪府大阪市北区梅田1"), "梅田駅");
+});
+
+test("placeDisplayName は先頭に付く郵便番号の住所だけの値を落とす", () => {
+  assert.equal(placeDisplayName("〒100-0001 東京都千代田区千代田１−１"), "東京都千代田区千代田１−１");
+  assert.equal(placeDisplayName("東京駅 〒100-0001 東京都千代田区丸の内1"), "東京駅");
+});
