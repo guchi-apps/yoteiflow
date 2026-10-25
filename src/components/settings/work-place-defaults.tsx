@@ -10,6 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { WorkTrains } from "@/components/settings/work-trains";
 import { fromTime, toTime } from "@/lib/work-sync/form";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
+import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
+
+import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -58,6 +61,8 @@ export function WorkPlaceDefaults({
   defaults: initialDefaults,
   routes: initialRoutes,
   trains,
+  links: initialLinks,
+  linkablePlaces,
   home,
   commonStart,
   commonEnd,
@@ -68,12 +73,15 @@ export function WorkPlaceDefaults({
   defaults: WorkPlaceDefaultRow[];
   routes: WorkRouteRow[];
   trains: WorkTrainItem[];
+  links: WorkPlaceLinkRow[];
+  linkablePlaces: LinkablePlace[];
   home: string | null;
   commonStart: number;
   commonEnd: number;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
   const [routes, setRoutes] = useState(initialRoutes);
+  const [links, setLinks] = useState(initialLinks);
   const [extra, setExtra] = useState<Entry[]>([]);
   const [newTrip, setNewTrip] = useState("");
 
@@ -125,6 +133,9 @@ export function WorkPlaceDefaults({
           entry={entry}
           remote={!entry.isTrip && remotePlaces.includes(entry.key)}
           home={home}
+          linkablePlaces={linkablePlaces}
+          link={links.find((item) => item.workPlace === entry.key) ?? null}
+          onSavedLinks={setLinks}
           row={defaults.find((row) => row.key === entry.key && row.isTrip === entry.isTrip) ?? null}
           out={home ? routes.find((r) => r.origin === home && r.destination === entry.key) ?? null : null}
           back={home ? routes.find((r) => r.origin === entry.key && r.destination === home) ?? null : null}
@@ -168,6 +179,9 @@ function PlaceCard({
   entry,
   remote,
   home,
+  linkablePlaces,
+  link,
+  onSavedLinks,
   row,
   out,
   back,
@@ -180,6 +194,9 @@ function PlaceCard({
   entry: Entry;
   remote: boolean;
   home: string | null;
+  linkablePlaces: LinkablePlace[];
+  link: WorkPlaceLinkRow | null;
+  onSavedLinks: (links: WorkPlaceLinkRow[]) => void;
   row: WorkPlaceDefaultRow | null;
   out: WorkRouteRow | null;
   back: WorkRouteRow | null;
@@ -383,6 +400,14 @@ function PlaceCard({
       )}
 
       {!remote && <WorkTrains trains={trains} home={home} place={entry.key} />}
+      {!entry.isTrip && (
+        <WorkPlaceLinkFields
+          workPlace={entry.key}
+          places={linkablePlaces}
+          link={link}
+          onSaved={onSavedLinks}
+        />
+      )}
 
       <div className="flex items-center gap-3">
         <Button type="button" size="sm" disabled={busy} onClick={save}>
