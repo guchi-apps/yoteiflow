@@ -63,7 +63,7 @@ export function PlacesScreen({
   // 地点の無い場所は地図に出ないため、従来どおり編集を開く。それより狭い幅では
   // 一覧に地図が並ばないので、従来どおり行から編集を開く。
   const openRow = (place: PlaceItem) => {
-    const wide = window.matchMedia("(min-width: 1024px)").matches;
+    const wide = window.matchMedia("(min-width: 960px)").matches;
     if (wide && place.coordinates) {
       setSelectedId(place.id);
       setFocus((current) => ({ id: place.id, seq: (current?.seq ?? 0) + 1 }));
@@ -215,7 +215,7 @@ export function PlacesScreen({
           <div
             role="group"
             aria-label="表示の切り替え"
-            className="flex self-start overflow-hidden rounded-full border border-outline-variant lg:hidden"
+            className="flex self-start overflow-hidden rounded-full border border-outline-variant @3xl/main:hidden"
           >
             {(
               [
@@ -256,8 +256,8 @@ export function PlacesScreen({
         ) : (
           // 1024px以上は一覧の右に地図を並べる（issue #1364）。地図に幅を譲るため、一覧は
           // 以前の2列（issue #636）から1列に戻す。地図は本文のスクロールに付いてこさせる。
-          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
-            <Card className={cn("gap-0 py-0", mode === "map" && "hidden lg:flex")}>
+          <div className="flex flex-col gap-4 @3xl/main:grid @3xl/main:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] @3xl/main:items-start">
+            <Card className={cn("gap-0 py-0", mode === "map" && "hidden @3xl/main:flex")}>
               {filtered.map((place) => (
                 <button
                   key={place.id}
@@ -266,7 +266,7 @@ export function PlacesScreen({
                   aria-current={place.id === selectedId ? "true" : undefined}
                   className={cn(
                     "flex items-center gap-3 px-4 py-3 text-left transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8",
-                    place.id === selectedId && "lg:bg-primary/12",
+                    place.id === selectedId && "@3xl/main:bg-primary/12",
                   )}
                 >
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -309,7 +309,7 @@ export function PlacesScreen({
               focus={focus}
               onEdit={setEditing}
               className={cn(
-                "h-[62dvh] lg:sticky lg:top-24 lg:flex lg:h-[calc(100dvh-8rem)]",
+                "h-[62dvh] @3xl/main:sticky @3xl/main:top-24 @3xl/main:flex @3xl/main:h-[calc(100dvh-8rem)]",
                 mode === "list" && "hidden",
               )}
             />
