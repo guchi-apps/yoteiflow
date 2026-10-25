@@ -10,7 +10,6 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { workCapabilities, workDatabaseReady, workTripPlaces } from "@/services/notion/work-logs";
 import { normalizeWorkMinutes } from "@/types/work";
-import { getRunningActivity } from "@/services/activity/running";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -23,15 +22,12 @@ export default async function WorkPage({
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
-  const [connection, uiSetting, runningActivity] = await Promise.all([
+  const [connection, uiSetting] = await Promise.all([
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({
       where: { userId: user.id },
       select: { timeZone: true, workMinutesPerDay: true },
     }),
-    // ナビの記録の項目へ印を出し、記録中バー（issue #629）に項目名・開始時刻を出すために読む
-    // （docs/spec.md §27）。DaySpanのDBだけで完結するため、外部APIの往復は増えない。
-    getRunningActivity(user.id),
   ]);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
@@ -52,8 +48,6 @@ export default async function WorkPage({
       todayKey={todayKey}
       tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
-      runningActivity={runningActivity}
-      timeZone={timeZone}
       workMinutesPerDay={normalizeWorkMinutes(uiSetting?.workMinutesPerDay)}
     />
   );

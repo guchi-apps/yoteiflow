@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Clock3, Moon, Settings2, Square, Timer } from "lucide-react";
 
 import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activity/activity-time";
@@ -11,9 +11,7 @@ import { formatElapsed } from "@/components/calendar/activity-format";
 import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
 import { useNowIso, useSecondNowIso } from "@/components/calendar/use-clock";
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { AppFrame } from "@/components/nav/app-frame";
-import { BottomNav } from "@/components/nav/main-nav";
+import { HeaderActions, useSetShellRunning, useShellRunning } from "@/components/nav/main-shell";
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -85,6 +83,14 @@ export function ActivityScreen({
   const [startAtInput, setStartAtInput] = useState("");
 
   const nowIso = useNowIso();
+
+  // 常駐シェル（ナビの印・記録中バー）へ、この画面で起きた開始・停止を伝える（issue #1395）。
+  const shellRunning = useShellRunning();
+  const setShellRunning = useSetShellRunning();
+  useEffect(() => {
+    const next = running ? { title: running.title, startedAt: running.startedAt } : null;
+    if (runningKey(next) !== runningKey(shellRunning)) setShellRunning(next);
+  }, [running, shellRunning, setShellRunning]);
 
   // 開始・停止は画面側で先に反映するが、正はサーバーにある（別の端末で止めることもある）。
   // 取り直しでサーバーの値が変わったら、そちらへ戻す。
@@ -224,12 +230,8 @@ export function ActivityScreen({
   const startDisabled = disabled || startAtInvalid !== null;
 
   return (
-    // 記録中のカードは本文にあるため、サイドバーの下端には出さない（記録中の帯を出さないのと同じ）。
-    <AppFrame current="activity" activityRunning={running !== null}>
-      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
-            画面を移る（issue #636）。 */}
-        <AppMenuButton current="activity" activityRunning={running !== null} />
+    <>
+      <HeaderActions>
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -262,7 +264,7 @@ export function ActivityScreen({
           disabled={offline}
           onClick={() => startTransition(() => router.refresh())}
         />
-      </header>
+      </HeaderActions>
 
       <OfflineNotice />
 
@@ -426,9 +428,7 @@ export function ActivityScreen({
           </p>
         </div>
       </div>
-
-      <BottomNav current="activity" activityRunning={running !== null} timeZone={timeZone} />
-    </AppFrame>
+    </>
   );
 }
 
@@ -594,7 +594,7 @@ function RunningCard({
  * 記録中の項目が同じものかを比べるための文字列。
  * サーバーから来る値は取り直しのたびに別のオブジェクトになるため、参照では比べられない。
  */
-function runningKey(running: RunningActivityItem | null): string {
+function runningKey(running: Pick<RunningActivityItem, "title" | "startedAt"> | null): string {
   return running ? `${running.title} ${running.startedAt}` : "";
 }
 
