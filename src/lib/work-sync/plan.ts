@@ -113,6 +113,8 @@ export type ExpectedItem = {
   title: string;
   /** 勤務予定の場所（Googleの予定の location・issue #1319）。移動では使わない。 */
   location?: string;
+  /** 勤務予定のメモ（勤務記録のメモ・issue #1446）。移動では使わない。 */
+  description?: string;
   origin?: string;
   destination?: string;
   mode?: TravelMode;
@@ -249,6 +251,15 @@ function usesTrain(mode: TravelMode | undefined): boolean {
   return mode === undefined || mode === "PUBLIC_TRANSIT";
 }
 
+/** Googleの予定の説明の上限（約8,192文字）に収める。超えると同期が失敗し更新が止まるため。 */
+const MAX_DESCRIPTION_LENGTH = 8000;
+
+/** 勤務予定の説明（勤務記録のメモ・issue #1446）。空なら undefined。控えにも切った後の値が入る。 */
+export function workDescription(memo: string | null): string | undefined {
+  const text = memo?.trim();
+  return text ? text.slice(0, MAX_DESCRIPTION_LENGTH) : undefined;
+}
+
 /** 半休・時間休か。勤務する時間帯を記録ごとに指定できるのはこの場合だけ。 */
 function isPartialLeaveName(leave: string | null): boolean {
   return Boolean(leave) && (annualLeaveHours(leave) !== null || leave!.includes("半"));
@@ -325,6 +336,7 @@ export function planWorkItems(
         end: zonedTime(day.date, day.window.end, settings.timeZone),
         title,
         location,
+        description: workDescription(record.memo),
       });
     }
   }
@@ -564,6 +576,7 @@ function planSegmentedItems(
           end: zonedTime(date, segment.end, settings.timeZone),
           title: `${segment.trip ? "出張" : "勤務"}（${name}）`,
           location: workLocationText(name, segment.trip, settings, places),
+          description: workDescription(record.memo),
         });
       }
 
