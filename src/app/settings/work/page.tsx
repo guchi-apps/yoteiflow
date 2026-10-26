@@ -74,6 +74,7 @@ export default async function WorkSettingsPage({
           destination: route.destination,
           mode: route.mode,
           minutes: route.minutes,
+          isDefault: route.isDefault,
         }))}
         trains={trains}
         links={links}

@@ -48,3 +48,11 @@ test("電車の指定が文字列でない・空は断る", () => {
   assert.equal(parseWorkOverride({ outbound: { trainId: "" } }).ok, false);
   assert.ok(parseWorkOverride({ outbound: { trainId: null } }).ok);
 });
+
+test("移動方法の指定（issue #1447）は通り、不正な値と反映オフの項目では持たない", () => {
+  const ok = parseWorkOverride({ outbound: { enabled: true, minutes: 35, mode: "CAR" }, return: { enabled: false, mode: "WALK" } });
+  assert.ok(ok.ok);
+  assert.equal(ok.override.outbound?.mode, "CAR");
+  assert.equal(ok.override.return?.mode, undefined);
+  assert.equal(parseWorkOverride({ outbound: { mode: "BOAT" } }).ok, false);
+});

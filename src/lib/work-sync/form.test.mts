@@ -5,6 +5,7 @@ import {
   applyOverride,
   checkForm,
   defaultForm,
+  modeChange,
   describePlan,
   rebase,
   resolveKey,
@@ -180,4 +181,39 @@ test("デフォルトの電車は新規の初期値で往路・復路とも選�
   assert.equal(withDefaultTrains({ ...base, outTrainId: "o1" }, cfg, ctx("門真", true)).outTrainId, "o1");
   assert.equal(withDefaultTrains({ ...base, outEnabled: false }, cfg, ctx("門真", true)).outTrainId, "");
   assert.equal(withDefaultTrains(base, cfg, ctx("栗東")).outTrainId, "");
+});
+
+const modeConfig: SyncConfig = {
+  ...config,
+  routes: [
+    { origin: "自宅", destination: "栗東", minutes: 35, mode: "CAR", isDefault: false },
+    { origin: "自宅", destination: "栗東", minutes: 60, mode: "PUBLIC_TRANSIT", isDefault: true },
+    { origin: "栗東", destination: "自宅", minutes: 40, mode: "CAR", isDefault: true },
+  ],
+};
+
+test("移動方法はデフォルトの行から始まり、方法を選ぶと登録済みの所要時間へ差し替わる（issue #1447）", () => {
+  const form = defaultForm(modeConfig, ctx("栗東"));
+  assert.deepEqual([form.outMode, form.outMinutes, form.backMode, form.backMinutes], ["PUBLIC_TRANSIT", "60", "CAR", "40"]);
+  assert.deepEqual(modeChange(modeConfig, ctx("栗東"), "out", "CAR"), {
+    outMode: "CAR",
+    outMinutes: "35",
+    outTrainId: "",
+  });
+  // 未登録の方法は所要時間を空にする（推測しない）。
+  assert.equal(modeChange(modeConfig, ctx("栗東"), "out", "WALK").outMinutes, "");
+  // 公共交通へ戻すと電車の選択は触らない。
+  assert.equal("outTrainId" in modeChange(modeConfig, ctx("栗東"), "out", "PUBLIC_TRANSIT"), false);
+});
+
+test("方法つきの保存は mode を送り、古い応答（modeなし）は公共交通のデフォルトとして扱う（issue #1447）", () => {
+  const form = { ...defaultForm(modeConfig, ctx("栗東")), ...modeChange(modeConfig, ctx("栗東"), "out", "CAR") };
+  const check = checkForm(form, modeConfig, ctx("栗東"), { fullDayOff: false });
+  assert.ok(check.ok);
+  assert.deepEqual(check.payload.outbound, { enabled: true, minutes: 35, mode: "CAR" });
+  const legacy = defaultForm(config, ctx("栗東"));
+  assert.deepEqual([legacy.outMode, legacy.outMinutes], ["PUBLIC_TRANSIT", "60"]);
+  // 保存した方法は既定の上に重なり、所要時間が無ければその方法の登録値を出す。
+  const applied = applyOverride(defaultForm(modeConfig, ctx("栗東")), { outbound: { mode: "CAR" } }, modeConfig, ctx("栗東"));
+  assert.deepEqual([applied.outMode, applied.outMinutes], ["CAR", "35"]);
 });

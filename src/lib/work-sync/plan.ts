@@ -46,6 +46,8 @@ export type PlaceDefaultsLookup = (key: string, isTrip: boolean) => WorkPlaceDef
 export type WorkLegOverride = {
   enabled?: boolean;
   minutes?: number | null;
+  /** 移動方法（issue #1447）。未指定は勤務先のデフォルトの方法。電車は公共交通のときだけ使う。 */
+  mode?: TravelMode;
   /**
    * 選んだ「よく使う電車」（`WorkTrain.id`・issue #1347）。指定すると所要時間からの逆算ではなく、
    * 電車の出発時刻で移動を作る。時間帯の内訳のある記録では使わない。
@@ -88,7 +90,12 @@ export type PlanContext = {
 };
 
 export type WorkRoute = { minutes: number; mode: TravelMode };
-export type RouteLookup = (origin: string, destination: string) => WorkRoute | null;
+/** 方法を省略すると、その組のデフォルトの方法の行。指定したときは、その方法の行だけ（無ければ null）。 */
+export type RouteLookup = (
+  origin: string,
+  destination: string,
+  mode?: TravelMode,
+) => WorkRoute | null;
 
 export type ExpectedKind = "WORK" | "OUTBOUND" | "RETURN";
 
@@ -239,6 +246,11 @@ export function zonedTime(dateKey: string, minutes: number, timeZone: string): D
   return new Date(result);
 }
 
+/** 電車（時刻指定）を使える方法か。方法が未指定の記録（以前の保存）は従来どおり使える。 */
+function usesTrain(mode: TravelMode | undefined): boolean {
+  return mode === undefined || mode === "PUBLIC_TRANSIT";
+}
+
 /** Googleの予定の説明の上限（約8,192文字）に収める。超えると同期が失敗し更新が止まるため。 */
 const MAX_DESCRIPTION_LENGTH = 8000;
 
@@ -357,8 +369,11 @@ export function planWorkItems(
   const last = days[days.length - 1];
 
   if (outboundEnabled) {
-    const route = lookup(home, destination);
-    const train = pickTrain(override?.outbound?.trainId, home, destination);
+    const chosen = override?.outbound?.mode;
+    const route = lookup(home, destination, chosen);
+    // 方法を指定したときは、行が無くても（手入力の所要時間でも）その方法で作る。
+    const legMode: TravelMode = chosen ?? route?.mode ?? lookup(home, destination)?.mode ?? "PUBLIC_TRANSIT";
+    const train = usesTrain(chosen) ? pickTrain(override?.outbound?.trainId, home, destination) : null;
     const minutes = override?.outbound?.minutes ?? route?.minutes ?? null;
     if (train) {
       const departAt = zonedTime(first.date, train.departMinutes, settings.timeZone);
@@ -384,7 +399,7 @@ export function planWorkItems(
         title: `${home} → ${destination}`,
         origin: homeText!,
         destination: destinationText,
-        mode: route?.mode ?? "PUBLIC_TRANSIT",
+        mode: legMode,
       });
     } else {
       missingRoutes.push({ origin: home, destination });
@@ -392,8 +407,10 @@ export function planWorkItems(
   }
 
   if (returnEnabled) {
-    const route = lookup(destination, home);
-    const train = pickTrain(override?.return?.trainId, destination, home);
+    const chosen = override?.return?.mode;
+    const route = lookup(destination, home, chosen);
+    const legMode: TravelMode = chosen ?? route?.mode ?? lookup(destination, home)?.mode ?? "PUBLIC_TRANSIT";
+    const train = usesTrain(chosen) ? pickTrain(override?.return?.trainId, destination, home) : null;
     const minutes = override?.return?.minutes ?? route?.minutes ?? null;
     if (train) {
       const departAt = zonedTime(last.date, train.departMinutes, settings.timeZone);
@@ -419,7 +436,7 @@ export function planWorkItems(
         title: `${destination} → ${home}`,
         origin: destinationText,
         destination: homeText!,
-        mode: route?.mode ?? "PUBLIC_TRANSIT",
+        mode: legMode,
       });
     } else {
       missingRoutes.push({ origin: destination, destination: home });

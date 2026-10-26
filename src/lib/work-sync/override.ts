@@ -1,4 +1,5 @@
 import type { WorkLegOverride, WorkRecordOverride } from "@/lib/work-sync/plan";
+import { isTravelMode } from "@/types/calendar";
 
 /**
  * 入力画面から送られた「この記録だけの反映の指定」を検証して整える純粋関数
@@ -14,7 +15,7 @@ const isLegMinutes = (value: unknown): value is number =>
 function parseLeg(raw: unknown, label: string): WorkLegOverride | string {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== "object") return `${label}の指定が正しくありません。`;
-  const { enabled, minutes, trainId } = raw as Record<string, unknown>;
+  const { enabled, minutes, trainId, mode } = raw as Record<string, unknown>;
   const leg: WorkLegOverride = {};
   if (enabled !== undefined) {
     if (typeof enabled !== "boolean") return `${label}の反映の指定が正しくありません。`;
@@ -31,6 +32,11 @@ function parseLeg(raw: unknown, label: string): WorkLegOverride | string {
     }
   } else if (minutes === null) {
     leg.minutes = null;
+  }
+  if (mode !== undefined && mode !== null) {
+    if (!isTravelMode(mode)) return `${label}の移動方法の指定が正しくありません。`;
+    // 反映をオフにした項目の方法は持たない。
+    if (enabled !== false) leg.mode = mode;
   }
   if (trainId !== undefined && trainId !== null) {
     if (typeof trainId !== "string" || trainId.length === 0 || trainId.length > 191) {

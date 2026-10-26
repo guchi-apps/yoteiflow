@@ -13,6 +13,7 @@ import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 
 import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
+import { pickDefaultRoute } from "@/lib/work-sync/route-modes";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -21,7 +22,12 @@ export type WorkRouteRow = {
   destination: string;
   mode: TravelMode;
   minutes: number;
+  /** 組（出発地・行き先）の既定の移動方法か（issue #1447）。 */
+  isDefault: boolean;
 };
+
+/** 1組（出発地・行き先）の、方法別の行の全体。保存後に組ごと置き換える。 */
+export type SavedRoutePair = { origin: string; destination: string; routes: WorkRouteRow[] };
 
 export type WorkPlaceDefaultRow = {
   key: string;
@@ -41,10 +47,25 @@ type EntryForm = {
   end: string;
   outEnabled: boolean;
   backEnabled: boolean;
-  outMinutes: string;
-  backMinutes: string;
-  mode: TravelMode;
+  /** 方法ごとの所要時間（分・入力途中の文字列。空は未登録）。 */
+  outMinutes: Record<TravelMode, string>;
+  backMinutes: Record<TravelMode, string>;
+  /** 往路・復路のデフォルトの方法。 */
+  outDefault: TravelMode;
+  backDefault: TravelMode;
 };
+
+type Leg = "out" | "back";
+
+const minutesByMode = (rows: WorkRouteRow[]): Record<TravelMode, string> => ({
+  CAR: String(rows.find((row) => row.mode === "CAR")?.minutes ?? ""),
+  PUBLIC_TRANSIT: String(rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.minutes ?? ""),
+  WALK: String(rows.find((row) => row.mode === "WALK")?.minutes ?? ""),
+  OTHER: String(rows.find((row) => row.mode === "OTHER")?.minutes ?? ""),
+});
+
+const defaultModeOf = (rows: WorkRouteRow[]): TravelMode =>
+  pickDefaultRoute(rows)?.mode ?? "PUBLIC_TRANSIT";
 
 /**
  * 勤務先・出張先ごとの既定値（issue #1099・docs/spec.md §46）。勤務場所の詳細画面（issue #1405）の一部。
@@ -62,8 +83,8 @@ export function PlaceDefaultFields({
   link,
   onSavedLinks,
   row,
-  out,
-  back,
+  outRoutes,
+  backRoutes,
   trains,
   commonStart,
   commonEnd,
@@ -77,13 +98,13 @@ export function PlaceDefaultFields({
   link: WorkPlaceLinkRow | null;
   onSavedLinks: (links: WorkPlaceLinkRow[]) => void;
   row: WorkPlaceDefaultRow | null;
-  out: WorkRouteRow | null;
-  back: WorkRouteRow | null;
+  outRoutes: WorkRouteRow[];
+  backRoutes: WorkRouteRow[];
   trains: WorkTrainItem[];
   commonStart: number;
   commonEnd: number;
   onSavedDefaults: (rows: WorkPlaceDefaultRow[]) => void;
-  onSavedRoutes: (change: { saved: WorkRouteRow[]; removed: string[] }) => void;
+  onSavedRoutes: (pairs: SavedRoutePair[]) => void;
 }) {
   const [form, setForm] = useState<EntryForm>({
     workEnabled: row?.workEnabled ?? true,
@@ -91,9 +112,10 @@ export function PlaceDefaultFields({
     end: row?.endMinutes != null ? toTime(row.endMinutes) : "",
     outEnabled: row?.outboundEnabled ?? true,
     backEnabled: row?.returnEnabled ?? true,
-    outMinutes: out ? String(out.minutes) : "",
-    backMinutes: back ? String(back.minutes) : "",
-    mode: out?.mode ?? back?.mode ?? "PUBLIC_TRANSIT",
+    outMinutes: minutesByMode(outRoutes),
+    backMinutes: minutesByMode(backRoutes),
+    outDefault: defaultModeOf(outRoutes),
+    backDefault: defaultModeOf(backRoutes),
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -127,8 +149,25 @@ export function PlaceDefaultFields({
     setBusy(true);
     setMessage(null);
     try {
-      const outMinutes = remote ? null : minutes(form.outMinutes, "往路");
-      const backMinutes = remote ? null : minutes(form.backMinutes, "復路");
+      // 入力の検証は書き込みの前に済ませる（途中で失敗して一部だけ保存されるのを避ける）。
+      const legs = remote || !home
+        ? []
+        : (
+            [
+              { kind: "out" as Leg, label: "往路", origin: home, destination: entry.key, existing: outRoutes },
+              { kind: "back" as Leg, label: "復路", origin: entry.key, destination: home, existing: backRoutes },
+            ] as const
+          ).map((leg) => {
+            const texts = leg.kind === "out" ? form.outMinutes : form.backMinutes;
+            const wanted = TRAVEL_MODES.flatMap((mode) => {
+              const value = minutes(texts[mode], `${leg.label}（${TRAVEL_MODE_LABELS[mode]}）`);
+              return value === null ? [] : [{ mode, minutes: value }];
+            });
+            const chosen = leg.kind === "out" ? form.outDefault : form.backDefault;
+            // 未登録の方法はデフォルトにできない。登録済みの先頭（固定順）へ落とす。
+            const defaultMode = wanted.some((item) => item.mode === chosen) ? chosen : wanted[0]?.mode;
+            return { ...leg, wanted, defaultMode };
+          });
 
       const response = await fetch("/api/settings/work-place-defaults", {
         method: "PUT",
@@ -151,41 +190,46 @@ export function PlaceDefaultFields({
       onSavedDefaults(body.defaults);
 
       if (home && !remote) {
-        const saved: WorkRouteRow[] = [];
-        const removed: string[] = [];
-        for (const leg of [
-          { origin: home, destination: entry.key, minutes: outMinutes, existing: out },
-          { origin: entry.key, destination: home, minutes: backMinutes, existing: back },
-        ]) {
-          if (leg.minutes === null) {
-            if (leg.existing) {
-              await fetch(`/api/settings/work-routes?id=${encodeURIComponent(leg.existing.id)}`, {
-                method: "DELETE",
-              });
-              removed.push(leg.existing.id);
+        const pairs: SavedRoutePair[] = [];
+        for (const leg of legs) {
+          let latest: WorkRouteRow[] = leg.existing;
+          // 外す方法を先に消し、次に既定でない方法、最後に既定の方法を書く（既定の付け替えを最後に確定する）。
+          for (const old of leg.existing) {
+            if (leg.wanted.some((item) => item.mode === old.mode)) continue;
+            const res = await fetch(`/api/settings/work-routes?id=${encodeURIComponent(old.id)}`, {
+              method: "DELETE",
+            });
+            const deleted = (await res.json().catch(() => null)) as { routes?: WorkRouteRow[] } | null;
+            if (!res.ok) throw new Error("移動時間を削除できませんでした。");
+            latest = deleted?.routes ?? latest.filter((row) => row.id !== old.id);
+          }
+          const ordered = [...leg.wanted].sort(
+            (a, b) => Number(a.mode === leg.defaultMode) - Number(b.mode === leg.defaultMode),
+          );
+          for (const item of ordered) {
+            const res = await fetch("/api/settings/work-routes", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                origin: leg.origin,
+                destination: leg.destination,
+                mode: item.mode,
+                minutes: item.minutes,
+                isDefault: item.mode === leg.defaultMode,
+              }),
+            });
+            const routeBody = (await res.json().catch(() => null)) as {
+              routes?: WorkRouteRow[];
+              message?: string;
+            } | null;
+            if (!res.ok || !routeBody?.routes) {
+              throw new Error(routeBody?.message ?? "移動時間を保存できませんでした。");
             }
-            continue;
+            latest = routeBody.routes;
           }
-          const res = await fetch("/api/settings/work-routes", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              origin: leg.origin,
-              destination: leg.destination,
-              mode: form.mode,
-              minutes: leg.minutes,
-            }),
-          });
-          const routeBody = (await res.json().catch(() => null)) as {
-            route?: WorkRouteRow;
-            message?: string;
-          } | null;
-          if (!res.ok || !routeBody?.route) {
-            throw new Error(routeBody?.message ?? "移動時間を保存できませんでした。");
-          }
-          saved.push(routeBody.route);
+          pairs.push({ origin: leg.origin, destination: leg.destination, routes: latest });
         }
-        onSavedRoutes({ saved, removed });
+        onSavedRoutes(pairs);
       }
       setMessage({ text: "保存しました。", error: false });
     } catch (caught) {
@@ -243,46 +287,62 @@ export function PlaceDefaultFields({
           )}
           {(
             [
-              ["往路", "outEnabled", "outMinutes"],
-              ["復路", "backEnabled", "backMinutes"],
+              ["往路", "outEnabled", "outMinutes", "outDefault"],
+              ["復路", "backEnabled", "backMinutes", "backDefault"],
             ] as const
-          ).map(([label, enabledKey, minutesKey]) => (
-            <div key={label} className="flex items-center gap-3">
-              <Switch
-                aria-label={`${label}をカレンダーへ反映`}
-                checked={form[enabledKey]}
-                onCheckedChange={(checked) => patch({ [enabledKey]: checked })}
-              />
-              <span className="type-body-medium w-8 shrink-0">{label}</span>
-              <Input
-                aria-label={`${label}の所要時間（分）`}
-                inputMode="numeric"
-                placeholder="所要時間（分）"
-                disabled={!home}
-                value={form[minutesKey]}
-                onChange={(event) => patch({ [minutesKey]: event.target.value })}
-              />
+          ).map(([label, enabledKey, minutesKey, defaultKey]) => (
+            <div key={label} className="flex flex-col gap-2 border-t border-outline-variant pt-3">
+              <label className="flex items-center gap-3">
+                <Switch
+                  aria-label={`${label}をカレンダーへ反映`}
+                  checked={form[enabledKey]}
+                  onCheckedChange={(checked) => patch({ [enabledKey]: checked })}
+                />
+                <span className="type-body-medium">{label}をカレンダーへ反映</span>
+              </label>
+              <div className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2">
+                <span className="type-label-small text-on-surface-variant">方法</span>
+                <span className="type-label-small text-on-surface-variant">所要時間（分）</span>
+                <span className="type-label-small text-on-surface-variant">デフォルト</span>
+                {TRAVEL_MODES.map((mode) => {
+                  const value = form[minutesKey][mode];
+                  const isDefault = form[defaultKey] === mode;
+                  return (
+                    <div key={mode} className="contents">
+                      <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
+                      <Input
+                        aria-label={`${label}の所要時間（${TRAVEL_MODE_LABELS[mode]}・分）`}
+                        inputMode="numeric"
+                        placeholder="未登録"
+                        disabled={!home}
+                        value={value}
+                        onChange={(event) =>
+                          patch({ [minutesKey]: { ...form[minutesKey], [mode]: event.target.value } })
+                        }
+                      />
+                      <input
+                        type="radio"
+                        name={`${entry.key}-${label}-default`}
+                        aria-label={`${label}のデフォルトを${TRAVEL_MODE_LABELS[mode]}にする`}
+                        className="size-5 justify-self-center accent-primary disabled:opacity-38"
+                        disabled={!home || value.trim() === ""}
+                        checked={isDefault && value.trim() !== ""}
+                        onChange={() => patch({ [defaultKey]: mode })}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ))}
-          <div className="flex flex-wrap gap-2">
-            {TRAVEL_MODES.map((candidate) => (
-              <Button
-                key={candidate}
-                type="button"
-                size="sm"
-                variant={candidate === form.mode ? "secondary" : "outline"}
-                aria-pressed={candidate === form.mode}
-                onClick={() => patch({ mode: candidate })}
-              >
-                {TRAVEL_MODE_LABELS[candidate]}
-              </Button>
-            ))}
-          </div>
+          <p className="type-body-small text-on-surface-variant">
+            勤務入力で最初に選ばれるのはデフォルトの方法です。日ごとに別の方法へ変えられます。空の方法は登録なしとして扱います。
+          </p>
         </>
       )}
 
       {!remote && (
-        <WorkTrains trains={trains} home={home} place={entry.key} canAdd={form.mode === "PUBLIC_TRANSIT"} />
+        <WorkTrains trains={trains} home={home} place={entry.key} canAdd />
       )}
       {!entry.isTrip && (
         <WorkPlaceLinkFields

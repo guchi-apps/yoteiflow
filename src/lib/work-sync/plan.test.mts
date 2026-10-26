@@ -620,6 +620,48 @@ test("時間帯の内訳のある記録では電車を使わない", () => {
   assert.deepEqual(result.missingTrains, []);
 });
 
+test("往路・復路の移動方法を記録ごとに選べる。行が無い方法は手入力の所要時間でその方法のまま作る（issue #1447）", () => {
+  const modeLookup: RouteLookup = (o, d, mode) => {
+    const rows: Record<string, { minutes: number; mode: "CAR" | "PUBLIC_TRANSIT" }> = {
+      CAR: { minutes: 35, mode: "CAR" },
+      PUBLIC_TRANSIT: { minutes: 50, mode: "PUBLIC_TRANSIT" },
+    };
+    if (o !== "自宅" && d !== "自宅") return null;
+    return mode ? (rows[mode] ?? null) : rows.PUBLIC_TRANSIT;
+  };
+  const byKind = (override: Parameters<typeof planWorkItems>[4]) =>
+    Object.fromEntries(
+      planWorkItems(record({}), settings, [], modeLookup, override).items.map((item) => [item.kind, item]),
+    );
+
+  // 指定なしは既定（公共交通）の方法・所要時間。
+  assert.equal(byKind({}).OUTBOUND.mode, "PUBLIC_TRANSIT");
+  // 車を選ぶと車の所要時間（35分）で作る。復路は既定のまま。
+  const car = byKind({ override: { outbound: { mode: "CAR" } } });
+  assert.equal(car.OUTBOUND.mode, "CAR");
+  assert.equal(car.OUTBOUND.end.getTime() - car.OUTBOUND.start.getTime(), 35 * 60_000);
+  assert.equal(car.RETURN.mode, "PUBLIC_TRANSIT");
+  // 未登録の方法は所要時間を手入力すればその方法で作り、無ければ未設定として挙げる。
+  const walk = byKind({ override: { return: { mode: "WALK", minutes: 90 } } });
+  assert.equal(walk.RETURN.mode, "WALK");
+  const missing = planWorkItems(record({}), settings, [], modeLookup, { override: { outbound: { mode: "WALK" } } });
+  assert.equal(missing.items.some((item) => item.kind === "OUTBOUND"), false);
+  assert.equal(missing.missingRoutes.length, 1);
+});
+
+test("電車（時刻指定）は公共交通のときだけ使う（issue #1447）", () => {
+  const train = { id: "t1", origin: "自宅", destination: "栗東", label: "快速", departMinutes: 450, durationMinutes: 40, isDefault: true, note: null };
+  const run = (mode?: "CAR" | "PUBLIC_TRANSIT") =>
+    planWorkItems(record({}), settings, [], lookup, {
+      override: { outbound: { trainId: "t1", ...(mode ? { mode } : {}) } },
+      trains: (id) => (id === "t1" ? train : null),
+    }).items.find((item) => item.kind === "OUTBOUND")!;
+  assert.equal(hhmm(run("PUBLIC_TRANSIT").start), "07:30");
+  assert.equal(hhmm(run().start), "07:30");
+  // 車を選んだ記録では、残っていた電車の指定は使わない。
+  assert.notEqual(hhmm(run("CAR").start), "07:30");
+});
+
 test("勤務記録のメモは勤務予定の説明になり、移動には載らない（issue #1446）", () => {
   const { items } = planWorkItems(record({ memo: " 午前は設計レビュー " }), settings, [], lookup);
   for (const item of items) {

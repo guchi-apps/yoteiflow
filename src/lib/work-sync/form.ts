@@ -5,7 +5,9 @@ import {
   type WorkRecordOverride,
   type WorkTrainItem,
 } from "@/lib/work-sync/plan";
+import { pickDefaultRoute, type RouteModeRow } from "@/lib/work-sync/route-modes";
 import { defaultTrain, earlyByForReturn, lateByForOutbound } from "@/lib/work-sync/train";
+import type { TravelMode } from "@/types/calendar";
 
 /**
  * 勤務入力ダイアログの「勤務予定・移動の反映」欄の状態を作る・検証する純粋関数
@@ -31,7 +33,14 @@ export type SyncConfig = {
   remotePlaces: string[];
   homeOrigin: string | null;
   defaults: SyncConfigPlaceDefault[];
-  routes: Array<{ origin: string; destination: string; minutes: number }>;
+  /** 方法ごとの既定の移動（issue #1447）。古い応答には mode・isDefault が無いので欠けても受ける。 */
+  routes: Array<{
+    origin: string;
+    destination: string;
+    minutes: number;
+    mode?: TravelMode;
+    isDefault?: boolean;
+  }>;
   /** よく使う電車（issue #1347）。古い応答には無いので欠けても受ける。 */
   trains?: WorkTrainItem[];
   override: WorkRecordOverride | null;
@@ -46,6 +55,9 @@ export type SyncForm = {
   outMinutes: string;
   backEnabled: boolean;
   backMinutes: string;
+  /** 移動方法（issue #1447）。空は指定なし＝勤務先のデフォルトの方法。 */
+  outMode: TravelMode | "";
+  backMode: TravelMode | "";
   /** 選んだ電車のID。空は「所要時間」で作る（issue #1347）。 */
   outTrainId: string;
   backTrainId: string;
@@ -109,13 +121,47 @@ export function trainMissing(
   return Boolean(trainId) && !trainsFor(config, context, leg).some((train) => train.id === trainId);
 }
 
+/** 往路・復路の既定の移動の行。方法の無い古い応答は、1組1件の公共交通のデフォルトとして扱う。 */
+export function routesFor(config: SyncConfig, context: SyncContext, leg: Leg): RouteModeRow[] {
+  const home = config.homeOrigin?.trim();
+  if (!home || !context.key) return [];
+  const origin = leg === "out" ? home : context.key;
+  const destination = leg === "out" ? context.key : home;
+  return config.routes
+    .filter((row) => row.origin === origin && row.destination === destination)
+    .map((row) => ({
+      origin: row.origin,
+      destination: row.destination,
+      minutes: row.minutes,
+      mode: row.mode ?? "PUBLIC_TRANSIT",
+      isDefault: row.isDefault ?? true,
+    }));
+}
+
+/** 電車（時刻指定）を使える方法か。 */
+export const modeUsesTrain = (mode: TravelMode | ""): boolean => mode === "" || mode === "PUBLIC_TRANSIT";
+
+/**
+ * 移動方法を選んだときの変更。所要時間はその方法で登録済みの値へ差し替え（未登録は空）、
+ * 公共交通以外では電車の選択を外す。電車は公共交通へ戻したとき選び直す。
+ */
+export function modeChange(
+  config: SyncConfig,
+  context: SyncContext,
+  leg: Leg,
+  mode: TravelMode,
+): Partial<SyncForm> {
+  const registered = routesFor(config, context, leg).find((row) => row.mode === mode);
+  const minutes = registered ? String(registered.minutes) : "";
+  return leg === "out"
+    ? { outMode: mode, outMinutes: minutes, ...(modeUsesTrain(mode) ? {} : { outTrainId: "" }) }
+    : { backMode: mode, backMinutes: minutes, ...(modeUsesTrain(mode) ? {} : { backTrainId: "" }) };
+}
+
 /** 設定（既定）だけから作る初期値。 */
 export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm {
   const def =
     config.defaults.find((row) => row.key === context.key && row.isTrip === context.isTrip) ?? null;
-  const home = config.homeOrigin?.trim() || null;
-  const route = (origin: string, destination: string) =>
-    config.routes.find((row) => row.origin === origin && row.destination === destination)?.minutes;
 
   const common = {
     startMinutes: def?.startMinutes ?? config.startMinutes,
@@ -126,16 +172,18 @@ export function defaultForm(config: SyncConfig, context: SyncContext): SyncForm 
     workWindow({ companyHoliday: false, annualLeave: context.annualLeave }, { ...config, ...common }) ??
     { start: common.startMinutes, end: common.endMinutes };
 
-  const out = home && context.key ? route(home, context.key) : undefined;
-  const back = home && context.key ? route(context.key, home) : undefined;
+  const out = pickDefaultRoute(routesFor(config, context, "out"));
+  const back = pickDefaultRoute(routesFor(config, context, "back"));
   return {
     workEnabled: def?.workEnabled ?? true,
     start: toTime(window.start),
     end: toTime(window.end),
     outEnabled: def?.outboundEnabled ?? true,
-    outMinutes: out ? String(out) : "",
+    outMinutes: out ? String(out.minutes) : "",
+    outMode: out?.mode ?? "",
     backEnabled: def?.returnEnabled ?? true,
-    backMinutes: back ? String(back) : "",
+    backMinutes: back ? String(back.minutes) : "",
+    backMode: back?.mode ?? "",
     outTrainId: "",
     backTrainId: "",
   };
@@ -152,33 +200,49 @@ export function withDefaultTrains(
   context: SyncContext,
 ): SyncForm {
   if (!commutes(config, context)) return form;
-  const pick = (leg: Leg, enabled: boolean, current: string) => {
-    if (!enabled || current !== "") return current;
+  const pick = (leg: Leg, enabled: boolean, current: string, mode: TravelMode | "") => {
+    if (!enabled || current !== "" || !modeUsesTrain(mode)) return current;
     return defaultTrain(trainsFor(config, context, leg))?.id ?? "";
   };
   return {
     ...form,
-    outTrainId: pick("out", form.outEnabled, form.outTrainId),
-    backTrainId: pick("back", form.backEnabled, form.backTrainId),
+    outTrainId: pick("out", form.outEnabled, form.outTrainId, form.outMode),
+    backTrainId: pick("back", form.backEnabled, form.backTrainId, form.backMode),
   };
 }
 
 /** 記録で保存した指定を、既定の上に重ねる。 */
-export function applyOverride(base: SyncForm, override: WorkRecordOverride | null): SyncForm {
+export function applyOverride(
+  base: SyncForm,
+  override: WorkRecordOverride | null,
+  config?: SyncConfig,
+  context?: SyncContext,
+): SyncForm {
   if (!override) return base;
   const leg = (
     value: WorkLegOverride | undefined,
     enabled: boolean,
     minutes: string,
     trainId: string,
+    mode: TravelMode | "",
+    registered: (mode: TravelMode) => number | undefined,
   ) => ({
     enabled: value?.enabled ?? enabled,
-    minutes: value?.minutes != null ? String(value.minutes) : minutes,
+    mode: value?.mode ?? mode,
+    // 方法だけ保存されていて所要時間が無い（電車・既定の値）ときは、その方法で登録済みの値を出す。
+    minutes:
+      value?.minutes != null
+        ? String(value.minutes)
+        : value?.mode && value.mode !== mode
+          ? String(registered(value.mode) ?? "")
+          : minutes,
     // 保存した電車はそのまま持つ（削除されていても消さず、画面で選び直しを促す）。
     trainId: value?.trainId ?? trainId,
   });
-  const out = leg(override.outbound, base.outEnabled, base.outMinutes, base.outTrainId);
-  const back = leg(override.return, base.backEnabled, base.backMinutes, base.backTrainId);
+  const registered = (kind: Leg) => (mode: TravelMode) =>
+    config && context ? routesFor(config, context, kind).find((row) => row.mode === mode)?.minutes : undefined;
+  const out = leg(override.outbound, base.outEnabled, base.outMinutes, base.outTrainId, base.outMode, registered("out"));
+  const back = leg(override.return, base.backEnabled, base.backMinutes, base.backTrainId, base.backMode, registered("back"));
   return {
     workEnabled: override.workEnabled ?? base.workEnabled,
     start: override.startMinutes != null ? toTime(override.startMinutes) : base.start,
@@ -187,6 +251,8 @@ export function applyOverride(base: SyncForm, override: WorkRecordOverride | nul
     outMinutes: out.minutes,
     backEnabled: back.enabled,
     backMinutes: back.minutes,
+    outMode: out.mode,
+    backMode: back.mode,
     outTrainId: out.trainId,
     backTrainId: back.trainId,
   };
@@ -258,23 +324,25 @@ export function checkForm(
       enabled: boolean,
       text: string,
       trainId: string,
+      mode: TravelMode | "",
     ): WorkLegOverride | string => {
       if (!enabled) return { enabled: false, minutes: null };
-      if (trainId) {
+      const modePart = mode ? { mode } : {};
+      if (trainId && modeUsesTrain(mode)) {
         if (trainMissing(config, context, kind, trainId)) {
           return `${label}で選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。`;
         }
-        return { enabled: true, minutes: null, trainId };
+        return { enabled: true, minutes: null, trainId, ...modePart };
       }
       const minutes = Number(text);
       if (text.trim() === "" || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
         return `${label}の所要時間（分）を入力してください。入力しない場合は${label}の反映をオフにしてください。`;
       }
-      return { enabled: true, minutes };
+      return { enabled: true, minutes, ...modePart };
     };
-    const out = leg("往路", "out", form.outEnabled, form.outMinutes, form.outTrainId);
+    const out = leg("往路", "out", form.outEnabled, form.outMinutes, form.outTrainId, form.outMode);
     if (typeof out === "string") return { ok: false, message: out };
-    const back = leg("復路", "back", form.backEnabled, form.backMinutes, form.backTrainId);
+    const back = leg("復路", "back", form.backEnabled, form.backMinutes, form.backTrainId, form.backMode);
     if (typeof back === "string") return { ok: false, message: back };
     payload.outbound = out;
     payload.return = back;
