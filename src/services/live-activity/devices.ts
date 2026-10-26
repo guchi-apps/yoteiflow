@@ -65,9 +65,17 @@ export async function getOrIssueActivityStopToken(userId: string): Promise<strin
   if (existing) return decryptSecret(existing.token);
 
   const token = `${STOP_TOKEN_PREFIX}${randomBytes(TOKEN_BYTES).toString("base64url")}`;
-  await db.activityStopToken.create({
-    data: { userId, tokenHash: hashToken(token), token: encryptSecret(token) },
-  });
+  try {
+    await db.activityStopToken.create({
+      data: { userId, tokenHash: hashToken(token), token: encryptSecret(token) },
+    });
+  } catch (error) {
+    // 同時の初回発行で先に作られた（userId の一意制約違反）ときは、その値を返す。
+    if ((error as { code?: string } | null)?.code !== "P2002") throw error;
+    const created = await db.activityStopToken.findUnique({ where: { userId } });
+    if (!created) throw error;
+    return decryptSecret(created.token);
+  }
   return token;
 }
 

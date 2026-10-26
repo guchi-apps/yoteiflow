@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeRangeResponse, mergeStaleItems } from "@/components/calendar/range-data-merge";
+import {
+  hasGoogleFailure,
+  mergeCalendars,
+  mergeFailedItems,
+  mergeRangeResponse,
+  mergeStaleItems,
+} from "@/components/calendar/range-data-merge";
+import type { WorkRecordItem } from "@/types/work";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -165,4 +172,52 @@ test("mergeStaleItems: 月表示の保存済みでも、保存したばかりの
   );
   assert.deepEqual(merged.travels.map((t) => t.id), ["new-travel"]);
   assert.equal(merged.tasks[0].title, "表示中");
+});
+
+function workRecord(id: string): WorkRecordItem {
+  return { id } as WorkRecordItem;
+}
+
+test("月表示の一部失敗: Notionが失敗した月はタスク・リマインド・勤務場所を表示中のまま残す（issue #1425）", () => {
+  const current = result({
+    events: [event("old")],
+    tasks: [task("t1")],
+    reminders: [reminder("r1")],
+    workRecords: [workRecord("w1")],
+  });
+  // サーバーはNotionが1つでも失敗すると、まとめて空で返す
+  const incoming = result({ events: [event("new")], errors: [{ source: "notion", reason: "x" }] });
+
+  const merged = mergeFailedItems(current, incoming, incoming.errors);
+
+  // 成功したGoogleの予定は応答で置き換える
+  assert.deepEqual(ids(merged.events), ["new"]);
+  assert.deepEqual(ids(merged.tasks), ["t1"]);
+  assert.deepEqual(ids(merged.reminders), ["r1"]);
+  assert.deepEqual(ids(merged.workRecords), ["w1"]);
+});
+
+test("月表示の一部失敗: 失敗が無ければ応答をそのまま返す", () => {
+  const current = result({ workRecords: [workRecord("w1")] });
+  const incoming = result({ workRecords: [] });
+
+  assert.equal(mergeFailedItems(current, incoming, []), incoming);
+});
+
+test("Googleの失敗では保存先の候補を残し、同じカレンダーは先に渡した側を採る", () => {
+  const errors: CalendarLoadResult["errors"] = [{ source: "google", reason: "x" }];
+  assert.equal(hasGoogleFailure(errors), true);
+  assert.equal(hasGoogleFailure([{ source: "notion", reason: "x" }]), false);
+
+  const merged = mergeCalendars(
+    [{ calendarId: "a", name: "新", color: null, isCreateDefault: true }],
+    [
+      { calendarId: "a", name: "旧", color: null, isCreateDefault: true },
+      { calendarId: "b", name: "B", color: null, isCreateDefault: false },
+    ],
+  );
+  assert.deepEqual(
+    merged.map((c) => `${c.calendarId}:${c.name}`),
+    ["a:新", "b:B"],
+  );
 });

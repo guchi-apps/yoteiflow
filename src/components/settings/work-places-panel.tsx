@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, ExternalLink, Plus, Trash2, X } from "lucide-react";
 
 import { TagChip } from "@/components/tags/tag-chip";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,83 @@ import type { LinkablePlace } from "@/components/settings/work-place-link-fields
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import { summarizePlace } from "@/lib/work-place-summary";
+import { isSingleCharacter } from "@/lib/work-short-label";
 import type { TagColor, TagOption } from "@/services/notion/tag-options";
 
 /** 一覧で選んでいる場所。`extra` は勤務場所の選択肢に無い出張先（同名の勤務場所と区別する）。 */
 export type PlaceSelection = { key: string; extra: boolean };
 
 type PanelEntry = Entry & { extra: boolean; option: TagOption | null };
+
+/**
+ * 入力してから✓で確定する欄（issue #1426）。名前と月表示の1文字を同じ動線にそろえる。
+ *
+ * 入力中は何文字でも打てる（変換中の文字数を縛らない）。✓が押せるのは、値が変わっていて
+ * `validate` が通るときだけ。Enterで確定・Esc／✕で取り消し。確定して親の値が変わると、
+ * 呼び出し側の `key` で作り直される（下書きを親の値に合わせ直すためにeffectを使わない）。
+ */
+function ConfirmField({
+  value,
+  ariaLabel,
+  placeholder,
+  inputClassName,
+  disabled,
+  validate,
+  onConfirm,
+}: {
+  value: string;
+  ariaLabel: string;
+  placeholder?: string;
+  inputClassName?: string;
+  disabled?: boolean;
+  validate: (draft: string) => string | null;
+  onConfirm: (draft: string) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const trimmed = draft.trim();
+  const dirty = trimmed !== value;
+  const problem = dirty ? validate(trimmed) : null;
+  const canConfirm = dirty && !problem && !disabled;
+  const confirm = () => {
+    if (canConfirm) void onConfirm(trimmed);
+  };
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <Input
+          className={`h-10 min-w-0 ${inputClassName ?? "flex-1"}`}
+          aria-label={ariaLabel}
+          aria-invalid={problem ? true : undefined}
+          placeholder={placeholder}
+          value={draft}
+          disabled={disabled}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              confirm();
+            }
+            if (event.key === "Escape") setDraft(value);
+          }}
+        />
+        <Button size="icon-sm" aria-label={`${ariaLabel}を確定`} disabled={!canConfirm} onClick={confirm}>
+          <Check className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${ariaLabel}の変更を取り消す`}
+          disabled={!dirty}
+          onClick={() => setDraft(value)}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+      {problem && <p className="type-body-small text-error">{problem}</p>}
+    </div>
+  );
+}
 
 const placeUrl = (selection: PlaceSelection | null) =>
   selection
@@ -88,8 +159,6 @@ export function WorkPlacesPanel({
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("default");
   const [newTrip, setNewTrip] = useState("");
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renamingTo, setRenamingTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,7 +175,6 @@ export function WorkPlacesPanel({
 
   const select = (next: PlaceSelection | null, mode: "push" | "replace" = "push") => {
     setSelected(next);
-    setRenaming(null);
     setError(null);
     window.history[mode === "push" ? "pushState" : "replaceState"](null, "", placeUrl(next));
     if (mode === "push") window.scrollTo(0, 0);
@@ -200,19 +268,14 @@ export function WorkPlacesPanel({
     select(null, "replace");
   };
 
-  const rename = async (option: TagOption) => {
-    const trimmed = renamingTo.trim();
-    if (!trimmed || trimmed === option.name) {
-      setRenaming(null);
-      return;
-    }
+  const rename = async (option: TagOption, trimmed: string) => {
+    if (!trimmed || trimmed === option.name) return;
     if (!(await send(tagsRequest("PATCH", { kind: "work", optionId: option.id, name: trimmed })))) return;
     setTripPlaces((places) => places.map((place) => (place === option.name ? trimmed : place)));
     setShortLabels((labels) => {
       const { [option.name]: label, ...rest } = labels;
       return label === undefined ? rest : { ...rest, [trimmed]: label };
     });
-    setRenaming(null);
     // URLのキーを新しい名前へ置き換える。
     select({ key: trimmed, extra: false }, "replace");
   };
@@ -272,9 +335,8 @@ export function WorkPlacesPanel({
     }
   };
 
-  /** 1文字は欄を離れたときに保存する。入力の途中（変換中）で何度も送らないため。 */
-  const saveShortLabel = async (place: string, value: string) => {
-    const trimmed = value.trim();
+  /** 1文字は✓で確定したときに保存する（空欄は先頭の1文字に戻す）。 */
+  const saveShortLabel = async (place: string, trimmed: string) => {
     if ((shortLabels[place] ?? "") === trimmed) return;
     const before = shortLabels;
     const next = { ...before };
@@ -366,7 +428,6 @@ export function WorkPlacesPanel({
   const renderDetail = (entry: PanelEntry) => {
     const remote = !entry.isTrip && remotePlaces.includes(entry.key);
     const index = entry.option && options ? options.findIndex((item) => item.id === entry.option?.id) : -1;
-    const editing = entry.option !== null && renaming === entry.option.id;
     return (
       <Card>
         <CardContent className="flex flex-col gap-5">
@@ -375,117 +436,93 @@ export function WorkPlacesPanel({
             勤務場所
           </Button>
 
-          <div className="flex min-w-0 flex-col gap-2">
-            {editing && entry.option ? (
-              <>
-                <div className="flex min-w-0 items-center gap-2">
-                  <Input
-                    className="h-10 min-w-0 flex-1"
-                    aria-label={`${entry.key} の名前`}
-                    value={renamingTo}
-                    disabled={busy}
-                    autoFocus
-                    onChange={(event) => setRenamingTo(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        if (entry.option) void rename(entry.option);
-                      }
-                      if (event.key === "Escape") setRenaming(null);
-                    }}
-                  />
-                  <Button
-                    size="icon-sm"
-                    aria-label="名前を保存"
-                    disabled={busy || !renamingTo.trim()}
-                    onClick={() => entry.option && rename(entry.option)}
-                  >
-                    <Check className="size-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label="やめる" onClick={() => setRenaming(null)}>
-                    <X className="size-4" />
-                  </Button>
-                </div>
-                <p className="type-body-small text-on-surface-variant">
-                  名前を変えても移るのは、Notionの記録・出張扱い・月表示の1文字までです。在宅扱い・勤務時間などの
-                  既定値・正式名称は、変更後の名前で入れ直してください。
-                </p>
-              </>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {entry.option ? (
+              <TagChip name={entry.key} color={entry.option.color} className="type-title-small" />
             ) : (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {entry.option ? (
-                  <TagChip name={entry.key} color={entry.option.color} className="type-title-small" />
-                ) : (
-                  <h2 className="type-title-medium">{entry.key}</h2>
-                )}
-                <span className="type-body-small text-on-surface-variant">
-                  {entry.option ? "勤務場所" : "出張先"}
-                </span>
-                <span className="flex-1" />
-                {entry.option && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${entry.key} を上へ`}
-                      disabled={busy || index <= 0}
-                      onClick={() => move(index, -1)}
-                    >
-                      <ArrowUp className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${entry.key} を下へ`}
-                      disabled={busy || index < 0 || index === (options?.length ?? 0) - 1}
-                      onClick={() => move(index, 1)}
-                    >
-                      <ArrowDown className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${entry.key} の名前を変更`}
-                      disabled={busy}
-                      onClick={() => {
-                        setRenaming(entry.option?.id ?? null);
-                        setRenamingTo(entry.key);
-                      }}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="icon-sm"
-                      aria-label={`${entry.key} を削除`}
-                      disabled={busy}
-                      onClick={() => remove(entry.key)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </>
-                )}
-              </div>
+              <h2 className="type-title-medium">{entry.key}</h2>
+            )}
+            <span className="type-body-small text-on-surface-variant">
+              {entry.option ? "勤務場所" : "出張先"}
+            </span>
+            <span className="flex-1" />
+            {entry.option && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`${entry.key} を上へ`}
+                  disabled={busy || index <= 0}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`${entry.key} を下へ`}
+                  disabled={busy || index < 0 || index === (options?.length ?? 0) - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown className="size-4" />
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="icon-sm"
+                  aria-label={`${entry.key} を削除`}
+                  disabled={busy}
+                  onClick={() => remove(entry.key)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </>
             )}
           </div>
 
           {entry.option && (
             <div className="flex flex-col gap-3">
               <h3 className="type-title-small">表示と扱い</h3>
-              <label className="flex items-center gap-2">
-                <Input
-                  key={`${entry.key}:${shortLabels[entry.key] ?? ""}`}
-                  className="h-9 w-12 px-0 text-center"
-                  aria-label={`${entry.key} の月表示の1文字`}
-                  placeholder={Array.from(entry.key)[0] ?? ""}
-                  defaultValue={shortLabels[entry.key] ?? ""}
-                  maxLength={2}
-                  onBlur={(event) => saveShortLabel(entry.key, event.target.value)}
-                />
-                <span className="type-body-small text-on-surface-variant">
+              <div className="flex flex-col gap-1">
+                  <span className="type-label-medium text-on-surface-variant">名前</span>
+                  <ConfirmField
+                    key={`name:${entry.key}`}
+                    value={entry.key}
+                    ariaLabel={`${entry.key} の名前`}
+                    disabled={busy}
+                    validate={(draft) =>
+                      !draft
+                        ? "名前を入力してください。"
+                        : optionNames.includes(draft)
+                          ? `「${draft}」はすでにあります。`
+                          : null
+                    }
+                    onConfirm={async (draft) => {
+                      if (entry.option) await rename(entry.option, draft);
+                    }}
+                  />
+                  <p className="type-body-small text-on-surface-variant">
+                    名前を変えても移るのは、Notionの記録・出張扱い・月表示の1文字までです。在宅扱い・勤務時間などの
+                    既定値・正式名称は、変更後の名前で入れ直してください。
+                  </p>
+                </div>
+              <div className="flex flex-col gap-1">
+                <span className="type-label-medium text-on-surface-variant">
                   スマホの月表示に出す1文字（空欄は先頭の1文字）
                 </span>
-              </label>
+                <ConfirmField
+                  key={`short:${entry.key}:${shortLabels[entry.key] ?? ""}`}
+                  value={shortLabels[entry.key] ?? ""}
+                  ariaLabel={`${entry.key} の月表示の1文字`}
+                  placeholder={Array.from(entry.key)[0] ?? ""}
+                  inputClassName="w-24 text-center"
+                  validate={(draft) =>
+                    !draft || isSingleCharacter(draft)
+                      ? null
+                      : `1文字にしてください（現在${[...new Intl.Segmenter("ja", { granularity: "grapheme" }).segment(draft)].length}文字）`
+                  }
+                  onConfirm={(draft) => saveShortLabel(entry.key, draft)}
+                />
+              </div>
               {tripAvailable ? (
                 <label className="flex items-center gap-3">
                   <Switch

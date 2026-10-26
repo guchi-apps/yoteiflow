@@ -5,9 +5,6 @@ import { travelTitle } from "@/lib/travel-title";
 import { parseVia, serializeVia } from "@/lib/travel-via";
 import {
   isTravelEstimateSource,
-  isTravelMode,
-  isTravelSearchPurpose,
-  MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
   type TravelEstimateSource,
   type TravelItem,
   type TravelMode,
@@ -71,40 +68,7 @@ export class TravelLinkChangedError extends Error {
   }
 }
 
-/**
- * 入力の検証。作成・更新のどちらの経路でも同じ条件で断る。
- *
- * UIでも同じ検証をしているが、DaySpanのAPIや将来のMCPから直接呼ばれた要求は画面を通らない。
- * 時刻の前後関係は toWriteData 側で見る（Dateに直してからでないと判定できないため）。
- */
-export function validateTravelInput(body: Partial<TravelWriteInput>): string | null {
-  if (!body.origin?.trim()) return "出発地を入力してください。";
-  if (!body.destination?.trim()) return "目的地を入力してください。";
-  if (!isTravelMode(body.mode)) return "交通手段を選んでください。";
-  if (!body.departAt || !body.arriveAt) return "出発時刻と到着時刻を入力してください。";
-  if (body.searchPurpose != null && !isTravelSearchPurpose(body.searchPurpose)) return "探した意図の値が正しくありません。";
-  if (
-    body.searchMarginMinutes != null &&
-    (!Number.isInteger(body.searchMarginMinutes) ||
-      body.searchMarginMinutes < 0 ||
-      body.searchMarginMinutes > MAX_TRAVEL_SEARCH_MARGIN_MINUTES)
-  ) {
-    return `余裕分は0〜${MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。`;
-  }
-  if (body.searchEvent != null) {
-    const { start, end, location } = body.searchEvent;
-    if (
-      typeof start !== "string" ||
-      typeof end !== "string" ||
-      Number.isNaN(Date.parse(start)) ||
-      Number.isNaN(Date.parse(end)) ||
-      (location != null && typeof location !== "string")
-    ) {
-      return "探したときの予定の値が正しくありません。";
-    }
-  }
-  return null;
-}
+export { validateTravelInput } from "./travel-validation";
 
 export type TravelSaveResult = {
   travels: TravelItem[];
@@ -186,15 +150,29 @@ export async function createTravel(
   userId: string,
   input: TravelWriteInput,
 ): Promise<TravelSaveResult> {
-  const calendarId = await resolveTravelCalendarId(userId);
-  const timeZone = await getTimeZone(userId);
+  const plan = await createTravelRecord(userId, input);
+  const exported = await exportCreatedTravel(userId, plan);
+  return toSaveResult(plan, exported);
+}
 
-  const plan = await db.travelPlan.create({
+/**
+ * 移動をDBへ保存するだけ（Googleへは書かない）。保存と書き出しの間でIDを控えたい呼び出し元
+ * （内部APIの冪等処理・issue #1432）のために `createTravel` から切り出した。
+ */
+export async function createTravelRecord(userId: string, input: TravelWriteInput): Promise<TravelPlan> {
+  return db.travelPlan.create({
     data: { ...toWriteData(input), userId, returnLeg: input.returnLeg ?? false },
   });
+}
 
-  const exported = await exportTravelToGoogle(userId, plan, calendarId, timeZone);
+/** 保存済みの移動をGoogleへ書き出す（書き出し先と時間帯は設定から解決する）。失敗しても投げない。 */
+export async function exportCreatedTravel(userId: string, plan: TravelPlan): Promise<TravelExportResult> {
+  const calendarId = await resolveTravelCalendarId(userId);
+  const timeZone = await getTimeZone(userId);
+  return exportTravelToGoogle(userId, plan, calendarId, timeZone);
+}
 
+export function toSaveResult(plan: TravelPlan, exported: TravelExportResult): TravelSaveResult {
   return {
     travels: [
       toTravelItem(
@@ -205,6 +183,28 @@ export async function createTravel(
     ],
     exports: [exported],
   };
+}
+
+/**
+ * 同じ出発地・目的地・経由地・出発・到着の移動が既にあればそのIDを返す（内部APIの重複確認用。
+ * 共有取り込み `importSharedTravel` と同じ条件）。
+ */
+export async function findSameTravelId(
+  userId: string,
+  input: Pick<TravelWriteInput, "origin" | "destination" | "via" | "departAt" | "arriveAt">,
+): Promise<string | null> {
+  const existing = await db.travelPlan.findFirst({
+    where: {
+      userId,
+      origin: input.origin.trim(),
+      destination: input.destination.trim(),
+      via: serializeVia(input.via),
+      departAt: new Date(input.departAt),
+      arriveAt: new Date(input.arriveAt),
+    },
+    select: { id: true },
+  });
+  return existing?.id ?? null;
 }
 
 /**

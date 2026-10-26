@@ -65,6 +65,14 @@ function unionKind<K extends ItemKind>(
 
 type RangeItems = Pick<CalendarLoadResult, ItemKind>;
 
+/** 保存先の候補を足し合わせる。同じカレンダーは `preferred` 側を採る。 */
+export function mergeCalendars(
+  preferred: CalendarLoadResult["calendars"],
+  other: CalendarLoadResult["calendars"],
+): CalendarLoadResult["calendars"] {
+  return union(preferred, other, (c) => c.calendarId);
+}
+
 /**
  * 保存済み（`stale`）の応答の項目を、表示中の項目を消さずに足し合わせる。同じ項目は表示中を
  * 優先する（保存済みは表示中より古いことが多い）。月表示の月ごとの保持（`use-calendar-chunks.ts`）
@@ -76,6 +84,33 @@ export function mergeStaleItems(current: RangeItems, incoming: RangeItems): Rang
     merged[kind] = unionKind(kind, current, incoming);
   }
   return merged as RangeItems;
+}
+
+/**
+ * 取得元の一部失敗（`errors`）の応答の項目を反映する。失敗した取得元の種別だけ表示中の項目と
+ * 足し合わせ（同じ項目は応答を優先する）、成功した種別は応答で置き換える。失敗が無ければ
+ * `incoming` をそのまま返す。月表示の月ごとの保持でも同じ規則で使う（issue #1425）。
+ * サーバーはNotionの取得が1つでも失敗すると、タスク・日付リマインド・勤務場所をまとめて空で返す
+ * （`src/services/calendar/load.ts`）ため、置き換えると勤務場所まで一度に消える。
+ */
+export function mergeFailedItems(
+  current: RangeItems,
+  incoming: RangeItems,
+  errors: CalendarLoadResult["errors"],
+): RangeItems {
+  const failedKinds = new Set(errors.flatMap((error) => KINDS_BY_SOURCE[error.source] ?? []));
+  if (failedKinds.size === 0) return incoming;
+
+  const merged = { ...incoming } as Record<ItemKind, unknown>;
+  for (const kind of failedKinds) {
+    merged[kind] = unionKind(kind, incoming, current);
+  }
+  return merged as RangeItems;
+}
+
+/** Googleの取得に失敗した応答か。アカウントごと失敗すると保存先の候補（calendars）からも抜ける。 */
+export function hasGoogleFailure(errors: CalendarLoadResult["errors"]): boolean {
+  return errors.some((error) => error.source === "google");
 }
 
 export type RangeMergeResult = {
@@ -102,22 +137,18 @@ export function mergeRangeResponse(
 ): RangeMergeResult {
   if (stale) {
     const data: CalendarLoadResult = { ...incoming, ...mergeStaleItems(current, incoming) };
-    data.calendars = union(current.calendars, incoming.calendars, (c) => c.calendarId);
+    data.calendars = mergeCalendars(current.calendars, incoming.calendars);
     return { data, merged: true };
   }
 
-  const failedKinds = new Set(
-    incoming.errors.flatMap((error) => KINDS_BY_SOURCE[error.source] ?? []),
-  );
-  if (failedKinds.size === 0) return { data: incoming, merged: false };
+  if (incoming.errors.length === 0) return { data: incoming, merged: false };
 
-  const data: CalendarLoadResult = { ...incoming };
-  for (const kind of failedKinds) {
-    (data as Record<ItemKind, unknown>)[kind] = unionKind(kind, incoming, current);
-  }
-  if (failedKinds.has("events")) {
-    // アカウントごと取得に失敗すると、保存先の候補（calendars）からもそのカレンダーが抜ける。
-    data.calendars = union(incoming.calendars, current.calendars, (c) => c.calendarId);
+  const data: CalendarLoadResult = {
+    ...incoming,
+    ...mergeFailedItems(current, incoming, incoming.errors),
+  };
+  if (hasGoogleFailure(incoming.errors)) {
+    data.calendars = mergeCalendars(incoming.calendars, current.calendars);
   }
   return { data, merged: true };
 }
