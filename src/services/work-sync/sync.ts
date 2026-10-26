@@ -80,7 +80,13 @@ const iso = (date: Date) => date.toISOString();
 
 function expectedSnapshot(item: ExpectedItem): Snapshot {
   return item.kind === "WORK"
-    ? { start: iso(item.start), end: iso(item.end), title: item.title, location: item.location ?? "" }
+    ? {
+        start: iso(item.start),
+        end: iso(item.end),
+        title: item.title,
+        location: item.location ?? "",
+        description: item.description ?? "",
+      }
     : {
         start: iso(item.start),
         end: iso(item.end),
@@ -108,7 +114,9 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
       const start = event.start?.dateTime;
       const end = event.end?.dateTime;
       if (!start || !end) return null;
-      return { start, end, title: event.summary ?? "", location: event.location ?? "" };
+      return { start, end, title: event.summary ?? "", location: event.location ?? "",
+        description: event.description ?? "",
+      };
     } catch (error) {
       if (isGone(error)) return null;
       throw error;
@@ -131,6 +139,8 @@ function eventInput(item: ExpectedItem, timeZone: string, recordId: string): Eve
     title: item.title,
     // 空文字で送ると場所を消す（送らないと前の場所が残る）。
     location: item.location ?? "",
+    // 空文字で送るとメモを消す（勤務記録のメモを空にしたとき）。
+    description: item.description ?? "",
     allDay: false,
     start: iso(item.start),
     end: iso(item.end),

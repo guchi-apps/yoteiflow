@@ -618,3 +618,12 @@ test("時間帯の内訳のある記録では電車を使わない", () => {
   );
   assert.deepEqual(result.missingTrains, []);
 });
+
+test("勤務記録のメモは勤務予定の説明になり、移動には載らない（issue #1446）", () => {
+  const { items } = planWorkItems(record({ memo: " 午前は設計レビュー " }), settings, [], lookup);
+  for (const item of items) {
+    assert.equal(item.description, item.kind === "WORK" ? "午前は設計レビュー" : undefined);
+  }
+  const empty = planWorkItems(record({ memo: "  " }), settings, [], lookup).items;
+  assert.equal(empty.find((item) => item.kind === "WORK")?.description, undefined);
+});

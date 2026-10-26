@@ -106,6 +106,8 @@ export type ExpectedItem = {
   title: string;
   /** 勤務予定の場所（Googleの予定の location・issue #1319）。移動では使わない。 */
   location?: string;
+  /** 勤務予定のメモ（勤務記録のメモ・issue #1446）。移動では使わない。 */
+  description?: string;
   origin?: string;
   destination?: string;
   mode?: TravelMode;
@@ -313,6 +315,7 @@ export function planWorkItems(
         end: zonedTime(day.date, day.window.end, settings.timeZone),
         title,
         location,
+        description: record.memo?.trim() || undefined,
       });
     }
   }
@@ -547,6 +550,7 @@ function planSegmentedItems(
           end: zonedTime(date, segment.end, settings.timeZone),
           title: `${segment.trip ? "出張" : "勤務"}（${name}）`,
           location: workLocationText(name, segment.trip, settings, places),
+          description: record.memo?.trim() || undefined,
         });
       }
 
