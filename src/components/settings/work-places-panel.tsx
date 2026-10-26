@@ -19,6 +19,7 @@ import {
 import type { LinkablePlace } from "@/components/settings/work-place-link-fields";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
+import { pickDefaultRoute } from "@/lib/work-sync/route-modes";
 import { summarizePlace } from "@/lib/work-place-summary";
 import { isSingleCharacter } from "@/lib/work-short-label";
 import type { TagColor, TagOption } from "@/services/notion/tag-options";
@@ -363,10 +364,12 @@ export function WorkPlacesPanel({
 
   const rowOf = (entry: Entry) =>
     defaults.find((row) => row.key === entry.key && row.isTrip === entry.isTrip) ?? null;
-  const outOf = (entry: Entry) =>
-    home ? (routes.find((route) => route.origin === home && route.destination === entry.key) ?? null) : null;
-  const backOf = (entry: Entry) =>
-    home ? (routes.find((route) => route.origin === entry.key && route.destination === home) ?? null) : null;
+  const outRoutesOf = (entry: Entry) =>
+    home ? routes.filter((route) => route.origin === home && route.destination === entry.key) : [];
+  const backRoutesOf = (entry: Entry) =>
+    home ? routes.filter((route) => route.origin === entry.key && route.destination === home) : [];
+  const outOf = (entry: Entry) => pickDefaultRoute(outRoutesOf(entry));
+  const backOf = (entry: Entry) => pickDefaultRoute(backRoutesOf(entry));
 
   const renderCard = (entry: PanelEntry) => {
     const row = rowOf(entry);
@@ -554,18 +557,19 @@ export function WorkPlacesPanel({
             link={links.find((item) => item.workPlace === entry.key) ?? null}
             onSavedLinks={setLinks}
             row={rowOf(entry)}
-            out={outOf(entry)}
-            back={backOf(entry)}
+            outRoutes={outRoutesOf(entry)}
+            backRoutes={backRoutesOf(entry)}
             trains={trains}
             commonStart={commonStart}
             commonEnd={commonEnd}
             onSavedDefaults={setDefaults}
-            onSavedRoutes={(next) =>
+            onSavedRoutes={(pairs) =>
               setRoutes((existing) => [
                 ...existing.filter(
-                  (route) => !next.removed.includes(route.id) && !next.saved.some((saved) => saved.id === route.id),
+                  (route) =>
+                    !pairs.some((pair) => pair.origin === route.origin && pair.destination === route.destination),
                 ),
-                ...next.saved,
+                ...pairs.flatMap((pair) => pair.routes),
               ])
             }
           />
