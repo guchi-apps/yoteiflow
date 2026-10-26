@@ -51,3 +51,16 @@ test("場所DBを読めなかった回は控えの場所を保ち、更新しな
   // 新規（控えなし）は期待値のまま。
   assert.equal(keepSnapshotLocation(nameOnly, null).location, "本社");
 });
+
+test("勤務予定のメモ（issue #1446）: 旧い控えはメモなしと同じに扱い、手書きの説明を手動調整と見なさない", () => {
+  const withMemo = { ...snap(), description: "午前は設計レビュー" };
+  // 旧い控え（説明なし）・Googleの予定も説明なし → 手を入れていない扱いで、メモを入れる更新になる。
+  assert.equal(decide(withMemo, active(), { ...snap(), description: "" }), "update");
+  // 旧い控えでも、Google側に既にある説明は手動調整と見なさない。
+  assert.equal(decide(withMemo, active(), { ...snap(), description: "手書き" }), "update");
+  // 控えにメモがあるときは、Googleで直されたら手動扱い。
+  assert.equal(decide(withMemo, active(withMemo), { ...snap(), description: "直した" }), "markManual");
+  assert.equal(decide(withMemo, active(withMemo), withMemo), "keep");
+  // メモを空にしたら更新（消す）。
+  assert.equal(decide(snap(), active(withMemo), withMemo), "update");
+});

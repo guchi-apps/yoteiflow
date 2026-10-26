@@ -6,6 +6,7 @@ import type { WorkRecordItem } from "@/types/work";
 import {
   enumerateDates,
   planWorkItems,
+  workDescription,
   tripDestination,
   workWindow,
   zonedTime,
@@ -617,4 +618,18 @@ test("時間帯の内訳のある記録では電車を使わない", () => {
     { override: { outbound: { trainId: "t1" } }, trains },
   );
   assert.deepEqual(result.missingTrains, []);
+});
+
+test("勤務記録のメモは勤務予定の説明になり、移動には載らない（issue #1446）", () => {
+  const { items } = planWorkItems(record({ memo: " 午前は設計レビュー " }), settings, [], lookup);
+  for (const item of items) {
+    assert.equal(item.description, item.kind === "WORK" ? "午前は設計レビュー" : undefined);
+  }
+  const empty = planWorkItems(record({ memo: "  " }), settings, [], lookup).items;
+  assert.equal(empty.find((item) => item.kind === "WORK")?.description, undefined);
+});
+
+test("勤務予定の説明はGoogleの上限に収める（issue #1446）", () => {
+  assert.equal(workDescription("あ".repeat(9000))?.length, 8000);
+  assert.equal(workDescription(null), undefined);
 });
