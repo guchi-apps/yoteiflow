@@ -93,6 +93,7 @@ function expectedSnapshot(item: ExpectedItem): Snapshot {
         end: iso(item.end),
         origin: item.origin,
         destination: item.destination,
+        mode: item.mode ?? "PUBLIC_TRANSIT",
       };
 }
 
@@ -132,6 +133,7 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
     end: iso(plan.arriveAt),
     origin: plan.origin,
     destination: plan.destination,
+    mode: plan.mode,
   };
 }
 

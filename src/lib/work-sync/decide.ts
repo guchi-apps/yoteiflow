@@ -17,6 +17,8 @@ export type Snapshot = {
   description?: string;
   origin?: string;
   destination?: string;
+  /** 移動の交通手段（issue #1453）。控えに無い旧い行は PUBLIC_TRANSIT（日別指定導入前の固定値）と同じに扱う。 */
+  mode?: string;
 };
 
 export type RowState = { status: "ACTIVE" | "MANUAL"; snapshot: Snapshot };
@@ -31,7 +33,8 @@ export function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
     (a.location ?? "") === (b.location ?? "") &&
     (a.description ?? "") === (b.description ?? "") &&
     (a.origin ?? "") === (b.origin ?? "") &&
-    (a.destination ?? "") === (b.destination ?? "")
+    (a.destination ?? "") === (b.destination ?? "") &&
+    (a.mode ?? "") === (b.mode ?? "")
   );
 }
 
@@ -64,11 +67,17 @@ export function decide(
     row.snapshot.description === undefined && current
       ? { ...row.snapshot, description: current.description ?? "" }
       : row.snapshot;
-  const untouched = current !== null && sameSnapshot(current, recorded);
+  // 交通手段導入前の移動の控えは、日別指定の無かった頃の固定値（PUBLIC_TRANSIT）として扱う。
+  const legacyMode = (snap: Snapshot): Snapshot =>
+    expected?.mode !== undefined && snap.mode === undefined
+      ? { ...snap, mode: "PUBLIC_TRANSIT" }
+      : snap;
+  const recordedWithMode = legacyMode(recorded);
+  const untouched = current !== null && sameSnapshot(current, recordedWithMode);
   if (!untouched) {
     // 利用者が直した・消した。作り直さず、削除もしない。
     return expected ? "markManual" : "forget";
   }
   if (!expected) return "delete";
-  return sameSnapshot(expected, row.snapshot) ? "keep" : "update";
+  return sameSnapshot(expected, recordedWithMode) ? "keep" : "update";
 }
