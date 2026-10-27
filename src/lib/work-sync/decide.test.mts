@@ -70,10 +70,12 @@ test("移動の交通手段（issue #1453）: 所要時間が同じでも手段�
   // 控え・現在とも公共交通 → 期待が車なら更新する。
   assert.equal(decide(travel("CAR"), active(travel("PUBLIC_TRANSIT")), travel("PUBLIC_TRANSIT")), "update");
   assert.equal(decide(travel("CAR"), active(travel("CAR")), travel("CAR")), "keep");
-  // 旧い控え（手段なし）で公共交通のまま → 追加の更新は起きない。
+  // 旧い控え（手段なし）は現在の手段を控えとして扱う: 手段が同じなら keep、違えば update、手動調整とは見なさない。
   assert.equal(decide(travel("PUBLIC_TRANSIT"), active(travel()), travel("PUBLIC_TRANSIT")), "keep");
-  // 旧い控えで車へ変える → 更新。
+  assert.equal(decide(travel("CAR"), active(travel()), travel("CAR")), "keep");
   assert.equal(decide(travel("CAR"), active(travel()), travel("PUBLIC_TRANSIT")), "update");
+  // 旧い控えで期待が無くなれば削除する。
+  assert.equal(decide(null, active(travel()), travel("CAR")), "delete");
   // 利用者が手段を直した生成物は手動調整扱い。
   assert.equal(decide(travel("PUBLIC_TRANSIT"), active(travel("PUBLIC_TRANSIT")), travel("WALK")), "markManual");
 });

@@ -17,7 +17,7 @@ export type Snapshot = {
   description?: string;
   origin?: string;
   destination?: string;
-  /** 移動の交通手段（issue #1453）。控えに無い旧い行は PUBLIC_TRANSIT（日別指定導入前の固定値）と同じに扱う。 */
+  /** 移動の交通手段（issue #1453）。控えに無い旧い行は、現在の移動の手段を控えとして扱い手動調整と見なさない。 */
   mode?: string;
 };
 
@@ -63,16 +63,15 @@ export function decide(
 
   // メモ導入前の控えは説明を持たない。そのとき Google 側の説明は利用者の手書きかもしれないが、
   // 手動調整とは見なさない（見なすと既存の勤務予定がすべて手動扱いになる）。
+  // 交通手段導入前の移動の控えは手段を持たない。メモと同じく現在の値を控えとして扱う。
   const recorded =
     row.snapshot.description === undefined && current
       ? { ...row.snapshot, description: current.description ?? "" }
       : row.snapshot;
-  // 交通手段導入前の移動の控えは、日別指定の無かった頃の固定値（PUBLIC_TRANSIT）として扱う。
-  const legacyMode = (snap: Snapshot): Snapshot =>
-    expected?.mode !== undefined && snap.mode === undefined
-      ? { ...snap, mode: "PUBLIC_TRANSIT" }
-      : snap;
-  const recordedWithMode = legacyMode(recorded);
+  const recordedWithMode =
+    recorded.mode === undefined && current?.mode !== undefined
+      ? { ...recorded, mode: current.mode }
+      : recorded;
   const untouched = current !== null && sameSnapshot(current, recordedWithMode);
   if (!untouched) {
     // 利用者が直した・消した。作り直さず、削除もしない。
