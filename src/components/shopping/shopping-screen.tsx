@@ -422,6 +422,7 @@ export function ShoppingScreen({
         <ShoppingItemDetailDialog
           item={viewingItem}
           readOnly={offline}
+          timeZone={timeZone}
           onClose={() => setViewingItem(null)}
           onEdit={(item) => {
             setViewingItem(null);
