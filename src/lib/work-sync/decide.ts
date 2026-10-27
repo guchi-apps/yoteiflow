@@ -13,8 +13,12 @@ export type Snapshot = {
   title?: string;
   /** 勤務予定の場所（issue #1319）。控えに無い旧い行は「場所なし」と同じに扱う。 */
   location?: string;
+  /** 勤務予定のメモ（勤務記録のメモ・issue #1446）。控えに無い旧い行は「メモなし」と同じに扱う。 */
+  description?: string;
   origin?: string;
   destination?: string;
+  /** 移動の交通手段（issue #1453）。控えに無い旧い行は、現在の移動の手段を控えとして扱い手動調整と見なさない。 */
+  mode?: string;
 };
 
 export type RowState = { status: "ACTIVE" | "MANUAL"; snapshot: Snapshot };
@@ -27,8 +31,10 @@ export function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
     new Date(a.end).getTime() === new Date(b.end).getTime() &&
     (a.title ?? "") === (b.title ?? "") &&
     (a.location ?? "") === (b.location ?? "") &&
+    (a.description ?? "") === (b.description ?? "") &&
     (a.origin ?? "") === (b.origin ?? "") &&
-    (a.destination ?? "") === (b.destination ?? "")
+    (a.destination ?? "") === (b.destination ?? "") &&
+    (a.mode ?? "") === (b.mode ?? "")
   );
 }
 
@@ -55,11 +61,22 @@ export function decide(
   // 手動扱いの生成物は、以後も更新も削除もしない。対応表の行だけ、不要になれば捨てる。
   if (row.status === "MANUAL") return expected ? "keep" : "forget";
 
-  const untouched = current !== null && sameSnapshot(current, row.snapshot);
+  // メモ導入前の控えは説明を持たない。そのとき Google 側の説明は利用者の手書きかもしれないが、
+  // 手動調整とは見なさない（見なすと既存の勤務予定がすべて手動扱いになる）。
+  // 交通手段導入前の移動の控えは手段を持たない。メモと同じく現在の値を控えとして扱う。
+  const recorded =
+    row.snapshot.description === undefined && current
+      ? { ...row.snapshot, description: current.description ?? "" }
+      : row.snapshot;
+  const recordedWithMode =
+    recorded.mode === undefined && current?.mode !== undefined
+      ? { ...recorded, mode: current.mode }
+      : recorded;
+  const untouched = current !== null && sameSnapshot(current, recordedWithMode);
   if (!untouched) {
     // 利用者が直した・消した。作り直さず、削除もしない。
     return expected ? "markManual" : "forget";
   }
   if (!expected) return "delete";
-  return sameSnapshot(expected, row.snapshot) ? "keep" : "update";
+  return sameSnapshot(expected, recordedWithMode) ? "keep" : "update";
 }

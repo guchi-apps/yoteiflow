@@ -9,6 +9,7 @@ import {
   type ReserveOutcome,
   type ReserveStore,
 } from "@/lib/work-sync/reserve";
+import { buildRouteLookup } from "@/lib/work-sync/route-modes";
 import { decide, keepSnapshotLocation, type Snapshot } from "@/lib/work-sync/decide";
 import {
   planWorkItems,
@@ -80,12 +81,19 @@ const iso = (date: Date) => date.toISOString();
 
 function expectedSnapshot(item: ExpectedItem): Snapshot {
   return item.kind === "WORK"
-    ? { start: iso(item.start), end: iso(item.end), title: item.title, location: item.location ?? "" }
+    ? {
+        start: iso(item.start),
+        end: iso(item.end),
+        title: item.title,
+        location: item.location ?? "",
+        description: item.description ?? "",
+      }
     : {
         start: iso(item.start),
         end: iso(item.end),
         origin: item.origin,
         destination: item.destination,
+        mode: item.mode ?? "PUBLIC_TRANSIT",
       };
 }
 
@@ -108,7 +116,9 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
       const start = event.start?.dateTime;
       const end = event.end?.dateTime;
       if (!start || !end) return null;
-      return { start, end, title: event.summary ?? "", location: event.location ?? "" };
+      return { start, end, title: event.summary ?? "", location: event.location ?? "",
+        description: event.description ?? "",
+      };
     } catch (error) {
       if (isGone(error)) return null;
       throw error;
@@ -123,6 +133,7 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
     end: iso(plan.arriveAt),
     origin: plan.origin,
     destination: plan.destination,
+    mode: plan.mode,
   };
 }
 
@@ -131,6 +142,8 @@ function eventInput(item: ExpectedItem, timeZone: string, recordId: string): Eve
     title: item.title,
     // 空文字で送ると場所を消す（送らないと前の場所が残る）。
     location: item.location ?? "",
+    // 空文字で送るとメモを消す（勤務記録のメモを空にしたとき）。
+    description: item.description ?? "",
     allDay: false,
     start: iso(item.start),
     end: iso(item.end),
@@ -428,13 +441,9 @@ async function linkCreatedTravels(
   }
 }
 
-async function buildRouteLookup(userId: string): Promise<RouteLookup> {
+async function loadRouteLookup(userId: string): Promise<RouteLookup> {
   const routes = await db.workRouteDefault.findMany({ where: { userId } });
-  const map = new Map(routes.map((route) => [`${route.origin}\n${route.destination}`, route]));
-  return (origin, destination) => {
-    const route = map.get(`${origin}\n${destination}`);
-    return route ? { minutes: route.minutes, mode: route.mode } : null;
-  };
+  return buildRouteLookup(routes.map((route) => ({ ...route, updatedAt: route.updatedAt.getTime() })));
 }
 
 /**
@@ -459,7 +468,7 @@ export async function syncWorkRecord(
       loadPlaceDefaultRows(userId),
       loadTrains(userId),
     ]);
-    const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
+    const plan = planWorkItems(record, settings, places, await loadRouteLookup(userId), {
       override,
       placeDefaults: placeDefaultsLookup(defaultRows),
       trains: trainLookup(trains),
@@ -503,7 +512,7 @@ export async function validateOverrideForRecord(
   const settings = await getWorkAutoSettings(userId);
   const { places } = await loadPlacesForSync(userId);
   const [defaultRows, trains] = await Promise.all([loadPlaceDefaultRows(userId), loadTrains(userId)]);
-  const plan = planWorkItems(record, settings, places, await buildRouteLookup(userId), {
+  const plan = planWorkItems(record, settings, places, await loadRouteLookup(userId), {
     override,
     placeDefaults: placeDefaultsLookup(defaultRows),
     trains: trainLookup(trains),

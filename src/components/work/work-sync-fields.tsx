@@ -11,6 +11,9 @@ import {
   checkForm,
   commutes,
   dayEditsFromOverride,
+  modeChange,
+  modeUsesTrain,
+  routesFor,
   defaultForm,
   describePlan,
   type DayEdits,
@@ -28,6 +31,7 @@ import {
   type SyncForm,
 } from "@/lib/work-sync/form";
 import { enumerateDates, type WorkRecordOverride } from "@/lib/work-sync/plan";
+import { TRAVEL_MODES, TRAVEL_MODE_LABELS } from "@/types/calendar";
 
 const FIELD_LABELS: Record<SyncField, string> = {
   workEnabled: "勤務予定の反映",
@@ -37,6 +41,8 @@ const FIELD_LABELS: Record<SyncField, string> = {
   outMinutes: "往路の所要時間",
   backEnabled: "復路の反映",
   backMinutes: "復路の所要時間",
+  outMode: "往路の移動方法",
+  backMode: "復路の移動方法",
   outTrainId: "往路の電車",
   backTrainId: "復路の電車",
 };
@@ -121,7 +127,7 @@ export function useWorkSyncFields({
 
   const initial = config
     ? contextId === initialContextId
-      ? applyOverride(seedForm(defaultForm(config, context)), config.override)
+      ? applyOverride(seedForm(defaultForm(config, context)), config.override, config, context)
       : seedForm(defaultForm(config, context))
     : null;
   const form = edited ?? initial;
@@ -227,10 +233,14 @@ export function useWorkSyncFields({
       enabledField: "outEnabled" | "backEnabled",
       minutesField: "outMinutes" | "backMinutes",
       trainField: "outTrainId" | "backTrainId",
+      modeField: "outMode" | "backMode",
     ) => {
       const trains = trainsFor(config, context, kind);
       const trainId = form[trainField];
-      const useTrain = trainId !== "";
+      const mode = form[modeField];
+      const canTrain = modeUsesTrain(mode);
+      const registered = routesFor(config, context, kind);
+      const useTrain = trainId !== "" && canTrain;
       const missing = useTrain && trainMissing(config, context, kind, trainId);
       const enabled = form[enabledField];
       return (
@@ -242,7 +252,23 @@ export function useWorkSyncFields({
               onCheckedChange={(checked) => change({ [enabledField]: checked })}
             />
             <span className="type-body-medium w-8 shrink-0">{label}</span>
-            <div role="group" aria-label={`${label}の指定方法`} className="inline-flex overflow-hidden rounded-lg border border-outline-variant">
+            <div role="group" aria-label={`${label}の移動方法`} className="flex flex-wrap gap-1.5">
+              {TRAVEL_MODES.map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  aria-pressed={candidate === mode}
+                  disabled={!enabled}
+                  className={`type-label-large rounded-md border px-3 py-1.5 disabled:opacity-38 ${candidate === mode ? "border-primary bg-secondary-container" : "border-outline-variant"}`}
+                  onClick={() => change(modeChange(config, context, kind, candidate))}
+                >
+                  {TRAVEL_MODE_LABELS[candidate]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 pl-11">
+            {canTrain && <div role="group" aria-label={`${label}の指定方法`} className="inline-flex overflow-hidden rounded-lg border border-outline-variant">
               {(
                 [
                   ["duration", "所要時間"],
@@ -265,7 +291,7 @@ export function useWorkSyncFields({
                   </button>
                 );
               })}
-            </div>
+            </div>}
             {!useTrain && (
               <Input
                 aria-label={`${label}の所要時間（分）`}
@@ -278,6 +304,11 @@ export function useWorkSyncFields({
               />
             )}
           </div>
+          {enabled && mode !== "" && !useTrain && !registered.some((row) => row.mode === mode) && (
+            <p className="type-body-small pl-11 text-on-surface-variant">
+              {TRAVEL_MODE_LABELS[mode]}は未登録です。所要時間を入力するか、設定の「勤務」で登録してください。
+            </p>
+          )}
           {useTrain && (
             <div className="flex flex-col gap-2 pl-1">
               <div className="flex flex-wrap gap-2">
@@ -404,8 +435,8 @@ export function useWorkSyncFields({
         )}
         {withCommute && (
           <div className="flex flex-col gap-2">
-            {leg("往路", "out", "outEnabled", "outMinutes", "outTrainId")}
-            {leg("復路", "back", "backEnabled", "backMinutes", "backTrainId")}
+            {leg("往路", "out", "outEnabled", "outMinutes", "outTrainId", "outMode")}
+            {leg("復路", "back", "backEnabled", "backMinutes", "backTrainId", "backMode")}
             {warnings.map((warning) => (
               <p key={warning} role="alert" className="type-body-small text-error">
                 {warning}

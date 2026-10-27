@@ -36,6 +36,8 @@ export async function GET(request: Request) {
       origin: route.origin,
       destination: route.destination,
       minutes: route.minutes,
+      mode: route.mode,
+      isDefault: route.isDefault,
     })),
     trains,
     override,

@@ -46,6 +46,8 @@ export type PlaceDefaultsLookup = (key: string, isTrip: boolean) => WorkPlaceDef
 export type WorkLegOverride = {
   enabled?: boolean;
   minutes?: number | null;
+  /** 移動方法（issue #1447）。未指定は勤務先のデフォルトの方法。電車は公共交通のときだけ使う。 */
+  mode?: TravelMode;
   /**
    * 選んだ「よく使う電車」（`WorkTrain.id`・issue #1347）。指定すると所要時間からの逆算ではなく、
    * 電車の出発時刻で移動を作る。時間帯の内訳のある記録では使わない。
@@ -88,7 +90,12 @@ export type PlanContext = {
 };
 
 export type WorkRoute = { minutes: number; mode: TravelMode };
-export type RouteLookup = (origin: string, destination: string) => WorkRoute | null;
+/** 方法を省略すると、その組のデフォルトの方法の行。指定したときは、その方法の行だけ（無ければ null）。 */
+export type RouteLookup = (
+  origin: string,
+  destination: string,
+  mode?: TravelMode,
+) => WorkRoute | null;
 
 export type ExpectedKind = "WORK" | "OUTBOUND" | "RETURN";
 
@@ -106,6 +113,8 @@ export type ExpectedItem = {
   title: string;
   /** 勤務予定の場所（Googleの予定の location・issue #1319）。移動では使わない。 */
   location?: string;
+  /** 勤務予定のメモ（勤務記録のメモ・issue #1446）。移動では使わない。 */
+  description?: string;
   origin?: string;
   destination?: string;
   mode?: TravelMode;
@@ -237,6 +246,20 @@ export function zonedTime(dateKey: string, minutes: number, timeZone: string): D
   return new Date(result);
 }
 
+/** 電車（時刻指定）を使える方法か。方法が未指定の記録（以前の保存）は従来どおり使える。 */
+function usesTrain(mode: TravelMode | undefined): boolean {
+  return mode === undefined || mode === "PUBLIC_TRANSIT";
+}
+
+/** Googleの予定の説明の上限（約8,192文字）に収める。超えると同期が失敗し更新が止まるため。 */
+const MAX_DESCRIPTION_LENGTH = 8000;
+
+/** 勤務予定の説明（勤務記録のメモ・issue #1446）。空なら undefined。控えにも切った後の値が入る。 */
+export function workDescription(memo: string | null): string | undefined {
+  const text = memo?.trim();
+  return text ? text.slice(0, MAX_DESCRIPTION_LENGTH) : undefined;
+}
+
 /** 半休・時間休か。勤務する時間帯を記録ごとに指定できるのはこの場合だけ。 */
 function isPartialLeaveName(leave: string | null): boolean {
   return Boolean(leave) && (annualLeaveHours(leave) !== null || leave!.includes("半"));
@@ -313,6 +336,7 @@ export function planWorkItems(
         end: zonedTime(day.date, day.window.end, settings.timeZone),
         title,
         location,
+        description: workDescription(record.memo),
       });
     }
   }
@@ -345,8 +369,11 @@ export function planWorkItems(
   const last = days[days.length - 1];
 
   if (outboundEnabled) {
-    const route = lookup(home, destination);
-    const train = pickTrain(override?.outbound?.trainId, home, destination);
+    const chosen = override?.outbound?.mode;
+    const route = lookup(home, destination, chosen);
+    // 方法を指定したときは、行が無くても（手入力の所要時間でも）その方法で作る。
+    const legMode: TravelMode = chosen ?? route?.mode ?? lookup(home, destination)?.mode ?? "PUBLIC_TRANSIT";
+    const train = usesTrain(chosen) ? pickTrain(override?.outbound?.trainId, home, destination) : null;
     const minutes = override?.outbound?.minutes ?? route?.minutes ?? null;
     if (train) {
       const departAt = zonedTime(first.date, train.departMinutes, settings.timeZone);
@@ -372,7 +399,7 @@ export function planWorkItems(
         title: `${home} → ${destination}`,
         origin: homeText!,
         destination: destinationText,
-        mode: route?.mode ?? "PUBLIC_TRANSIT",
+        mode: legMode,
       });
     } else {
       missingRoutes.push({ origin: home, destination });
@@ -380,8 +407,10 @@ export function planWorkItems(
   }
 
   if (returnEnabled) {
-    const route = lookup(destination, home);
-    const train = pickTrain(override?.return?.trainId, destination, home);
+    const chosen = override?.return?.mode;
+    const route = lookup(destination, home, chosen);
+    const legMode: TravelMode = chosen ?? route?.mode ?? lookup(destination, home)?.mode ?? "PUBLIC_TRANSIT";
+    const train = usesTrain(chosen) ? pickTrain(override?.return?.trainId, destination, home) : null;
     const minutes = override?.return?.minutes ?? route?.minutes ?? null;
     if (train) {
       const departAt = zonedTime(last.date, train.departMinutes, settings.timeZone);
@@ -407,7 +436,7 @@ export function planWorkItems(
         title: `${destination} → ${home}`,
         origin: destinationText,
         destination: homeText!,
-        mode: route?.mode ?? "PUBLIC_TRANSIT",
+        mode: legMode,
       });
     } else {
       missingRoutes.push({ origin: destination, destination: home });
@@ -547,6 +576,7 @@ function planSegmentedItems(
           end: zonedTime(date, segment.end, settings.timeZone),
           title: `${segment.trip ? "出張" : "勤務"}（${name}）`,
           location: workLocationText(name, segment.trip, settings, places),
+          description: workDescription(record.memo),
         });
       }
 

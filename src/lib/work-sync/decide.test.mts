@@ -51,3 +51,31 @@ test("場所DBを読めなかった回は控えの場所を保ち、更新しな
   // 新規（控えなし）は期待値のまま。
   assert.equal(keepSnapshotLocation(nameOnly, null).location, "本社");
 });
+
+test("勤務予定のメモ（issue #1446）: 旧い控えはメモなしと同じに扱い、手書きの説明を手動調整と見なさない", () => {
+  const withMemo = { ...snap(), description: "午前は設計レビュー" };
+  // 旧い控え（説明なし）・Googleの予定も説明なし → 手を入れていない扱いで、メモを入れる更新になる。
+  assert.equal(decide(withMemo, active(), { ...snap(), description: "" }), "update");
+  // 旧い控えでも、Google側に既にある説明は手動調整と見なさない。
+  assert.equal(decide(withMemo, active(), { ...snap(), description: "手書き" }), "update");
+  // 控えにメモがあるときは、Googleで直されたら手動扱い。
+  assert.equal(decide(withMemo, active(withMemo), { ...snap(), description: "直した" }), "markManual");
+  assert.equal(decide(withMemo, active(withMemo), withMemo), "keep");
+  // メモを空にしたら更新（消す）。
+  assert.equal(decide(snap(), active(withMemo), withMemo), "update");
+});
+
+test("移動の交通手段（issue #1453）: 所要時間が同じでも手段だけ変われば更新し、旧い控え（手段なし）は公共交通と同じに扱う", () => {
+  const travel = (mode?: string): Snapshot => ({ ...snap(), origin: "自宅", destination: "駅", ...(mode ? { mode } : {}) });
+  // 控え・現在とも公共交通 → 期待が車なら更新する。
+  assert.equal(decide(travel("CAR"), active(travel("PUBLIC_TRANSIT")), travel("PUBLIC_TRANSIT")), "update");
+  assert.equal(decide(travel("CAR"), active(travel("CAR")), travel("CAR")), "keep");
+  // 旧い控え（手段なし）は現在の手段を控えとして扱う: 手段が同じなら keep、違えば update、手動調整とは見なさない。
+  assert.equal(decide(travel("PUBLIC_TRANSIT"), active(travel()), travel("PUBLIC_TRANSIT")), "keep");
+  assert.equal(decide(travel("CAR"), active(travel()), travel("CAR")), "keep");
+  assert.equal(decide(travel("CAR"), active(travel()), travel("PUBLIC_TRANSIT")), "update");
+  // 旧い控えで期待が無くなれば削除する。
+  assert.equal(decide(null, active(travel()), travel("CAR")), "delete");
+  // 利用者が手段を直した生成物は手動調整扱い。
+  assert.equal(decide(travel("PUBLIC_TRANSIT"), active(travel("PUBLIC_TRANSIT")), travel("WALK")), "markManual");
+});
