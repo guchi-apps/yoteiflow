@@ -4,6 +4,7 @@ import { travelTitle } from "@/lib/travel-title";
 import { parseSharedTravelBody, type SharedTravelBody } from "@/lib/share-import/travel-body";
 import { buildYahooTravelImport, type YahooTravelImport } from "@/lib/yahoo-transit-import";
 import { getTimeZone, importSharedTravel } from "@/services/travel/plans";
+import { getTravelWalk } from "@/services/travel/settings";
 
 /**
  * Yahoo!乗換案内の共有（iOS共有拡張）から、予定に紐づかない移動を作る（issue #1026・docs/spec.md §29）。
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     if (!parsed) return shortcutError(400, "invalid_request", "経路の内容が正しくないため登録しませんでした。");
     travel = parsed;
   } else {
-    const built = buildYahooTravelImport(text, await getTimeZone(auth.userId));
+    const built = buildYahooTravelImport(text, await getTimeZone(auth.userId), await getTravelWalk(auth.userId));
     if (!built.ok) {
       return shortcutError(built.error === "unreadable" ? 422 : 400, built.error, built.message);
     }

@@ -118,6 +118,8 @@ export type ExpectedItem = {
   origin?: string;
   destination?: string;
   mode?: TravelMode;
+  /** 「よく使う電車」の詳細（Yahoo!乗換案内の経路テキスト・issue #1465）。移動のメモ・出どころに使う。 */
+  trainNote?: string;
 };
 
 export type MissingRoute = { origin: string | null; destination: string };
@@ -387,6 +389,7 @@ export function planWorkItems(
         origin: homeText!,
         destination: destinationText,
         mode: "PUBLIC_TRANSIT",
+        ...(train.note ? { trainNote: train.note } : {}),
       });
     } else if (minutes) {
       const arrive = zonedTime(first.date, first.window.start, settings.timeZone);
@@ -424,6 +427,7 @@ export function planWorkItems(
         origin: destinationText,
         destination: homeText!,
         mode: "PUBLIC_TRANSIT",
+        ...(train.note ? { trainNote: train.note } : {}),
       });
     } else if (minutes) {
       const depart = zonedTime(last.date, last.window.end, settings.timeZone);

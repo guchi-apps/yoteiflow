@@ -160,8 +160,9 @@ function travelInput(item: ExpectedItem) {
     mode: item.mode ?? "PUBLIC_TRANSIT",
     departAt: iso(item.start),
     arriveAt: iso(item.end),
-    note: GENERATED_NOTE,
-    estimateSource: "MANUAL" as const,
+    // 電車の詳細があれば経路をメモに残し、出どころをYahoo!乗換案内にする（issue #1465）。
+    note: item.trainNote ? `${item.trainNote}\n\n${GENERATED_NOTE}` : GENERATED_NOTE,
+    estimateSource: item.trainNote ? ("YAHOO" as const) : ("MANUAL" as const),
     returnLeg: item.kind === "RETURN",
   };
 }

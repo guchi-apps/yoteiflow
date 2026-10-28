@@ -272,6 +272,9 @@ model UiSetting {
   travelCalendarId    String?
   // 予定前の公共交通を探すとき、予定の開始の何分前に着くか（issue #1331）。検索ごとに変えられる
   travelArriveMarginMinutes Int @default(15)
+  // Yahoo!乗換案内の経路を取り込むとき、電車の発着の前後に足す徒歩の分（issue #1463）。
+  travelWalkBeforeMinutes Int @default(0)
+  travelWalkAfterMinutes  Int @default(0)
 
   // 勤務記録から勤務予定・通勤/出張移動を自動生成する設定（docs/spec.md §46）。
   // 既存の利用者の予定が突然増えないよう、既定はオフ（オプトイン）。

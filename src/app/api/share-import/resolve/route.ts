@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { resolveSharedImport } from "@/lib/share-import/resolve";
 import { getTimeZone } from "@/services/travel/plans";
+import { getTravelWalk } from "@/services/travel/settings";
 
 /**
  * 画面（予定の場所欄へのGoogleマップURLの貼り付けなど）から、共有内容を共通モデルへ読み取る（issue #1083）。
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   const text = typeof body.text === "string" ? body.text.slice(0, 50_000) : undefined;
   const url = typeof body.url === "string" ? body.url.slice(0, 2_048) : undefined;
 
-  const result = await resolveSharedImport({ text, url }, await getTimeZone(userId));
+  const result = await resolveSharedImport({ text, url }, await getTimeZone(userId), undefined, await getTravelWalk(userId));
   if (!result.ok) {
     return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
   }
