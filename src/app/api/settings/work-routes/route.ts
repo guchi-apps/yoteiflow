@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { pickDefaultRoute } from "@/lib/work-sync/route-modes";
+import { MAX_ROUTE_MINUTES, pickDefaultRoute, transitMinutes } from "@/lib/work-sync/route-modes";
 import { isTravelMode } from "@/types/calendar";
 
 /** 勤務先・出張先への既定の移動（出発地 → 行き先 × 移動方法ごと・docs/spec.md §46）。 */
@@ -21,6 +21,8 @@ type Body = {
   destination?: string;
   mode?: string;
   minutes?: number;
+  /** 公共交通の徒歩の分（issue #1458）。公共交通でだけ使う。 */
+  walkMinutes?: number;
   isDefault?: boolean;
 };
 
@@ -29,6 +31,8 @@ type Body = {
  * `isDefault` を送らないときは既定の指定を変えない（組で最初の1件は自動で既定になる）。
  * 既定は組につき最大1件で、既定にするときは同じ組の他の行をトランザクションで外す。
  * 応答の `routes` は、この組の全方法の行（画面が既定の付け替えを反映するため）。
+ * 公共交通は、組によく使う電車（`WorkTrain`）があれば `minutes` を受け取らず、基準の電車の所要分 +
+ * `walkMinutes` をサーバーで求める（issue #1458）。電車が無ければ従来どおり `minutes` が必須。
  */
 export async function PUT(request: Request) {
   const userId = await requireUserId();
@@ -52,14 +56,33 @@ export async function PUT(request: Request) {
   if (!isTravelMode(body.mode)) {
     return NextResponse.json({ error: "invalid_mode" }, { status: 400 });
   }
-  if (!Number.isInteger(body.minutes) || (body.minutes as number) < 1 || (body.minutes as number) > 1440) {
+  const mode = body.mode;
+  const walk = body.walkMinutes ?? 0;
+  if (!Number.isInteger(walk) || walk < 0 || walk > 720) {
+    return NextResponse.json(
+      { error: "invalid", message: "徒歩は0〜720分で入力してください。" },
+      { status: 400 },
+    );
+  }
+  const trains =
+    mode === "PUBLIC_TRANSIT"
+      ? await db.workTrain.findMany({ where: { userId, origin, destination } })
+      : [];
+  const derived = transitMinutes(trains, walk);
+  const minutes = derived ?? body.minutes;
+  if (
+    typeof minutes !== "number" ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    minutes > MAX_ROUTE_MINUTES
+  ) {
     return NextResponse.json(
       { error: "invalid", message: "所要時間は1〜1440分で入力してください。" },
       { status: 400 },
     );
   }
-  const mode = body.mode;
-  const minutes = body.minutes as number;
+  // 徒歩は公共交通だけの値。電車が無い組では手入力の分が合計そのものなので、0として扱う。
+  const walkMinutes = mode === "PUBLIC_TRANSIT" && derived !== null ? walk : 0;
 
   const routes = await db.$transaction(async (tx) => {
     const pair = { userId, origin, destination };
@@ -74,8 +97,8 @@ export async function PUT(request: Request) {
     const isDefault = makeDefault || (body.isDefault === undefined && (current?.isDefault ?? false));
     await tx.workRouteDefault.upsert({
       where: { userId_origin_destination_mode: { ...pair, mode } },
-      create: { ...pair, mode, minutes, isDefault },
-      update: { minutes, isDefault },
+      create: { ...pair, mode, minutes, walkMinutes, isDefault },
+      update: { minutes, walkMinutes, isDefault },
     });
     return tx.workRouteDefault.findMany({ where: pair });
   });
