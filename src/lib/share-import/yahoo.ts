@@ -1,4 +1,4 @@
-import { buildYahooTravelImport } from "@/lib/yahoo-transit-import";
+import { buildYahooTravelImport, type YahooTravelWalk } from "@/lib/yahoo-transit-import";
 import { SHARE_IMPORT_HEADINGS, type ShareImportResult } from "@/lib/share-import/types";
 
 /** メモの生テキストから運賃（円）を拾う。「運賃」を含む行を優先し、読めなければ null。 */
@@ -11,8 +11,8 @@ export function yahooFare(note: string): number | null {
 }
 
 /** Yahoo!乗換案内の共有テキストを共通モデルへ変換する。解析の規則は `buildYahooTravelImport` のまま。 */
-export function resolveYahooShare(text: string, timeZone: string): ShareImportResult {
-  const built = buildYahooTravelImport(text, timeZone);
+export function resolveYahooShare(text: string, timeZone: string, walk?: YahooTravelWalk): ShareImportResult {
+  const built = buildYahooTravelImport(text, timeZone, walk);
   if (!built.ok) {
     return { ok: false, status: built.error === "unreadable" ? 422 : 400, error: built.error, message: built.message };
   }

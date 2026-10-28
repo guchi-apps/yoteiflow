@@ -1,6 +1,7 @@
 import { resolveActivityStopUserId, shortcutError, shortcutJson } from "@/app/api/shortcuts/shared";
 import { resolveSharedImport } from "@/lib/share-import/resolve";
 import { getTimeZone } from "@/services/travel/plans";
+import { getTravelWalk } from "@/services/travel/settings";
 
 /**
  * 外部アプリ（Yahoo!乗換案内・Googleマップ）の共有内容を、登録せず確認画面向けに読み取る（issue #1083）。
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   const url = typeof body.url === "string" ? body.url.slice(0, 2_048) : undefined;
 
   const timeZone = await getTimeZone(auth.userId);
-  const result = await resolveSharedImport({ text, url }, timeZone);
+  const result = await resolveSharedImport({ text, url }, timeZone, undefined, await getTravelWalk(auth.userId));
   if (!result.ok) return shortcutError(result.status, result.error, result.message);
 
   return shortcutJson({ ok: true, item: result.item, timeZone, message: `${result.item.title} を読み取りました。` });

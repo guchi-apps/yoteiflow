@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { updateTravelSettings } from "@/services/travel/settings";
-import { isTravelMode, MAX_TRAVEL_SEARCH_MARGIN_MINUTES } from "@/types/calendar";
+import { isTravelMode, MAX_TRAVEL_SEARCH_MARGIN_MINUTES, MAX_TRAVEL_WALK_MINUTES } from "@/types/calendar";
 
 type Body = {
   defaultOrigin?: string | null;
   defaultMode?: string;
   calendarId?: string | null;
   arriveMarginMinutes?: number;
+  walkBeforeMinutes?: number;
+  walkAfterMinutes?: number;
 };
 
 /**
@@ -43,6 +45,15 @@ export async function PATCH(request: Request) {
     );
   }
 
+  for (const walk of [body.walkBeforeMinutes, body.walkAfterMinutes]) {
+    if (walk !== undefined && (!Number.isInteger(walk) || walk < 0 || walk > MAX_TRAVEL_WALK_MINUTES)) {
+      return NextResponse.json(
+        { error: "invalid_walk", message: `徒歩は0〜${MAX_TRAVEL_WALK_MINUTES}分で入力してください。` },
+        { status: 400 },
+      );
+    }
+  }
+
   const result = await updateTravelSettings(userId, {
     ...(body.defaultOrigin !== undefined ? { defaultOrigin: body.defaultOrigin } : {}),
     ...(body.defaultMode !== undefined && isTravelMode(body.defaultMode)
@@ -50,6 +61,8 @@ export async function PATCH(request: Request) {
       : {}),
     ...(body.calendarId !== undefined ? { calendarId: body.calendarId } : {}),
     ...(body.arriveMarginMinutes !== undefined ? { arriveMarginMinutes: body.arriveMarginMinutes } : {}),
+    ...(body.walkBeforeMinutes !== undefined ? { walkBeforeMinutes: body.walkBeforeMinutes } : {}),
+    ...(body.walkAfterMinutes !== undefined ? { walkAfterMinutes: body.walkAfterMinutes } : {}),
   });
 
   if (!result.ok) {

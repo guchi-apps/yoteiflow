@@ -62,3 +62,44 @@ test("駅名が読めなければ断る", () => {
   assert.ok(!result.ok);
   assert.equal(result.error, "no_stations");
 });
+
+const WITH_WALK = { before: 5, after: 7 };
+
+test("徒歩の設定を電車の発着の前後へ足し、メモに電車の発着を残す（#1463）", () => {
+  const text = SAMPLE.replace("↓ 20:58〜21:21", "↓ 20:58〜21:21\n↓ ＪＲ琵琶湖線");
+  const result = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
+  assert.ok(result.ok);
+  assert.equal(result.travel.departAt, "2026-08-28T11:53:00.000Z");
+  assert.equal(result.travel.arriveAt, "2026-08-28T12:53:00.000Z");
+  assert.ok(result.travel.note.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前5分・後7分を含む"));
+});
+
+test("徒歩が0・未指定なら時刻もメモも変えない", () => {
+  const result = buildYahooTravelImport(SAMPLE, "Asia/Tokyo");
+  assert.ok(result.ok);
+  assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
+  assert.ok(!result.travel.note.includes("徒歩"));
+});
+
+test("始点が徒歩から始まるドアtoドア経路は、その側へ足さない（二重加算の回避）", () => {
+  const text = SAMPLE.replace("■草津(滋賀県)\n↓ 20:58〜21:21", "■草津(滋賀県)\n↓ 徒歩\n▼ 草津駅\n↓ 20:58〜21:21");
+  const result = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
+  assert.ok(result.ok);
+  assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
+  assert.equal(result.travel.arriveAt, "2026-08-28T12:53:00.000Z");
+  assert.ok(result.travel.note.endsWith("徒歩 後7分を含む"));
+});
+
+test("終点が徒歩で終わる経路は、その側へ足さない", () => {
+  const text = SAMPLE.replace("■高槻", "▼ 高槻駅\n↓ 徒歩\n■高槻市役所");
+  const result = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
+  assert.ok(result.ok);
+  assert.equal(result.travel.departAt, "2026-08-28T11:53:00.000Z");
+  assert.equal(result.travel.arriveAt, "2026-08-28T12:46:00.000Z");
+});
+
+test("区間を読めない経路（印が2つ未満）は足さない", () => {
+  const text = SAMPLE.replace("■草津(滋賀県)\n", "").replace("■高槻\n", "草津(滋賀県) ⇒ 高槻\n");
+  const result = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
+  if (result.ok) assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
+});
