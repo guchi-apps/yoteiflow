@@ -17,6 +17,8 @@ export async function patchTravelTimes(
   travel: TravelItem,
   departAt: string,
   arriveAt: string,
+  /** 変更シート（issue #1466）が手段・メモ・出どころも変えるとき。省略した項目は手元の値のまま。 */
+  overrides: Partial<Pick<TravelItem, "mode" | "note" | "estimateSource" | "estimated">> = {},
 ): Promise<string | null> {
   try {
     const response = await fetch(`/api/travels/${encodeURIComponent(travel.id)}`, {
@@ -26,12 +28,12 @@ export async function patchTravelTimes(
         origin: travel.origin,
         destination: travel.destination,
         via: travel.via,
-        mode: travel.mode,
+        mode: overrides.mode ?? travel.mode,
         departAt,
         arriveAt,
-        note: travel.note,
-        estimated: travel.estimated,
-        estimateSource: travel.estimateSource,
+        note: "note" in overrides ? overrides.note : travel.note,
+        estimated: overrides.estimated ?? travel.estimated,
+        estimateSource: overrides.estimateSource ?? travel.estimateSource,
       }),
     });
     if (response.ok) return null;

@@ -784,10 +784,14 @@ export function CalendarShell({
     setViewingTask(task);
   };
 
-  const editTravel = (travel: TravelItem) => {
+  const editTravel = (travel: TravelItem, mode?: TravelMode) => {
     if (offline) return;
     setViewingTravel(null);
-    setItemDialog({ initialKind: "travel", drafts: { travel: toTravelDraft(travel, timeZone) } });
+    const draft = toTravelDraft(travel, timeZone);
+    setItemDialog({
+      initialKind: "travel",
+      drafts: { travel: mode ? { ...draft, mode } : draft },
+    });
   };
 
   /**
@@ -1571,7 +1575,7 @@ function CalendarBody({
   onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
   onEditReminder: (reminder: ReminderItem) => void;
-  onEditTravel: (travel: TravelItem) => void;
+  onEditTravel: (travel: TravelItem, mode?: TravelMode) => void;
   /** 予定の詳細から移動を足す。目的地・到着時刻はその予定から埋める。 */
   onAddTravelForEvent: (event: CalendarEventItem) => void;
   /** 予定の詳細からタスクを紐づける（docs/spec.md §31）。 */
@@ -2248,6 +2252,7 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditTravel(viewingTravel)}
+          onEditWithMode={(mode) => onEditTravel(viewingTravel, mode)}
           onDeleted={handleSaved}
           // この移動に紐づくタスク。出発前に確かめるものなどを置く（issue #914）。
           linkedTasks={data.tasks.filter((task) =>
