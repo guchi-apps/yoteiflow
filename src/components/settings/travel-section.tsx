@@ -19,6 +19,7 @@ import type { PlaceCatalog } from "@/services/notion/places";
 import type { TravelSettings } from "@/services/travel/settings";
 import {
   MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
+  MAX_TRAVEL_WALK_MINUTES,
   TRAVEL_MODES,
   TRAVEL_MODE_LABELS,
   type WritableCalendar,
@@ -57,6 +58,23 @@ export function TravelSection({
       return;
     }
     if (next !== value.arriveMarginMinutes) void send({ arriveMarginMinutes: next });
+  };
+  // 徒歩も入力中の文字列を持ち、欄から離れたときに保存する（issue #1463）
+  const [walk, setWalk] = useState({
+    before: String(settings.walkBeforeMinutes),
+    after: String(settings.walkAfterMinutes),
+  });
+  const commitWalk = (side: "before" | "after") => {
+    const key = side === "before" ? "walkBeforeMinutes" : "walkAfterMinutes";
+    const text = walk[side].trim();
+    const next = text === "" ? 0 : Number(text);
+    if (!Number.isInteger(next) || next < 0 || next > MAX_TRAVEL_WALK_MINUTES) {
+      setError(`徒歩は0〜${MAX_TRAVEL_WALK_MINUTES}分で入力してください。`);
+      setWalk((current) => ({ ...current, [side]: String(value[key]) }));
+      return;
+    }
+    setWalk((current) => ({ ...current, [side]: String(next) }));
+    if (next !== value[key]) void send({ [key]: next });
   };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +189,35 @@ export function TravelSection({
           />
           <p className="type-body-small text-on-surface-variant">
             予定の前の電車・バスを探すとき、予定の開始からこの分だけ早い到着時刻で検索します。移動の入力で、検索ごとに変えられます。
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Input
+            id="travel-walk-before"
+            label="電車の前に歩く（分）"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={MAX_TRAVEL_WALK_MINUTES}
+            value={walk.before}
+            onChange={(e) => setWalk((current) => ({ ...current, before: e.target.value }))}
+            onBlur={() => commitWalk("before")}
+          />
+          <Input
+            id="travel-walk-after"
+            label="電車のあとに歩く（分）"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={MAX_TRAVEL_WALK_MINUTES}
+            value={walk.after}
+            onChange={(e) => setWalk((current) => ({ ...current, after: e.target.value }))}
+            onBlur={() => commitWalk("after")}
+          />
+          <p className="type-body-small text-on-surface-variant">
+            Yahoo!乗換案内の経路を取り込むとき、電車の出発のこの分だけ前を移動の出発、到着のこの分だけあとを到着にします。
+            出発地・目的地が駅でなく徒歩から始まる経路には、その側は足しません。勤務の自動生成の徒歩は、設定 ▸ 勤務の勤務場所で別に持ちます。
           </p>
         </div>
 
