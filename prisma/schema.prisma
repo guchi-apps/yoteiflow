@@ -461,6 +461,9 @@ model WorkRouteDefault {
   minutes     Int
   /// 組ごとの既定の移動方法（issue #1447）。組につき最大1件（PUT/DELETEで保つ）。
   isDefault Boolean @default(false)
+  /// 公共交通の徒歩の分（家→駅・駅→行き先の合計・issue #1458）。公共交通の行で、よく使う電車（WorkTrain）が
+  /// あるとき minutes = 基準の電車の所要分 + walkMinutes をサーバーが保存する。他の方法では使わない。
+  walkMinutes Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

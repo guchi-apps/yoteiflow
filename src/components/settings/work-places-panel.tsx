@@ -126,7 +126,7 @@ export function WorkPlacesPanel({
   commonEnd,
   defaults: initialDefaults,
   routes: initialRoutes,
-  trains,
+  trains: initialTrains,
   links: initialLinks,
   linkablePlaces,
 }: {
@@ -153,6 +153,7 @@ export function WorkPlacesPanel({
   const [remotePlaces, setRemotePlaces] = useState(initialRemotePlaces);
   const [defaults, setDefaults] = useState(initialDefaults);
   const [routes, setRoutes] = useState(initialRoutes);
+  const [trains, setTrains] = useState(initialTrains);
   const [links, setLinks] = useState(initialLinks);
   const [extra, setExtra] = useState<string[]>([]);
   const [selected, setSelected] = useState(initialSelection);
@@ -560,6 +561,16 @@ export function WorkPlacesPanel({
             outRoutes={outRoutesOf(entry)}
             backRoutes={backRoutesOf(entry)}
             trains={trains}
+            onTrainsChanged={(next) => {
+              setTrains(next);
+              // 電車の変更でサーバーが公共交通の所要時間を求め直すため、行を取り直す（issue #1458）。
+              void fetch("/api/settings/work-routes")
+                .then((res) => (res.ok ? res.json() : null))
+                .then((body: { routes?: WorkRouteRow[] } | null) => {
+                  if (body?.routes) setRoutes(body.routes);
+                })
+                .catch(() => undefined);
+            }}
             commonStart={commonStart}
             commonEnd={commonEnd}
             onSavedDefaults={setDefaults}

@@ -22,6 +22,7 @@ export function WorkTrains({
   home,
   place,
   canAdd,
+  onChange,
 }: {
   trains: WorkTrainItem[];
   home: string | null;
@@ -29,6 +30,8 @@ export function WorkTrains({
   place: string;
   /** 追加フォームを出すか。交通手段が公共交通のときだけ true（登録済みの一覧は常に出す・issue #1427）。 */
   canAdd: boolean;
+  /** 電車の一覧が変わったとき（保存・削除・デフォルト変更）。公共交通の所要時間の再計算結果を取り直すため。 */
+  onChange?: (trains: WorkTrainItem[]) => void;
 }) {
   const [trains, setTrains] = useState(initial);
   const [editing, setEditing] = useState<string | null>(null);
@@ -113,6 +116,7 @@ export function WorkTrains({
       } | null;
       if (!response.ok || !body?.trains) throw new Error(body?.message ?? "保存できませんでした。");
       setTrains(body.trains);
+      onChange?.(body.trains);
       return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "保存できませんでした。");
