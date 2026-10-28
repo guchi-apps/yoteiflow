@@ -1,6 +1,7 @@
 import type { WorkGenerated } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { GENERATED_NOTE } from "@/lib/work-generated-note";
 import { withWorkPlaceLinks } from "@/lib/work-place-link";
 import {
   createWithReservation,
@@ -75,7 +76,7 @@ const emptyResult = (status: WorkSyncResult["status"]): WorkSyncResult => ({
   errors: [],
 });
 
-export const GENERATED_NOTE = "勤務記録から自動生成（既定の移動時間）";
+export { GENERATED_NOTE };
 
 const iso = (date: Date) => date.toISOString();
 
