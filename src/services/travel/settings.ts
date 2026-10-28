@@ -16,6 +16,9 @@ export type TravelSettings = {
   calendarId: string | null;
   /** 予定前の公共交通を探すとき、予定の開始の何分前に着くか（issue #1331）。検索ごとに変えられる */
   arriveMarginMinutes: number;
+  /** Yahoo!乗換案内の経路を取り込むとき、電車の発着の前後に足す徒歩の分（issue #1463） */
+  walkBeforeMinutes: number;
+  walkAfterMinutes: number;
 };
 
 export const DEFAULT_TRAVEL_SETTINGS: TravelSettings = {
@@ -23,7 +26,15 @@ export const DEFAULT_TRAVEL_SETTINGS: TravelSettings = {
   defaultMode: "PUBLIC_TRANSIT",
   calendarId: null,
   arriveMarginMinutes: 15,
+  walkBeforeMinutes: 0,
+  walkAfterMinutes: 0,
 };
+
+/** Yahoo!取り込みで電車の前後に足す徒歩（issue #1463）。 */
+export async function getTravelWalk(userId: string): Promise<{ before: number; after: number }> {
+  const { walkBeforeMinutes, walkAfterMinutes } = await getTravelSettings(userId);
+  return { before: walkBeforeMinutes, after: walkAfterMinutes };
+}
 
 export async function getTravelSettings(userId: string): Promise<TravelSettings> {
   const setting = await db.uiSetting.findUnique({
@@ -33,6 +44,8 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
       travelDefaultMode: true,
       travelCalendarId: true,
       travelArriveMarginMinutes: true,
+      travelWalkBeforeMinutes: true,
+      travelWalkAfterMinutes: true,
     },
   });
 
@@ -43,6 +56,8 @@ export async function getTravelSettings(userId: string): Promise<TravelSettings>
     defaultMode: setting.travelDefaultMode,
     calendarId: setting.travelCalendarId,
     arriveMarginMinutes: setting.travelArriveMarginMinutes,
+    walkBeforeMinutes: setting.travelWalkBeforeMinutes,
+    walkAfterMinutes: setting.travelWalkAfterMinutes,
   };
 }
 
@@ -77,6 +92,8 @@ export async function updateTravelSettings(
       : {}),
     ...(input.calendarId !== undefined ? { travelCalendarId: input.calendarId } : {}),
     ...(input.arriveMarginMinutes !== undefined ? { travelArriveMarginMinutes: input.arriveMarginMinutes } : {}),
+    ...(input.walkBeforeMinutes !== undefined ? { travelWalkBeforeMinutes: input.walkBeforeMinutes } : {}),
+    ...(input.walkAfterMinutes !== undefined ? { travelWalkAfterMinutes: input.walkAfterMinutes } : {}),
   };
 
   await db.uiSetting.upsert({

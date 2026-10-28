@@ -30,7 +30,14 @@ export type YahooTravelImportResult =
   | { ok: true; travel: YahooTravelImport }
   | { ok: false; error: "unreadable" | "no_date" | "no_stations"; message: string };
 
-export function buildYahooTravelImport(text: string, timeZone: string): YahooTravelImportResult {
+/** 電車の前後に足す徒歩の分（設定 ▸ 移動・issue #1463）。 */
+export type YahooTravelWalk = { before: number; after: number };
+
+export function buildYahooTravelImport(
+  text: string,
+  timeZone: string,
+  walk: YahooTravelWalk = { before: 0, after: 0 },
+): YahooTravelImportResult {
   const route = parseYahooTransitRoute(text);
   if (!route) {
     return {
@@ -59,15 +66,29 @@ export function buildYahooTravelImport(text: string, timeZone: string): YahooTra
     };
   }
 
+  // 座標・住所検索のドアtoドア経路は、その側の徒歩を既に含む。足さずに電車の時刻のまま使う。
+  const before = route.walkAtStart ? 0 : Math.max(0, walk.before);
+  const after = route.walkAtEnd ? 0 : Math.max(0, walk.after);
+  const trainDepartIso = localInputToIso(fields.departAt, timeZone);
+  const trainArriveIso = localInputToIso(fields.arriveAt, timeZone);
+  const shifted = (iso: string, minutes: number) => new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
+
+  // 時刻を広げたあとも電車の発着が分かるよう、メモの末尾に残す。
+  const walkParts = [before > 0 ? `前${before}分` : null, after > 0 ? `後${after}分` : null].filter(Boolean);
+  const note =
+    walkParts.length > 0
+      ? `${route.noteText}\n\n電車の発着 ${route.departTime}〜${route.arriveTime} ／ 徒歩 ${walkParts.join("・")}を含む`
+      : route.noteText;
+
   return {
     ok: true,
     travel: {
       origin: yahooStationName(route.fromStation),
       destination: yahooStationName(route.toStation),
       mode: "PUBLIC_TRANSIT",
-      departAt: localInputToIso(fields.departAt, timeZone),
-      arriveAt: localInputToIso(fields.arriveAt, timeZone),
-      note: route.noteText,
+      departAt: shifted(trainDepartIso, -before),
+      arriveAt: shifted(trainArriveIso, after),
+      note,
       estimateSource: "YAHOO",
     },
   };

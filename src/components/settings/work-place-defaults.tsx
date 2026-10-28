@@ -354,7 +354,7 @@ export function PlaceDefaultFields({
                         <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
                         <div className="flex min-w-0 flex-col gap-1">
                           <p className="type-body-small text-on-surface-variant">
-                            電車 {base.durationMinutes}分（{base.label || "名前なし"}）＋ 徒歩
+                            電車 {base.durationMinutes}分（{base.label || "名前なし"}）＋ 徒歩（前後の合計）
                           </p>
                           <div className="flex items-center gap-2">
                             <Input
@@ -367,6 +367,9 @@ export function PlaceDefaultFields({
                             />
                             <span className="type-body-medium shrink-0 tabular-nums">＝ {total ?? "—"}分</span>
                           </div>
+                          <p className="type-body-small text-on-surface-variant">
+                            勤務の自動生成で使う前後の合計です。Yahoo!の経路取り込みで電車の前後に足す徒歩は、設定 ▸ 移動で登録します。
+                          </p>
                         </div>
                         <input
                           type="radio"

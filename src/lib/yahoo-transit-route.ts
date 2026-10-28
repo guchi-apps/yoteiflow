@@ -61,6 +61,12 @@ export type YahooTransitRoute = {
    * 落とさないため。
    */
   noteText: string;
+  /**
+   * 始点側・終点側の最初／最後の区間がすでに徒歩か（座標・住所で検索したドアtoドアの経路。issue #1463）。
+   * 駅から駅の経路なら false。区間を読めない経路は判別できないため true にして、徒歩を足さない側へ倒す。
+   */
+  walkAtStart: boolean;
+  walkAtEnd: boolean;
 };
 
 /**
@@ -114,6 +120,21 @@ export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
     fromStation: stations.at(0) ?? null,
     toStation: stations.length > 1 ? (stations.at(-1) ?? null) : null,
     noteText: body.trim(),
+    ...readEdgeWalks(lines),
+  };
+}
+
+/**
+ * 始点（先頭の `■`／`▼`）から次の印まで、終点（最後の印）の直前の印から終点までに「徒歩」の行があるか。
+ * 印が2つ未満で区間を取り出せないときは両側とも true（足さない）にする。
+ */
+function readEdgeWalks(lines: string[]): { walkAtStart: boolean; walkAtEnd: boolean } {
+  const marks = lines.flatMap((line, index) => (line.startsWith("■") || line.startsWith("▼") ? [index] : []));
+  if (marks.length < 2) return { walkAtStart: true, walkAtEnd: true };
+  const hasWalk = (from: number, to: number) => lines.slice(from + 1, to).some((line) => line.includes("徒歩"));
+  return {
+    walkAtStart: hasWalk(marks[0], marks[1]),
+    walkAtEnd: hasWalk(marks[marks.length - 2], marks[marks.length - 1]),
   };
 }
 

@@ -1,5 +1,6 @@
 import { extractGoogleMapsUrl, resolveGoogleMapsShare, type GoogleMapsShareDeps } from "@/lib/share-import/google-maps";
 import type { ShareImportResult } from "@/lib/share-import/types";
+import type { YahooTravelWalk } from "@/lib/yahoo-transit-import";
 import { resolveYahooShare } from "@/lib/share-import/yahoo";
 
 export type ShareImportInput = {
@@ -17,6 +18,8 @@ export async function resolveSharedImport(
   input: ShareImportInput,
   timeZone: string,
   deps?: GoogleMapsShareDeps,
+  /** Yahoo!の経路の電車の前後に足す徒歩（設定 ▸ 移動・issue #1463） */
+  walk?: YahooTravelWalk,
 ): Promise<ShareImportResult> {
   const googleUrl = extractGoogleMapsUrl(input.url ?? "") ?? extractGoogleMapsUrl(input.text ?? "");
   if (googleUrl) return resolveGoogleMapsShare(googleUrl, deps, timeZone);
@@ -25,7 +28,7 @@ export async function resolveSharedImport(
   if (!text.trim()) {
     return { ok: false, status: 422, error: "unreadable", message: "共有された内容を読み取れませんでした。" };
   }
-  return resolveYahooShare(text, timeZone);
+  return resolveYahooShare(text, timeZone, walk);
 }
 
 export { extractGoogleMapsUrl };
