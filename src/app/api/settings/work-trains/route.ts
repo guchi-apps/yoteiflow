@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { parseTrainInput } from "@/lib/work-sync/train";
-import { loadTrains, saveTrain } from "@/services/work-sync/config";
+import { deleteTrain, loadTrains, saveTrain } from "@/services/work-sync/config";
 
 /** よく使う電車（出発地 → 行き先ごとに複数・docs/spec.md §46・issue #1347）。 */
 const MAX_TRAINS = 200;
@@ -47,6 +47,6 @@ export async function DELETE(request: Request) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
-  await db.workTrain.deleteMany({ where: { id, userId } });
+  await deleteTrain(userId, id);
   return NextResponse.json({ trains: await loadTrains(userId) });
 }

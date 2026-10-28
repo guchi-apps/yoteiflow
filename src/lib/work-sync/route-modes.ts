@@ -43,3 +43,24 @@ export function buildRouteLookup(rows: RouteModeRow[]): RouteLookup {
     return row ? { minutes: row.minutes, mode: row.mode } : null;
   };
 }
+
+/** 基準の電車を決めるのに要る値（`WorkTrainItem` の一部）。 */
+export type TransitTrain = { isDefault: boolean; departMinutes: number; durationMinutes: number };
+
+/**
+ * 公共交通の所要時間の基準にする電車（issue #1458）。デフォルト（★）の電車、無ければ出発が最も早い電車。
+ * 組に電車が無ければ null（その場合は手入力の分を使う）。
+ */
+export function transitBaseTrain<T extends TransitTrain>(trains: T[]): T | null {
+  const byDepart = [...trains].sort((a, b) => a.departMinutes - b.departMinutes);
+  return byDepart.find((train) => train.isDefault) ?? byDepart[0] ?? null;
+}
+
+/** 基準の電車の所要分 + 徒歩。組に電車が無ければ null。 */
+export function transitMinutes(trains: TransitTrain[], walkMinutes: number): number | null {
+  const base = transitBaseTrain(trains);
+  return base ? base.durationMinutes + Math.max(0, walkMinutes) : null;
+}
+
+/** 公共交通の所要分の上限（`WorkRouteDefault` の検証と同じ）。 */
+export const MAX_ROUTE_MINUTES = 1440;

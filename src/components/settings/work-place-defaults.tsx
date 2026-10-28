@@ -13,7 +13,7 @@ import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 
 import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
-import { pickDefaultRoute } from "@/lib/work-sync/route-modes";
+import { pickDefaultRoute, transitBaseTrain, transitMinutes } from "@/lib/work-sync/route-modes";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -24,6 +24,8 @@ export type WorkRouteRow = {
   minutes: number;
   /** 組（出発地・行き先）の既定の移動方法か（issue #1447）。 */
   isDefault: boolean;
+  /** 公共交通の徒歩の分（issue #1458）。電車があるとき minutes = 基準の電車 + これ。 */
+  walkMinutes: number;
 };
 
 /** 1組（出発地・行き先）の、方法別の行の全体。保存後に組ごと置き換える。 */
@@ -53,6 +55,9 @@ type EntryForm = {
   /** 往路・復路のデフォルトの方法。 */
   outDefault: TravelMode;
   backDefault: TravelMode;
+  /** 公共交通の徒歩（分・入力途中の文字列）。電車が登録済みの区間でだけ使う。 */
+  outWalk: string;
+  backWalk: string;
 };
 
 type Leg = "out" | "back";
@@ -63,6 +68,11 @@ const minutesByMode = (rows: WorkRouteRow[]): Record<TravelMode, string> => ({
   WALK: String(rows.find((row) => row.mode === "WALK")?.minutes ?? ""),
   OTHER: String(rows.find((row) => row.mode === "OTHER")?.minutes ?? ""),
 });
+
+const walkOf = (rows: WorkRouteRow[]): string => {
+  const walk = rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.walkMinutes ?? 0;
+  return walk > 0 ? String(walk) : "";
+};
 
 const defaultModeOf = (rows: WorkRouteRow[]): TravelMode =>
   pickDefaultRoute(rows)?.mode ?? "PUBLIC_TRANSIT";
@@ -86,6 +96,7 @@ export function PlaceDefaultFields({
   outRoutes,
   backRoutes,
   trains,
+  onTrainsChanged,
   commonStart,
   commonEnd,
   onSavedDefaults,
@@ -101,6 +112,7 @@ export function PlaceDefaultFields({
   outRoutes: WorkRouteRow[];
   backRoutes: WorkRouteRow[];
   trains: WorkTrainItem[];
+  onTrainsChanged: (trains: WorkTrainItem[]) => void;
   commonStart: number;
   commonEnd: number;
   onSavedDefaults: (rows: WorkPlaceDefaultRow[]) => void;
@@ -116,6 +128,8 @@ export function PlaceDefaultFields({
     backMinutes: minutesByMode(backRoutes),
     outDefault: defaultModeOf(outRoutes),
     backDefault: defaultModeOf(backRoutes),
+    outWalk: walkOf(outRoutes),
+    backWalk: walkOf(backRoutes),
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -124,6 +138,16 @@ export function PlaceDefaultFields({
     setForm((current) => ({ ...current, ...next }));
     setMessage(null);
   };
+
+  /** 区間（往路: 自宅 → 勤務先、復路: 勤務先 → 自宅）によく使う電車があるか。あれば公共交通は電車＋徒歩で決まる。 */
+  const trainsOf = (kind: Leg) =>
+    home
+      ? trains.filter((train) =>
+          kind === "out"
+            ? train.origin === home && train.destination === entry.key
+            : train.origin === entry.key && train.destination === home,
+        )
+      : [];
 
   const save = async () => {
     const start = form.start ? fromTime(form.start) : null;
@@ -159,9 +183,19 @@ export function PlaceDefaultFields({
             ] as const
           ).map((leg) => {
             const texts = leg.kind === "out" ? form.outMinutes : form.backMinutes;
+            const legTrains = trainsOf(leg.kind);
+            const walkText = leg.kind === "out" ? form.outWalk : form.backWalk;
+            const walk = walkText.trim() === "" ? 0 : Number(walkText);
+            if (!Number.isInteger(walk) || walk < 0 || walk > 720) {
+              throw new Error(`${leg.label}の徒歩は0〜720分で入力してください。`);
+            }
             const wanted = TRAVEL_MODES.flatMap((mode) => {
+              // 電車が登録済みの区間の公共交通は、電車＋徒歩で決まる（所要時間の入力は要らない）。
+              if (mode === "PUBLIC_TRANSIT" && legTrains.length > 0) {
+                return [{ mode, minutes: transitMinutes(legTrains, walk) ?? 1, walk }];
+              }
               const value = minutes(texts[mode], `${leg.label}（${TRAVEL_MODE_LABELS[mode]}）`);
-              return value === null ? [] : [{ mode, minutes: value }];
+              return value === null ? [] : [{ mode, minutes: value, walk: 0 }];
             });
             const chosen = leg.kind === "out" ? form.outDefault : form.backDefault;
             // 未登録の方法はデフォルトにできない。登録済みの先頭（固定順）へ落とす。
@@ -215,6 +249,7 @@ export function PlaceDefaultFields({
                 destination: leg.destination,
                 mode: item.mode,
                 minutes: item.minutes,
+                walkMinutes: item.walk,
                 isDefault: item.mode === leg.defaultMode,
               }),
             });
@@ -307,6 +342,44 @@ export function PlaceDefaultFields({
                 {TRAVEL_MODES.map((mode) => {
                   const value = form[minutesKey][mode];
                   const isDefault = form[defaultKey] === mode;
+                  const kind: Leg = minutesKey === "outMinutes" ? "out" : "back";
+                  const legTrains = mode === "PUBLIC_TRANSIT" ? trainsOf(kind) : [];
+                  const base = transitBaseTrain(legTrains);
+                  if (base) {
+                    const walkKey = kind === "out" ? "outWalk" : "backWalk";
+                    const walkText = form[walkKey];
+                    const total = transitMinutes(legTrains, Number(walkText) || 0);
+                    return (
+                      <div key={mode} className="contents">
+                        <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <p className="type-body-small text-on-surface-variant">
+                            電車 {base.durationMinutes}分（{base.label || "名前なし"}）＋ 徒歩
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              aria-label={`${label}の徒歩（分）`}
+                              inputMode="numeric"
+                              placeholder="0"
+                              disabled={!home}
+                              value={walkText}
+                              onChange={(event) => patch({ [walkKey]: event.target.value })}
+                            />
+                            <span className="type-body-medium shrink-0 tabular-nums">＝ {total ?? "—"}分</span>
+                          </div>
+                        </div>
+                        <input
+                          type="radio"
+                          name={`${entry.key}-${label}-default`}
+                          aria-label={`${label}のデフォルトを${TRAVEL_MODE_LABELS[mode]}にする`}
+                          className="size-5 justify-self-center accent-primary disabled:opacity-38"
+                          disabled={!home}
+                          checked={isDefault}
+                          onChange={() => patch({ [defaultKey]: mode })}
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={mode} className="contents">
                       <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
@@ -336,13 +409,13 @@ export function PlaceDefaultFields({
             </div>
           ))}
           <p className="type-body-small text-on-surface-variant">
-            勤務入力で最初に選ばれるのはデフォルトの方法です。日ごとに別の方法へ変えられます。空の方法は登録なしとして扱います。
+            勤務入力で最初に選ばれるのはデフォルトの方法です。日ごとに別の方法へ変えられます。空の方法は登録なしとして扱います。公共交通は、下の「電車」を登録すると、デフォルトの電車（★、無ければ出発が最も早い電車）の所要時間に徒歩を足した時間になります。
           </p>
         </>
       )}
 
       {!remote && (
-        <WorkTrains trains={trains} home={home} place={entry.key} canAdd />
+        <WorkTrains trains={trains} home={home} place={entry.key} canAdd onChange={onTrainsChanged} />
       )}
       {!entry.isTrip && (
         <WorkPlaceLinkFields
