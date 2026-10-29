@@ -541,6 +541,21 @@ test("電車を選んだ往路・復路は、勤務開始/終了からの逆算�
   assert.equal(hhmm(by.WORK.start), "08:45");
 });
 
+test("電車の詳細（Yahoo!の経路テキスト）は移動の trainNote に載せ、詳細なしの電車では載せない（issue #1465）", () => {
+  const withNote = (id: string) =>
+    id === "t1" ? { ...nozomi, note: "7:30発 → 9:50着" } : trains(id);
+  const { items } = planWorkItems(
+    record({ businessTrip: true, title: "門真", place: null }),
+    settings,
+    [],
+    lookup,
+    { override: { outbound: { trainId: "t1" }, return: { trainId: "t2" } }, trains: withNote },
+  );
+  const by = Object.fromEntries(items.map((item) => [item.kind, item]));
+  assert.equal(by.OUTBOUND.trainNote, "7:30発 → 9:50着");
+  assert.equal(by.RETURN.trainNote, undefined);
+});
+
 test("電車は往路を初日、復路を最終日に置く", () => {
   const { items } = planWorkItems(
     record({ businessTrip: true, title: "門真", place: null, endDate: "2026-10-07" }),

@@ -27,10 +27,12 @@ import {
   type TaskItem,
   type TaskLinkTarget,
   type TravelItem,
+  type TravelMode,
 } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
+import { TravelChangeSheet } from "./travel-change-sheet";
 import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
@@ -49,6 +51,7 @@ export function TravelDetailDialog({
   readOnly = false,
   onClose,
   onEdit,
+  onEditWithMode,
   onDeleted,
   linkedTasks = [],
   onOpenTask,
@@ -65,6 +68,8 @@ export function TravelDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  /** 変更シートから、選んだ移動方法で編集画面を開く（issue #1466）。 */
+  onEditWithMode?: (mode: TravelMode) => void;
   onDeleted: (touched: TouchedRange[] | null) => void;
   /** この移動に紐づいているタスク（issue #914）。出発前に確かめるタスクなどを置く。 */
   linkedTasks?: TaskItem[];
@@ -91,6 +96,7 @@ export function TravelDetailDialog({
   const [open, setOpen] = useState(true);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -137,6 +143,18 @@ export function TravelDetailDialog({
     1,
     Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000),
   );
+
+  if (changing) {
+    return (
+      <TravelChangeSheet
+        travel={travel}
+        timeZone={timeZone}
+        onCancel={onClose}
+        onSaved={(touched) => onLinked?.(touched)}
+        onSearch={(mode) => onEditWithMode?.(mode)}
+      />
+    );
+  }
 
   if (linkingEvent) {
     return (
@@ -301,6 +319,18 @@ export function TravelDetailDialog({
           )}
 
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={readOnly}
+              onClick={() => {
+                setOpen(false);
+                setTimeout(() => setChanging(true), 150);
+              }}
+            >
+              <Route className="size-4" />
+              移動方法・時間を変更
+            </Button>
             <Button
               variant="outline"
               size="sm"

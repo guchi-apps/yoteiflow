@@ -1,6 +1,7 @@
 import type { WorkGenerated } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { GENERATED_NOTE } from "@/lib/work-generated-note";
 import { withWorkPlaceLinks } from "@/lib/work-place-link";
 import {
   createWithReservation,
@@ -75,7 +76,7 @@ const emptyResult = (status: WorkSyncResult["status"]): WorkSyncResult => ({
   errors: [],
 });
 
-export const GENERATED_NOTE = "勤務記録から自動生成（既定の移動時間）";
+export { GENERATED_NOTE };
 
 const iso = (date: Date) => date.toISOString();
 
@@ -159,8 +160,9 @@ function travelInput(item: ExpectedItem) {
     mode: item.mode ?? "PUBLIC_TRANSIT",
     departAt: iso(item.start),
     arriveAt: iso(item.end),
-    note: GENERATED_NOTE,
-    estimateSource: "MANUAL" as const,
+    // 電車の詳細があれば経路をメモに残し、出どころをYahoo!乗換案内にする（issue #1465）。
+    note: item.trainNote ? `${item.trainNote}\n\n${GENERATED_NOTE}` : GENERATED_NOTE,
+    estimateSource: item.trainNote ? ("YAHOO" as const) : ("MANUAL" as const),
     returnLeg: item.kind === "RETURN",
   };
 }

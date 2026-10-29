@@ -318,6 +318,8 @@ export function isTravelSearchPurpose(value: unknown): value is TravelSearchPurp
 
 /** 余裕分の上限（分）。予定前の到着・予定後の出発をずらす幅で、3時間を超える値は打ち間違いとみなす。 */
 export const MAX_TRAVEL_SEARCH_MARGIN_MINUTES = 180;
+/** Yahoo!取り込みで電車の前後に足す徒歩の上限（分・issue #1463） */
+export const MAX_TRAVEL_WALK_MINUTES = 180;
 
 /**
  * 所要時間の出どころ。Prismaの TravelEstimateSource と同じ並びにする。
