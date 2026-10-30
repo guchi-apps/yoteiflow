@@ -33,6 +33,42 @@ export type YahooTravelImportResult =
 /** 電車の前後に足す徒歩の分（設定 ▸ 移動・issue #1463）。 */
 export type YahooTravelWalk = { before: number; after: number };
 
+/** メモ末尾の「電車の発着 … ／ 徒歩 前N分・後M分を含む」行を付ける（徒歩が無ければ付けない）。 */
+function withWalkNote(noteText: string, departTime: string, arriveTime: string, before: number, after: number): string {
+  const walkParts = [before > 0 ? `前${before}分` : null, after > 0 ? `後${after}分` : null].filter(Boolean);
+  return walkParts.length > 0
+    ? `${noteText}\n\n電車の発着 ${departTime}〜${arriveTime} ／ 徒歩 ${walkParts.join("・")}を含む`
+    : noteText;
+}
+
+const WALK_NOTE_LINE = /\n\n電車の発着 [^\n]+ ／ 徒歩 ([^\n]+)を含む$/;
+
+/**
+ * 取り込み済みの経路（サーバーが共通の徒歩を足した結果）の徒歩を、別の値へ足し直す（issue #1471）。
+ *
+ * 足し済みの分（メモ末尾の行）を引いて電車の発着へ戻してから、新しい値を足す。ドアtoドア経路の徒歩側は
+ * メモの経路テキストから判定し直し、その側は足さない（二重加算の回避）。
+ * 経路を読めなければ null（呼び出し元は手を付けない）。
+ */
+export function retargetYahooWalk(
+  travel: { departAt: string; arriveAt: string; note: string },
+  walk: YahooTravelWalk,
+): { departAt: string; arriveAt: string; note: string } | null {
+  const route = parseYahooTransitRoute(travel.note);
+  if (!route) return null;
+  const line = WALK_NOTE_LINE.exec(travel.note);
+  const addedBefore = Number(/前(\d+)分/.exec(line?.[1] ?? "")?.[1] ?? 0);
+  const addedAfter = Number(/後(\d+)分/.exec(line?.[1] ?? "")?.[1] ?? 0);
+  const before = route.walkAtStart ? 0 : Math.max(0, walk.before);
+  const after = route.walkAtEnd ? 0 : Math.max(0, walk.after);
+  const shifted = (iso: string, minutes: number) => new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
+  return {
+    departAt: shifted(travel.departAt, addedBefore - before),
+    arriveAt: shifted(travel.arriveAt, after - addedAfter),
+    note: withWalkNote(route.noteText.replace(WALK_NOTE_LINE, ""), route.departTime, route.arriveTime, before, after),
+  };
+}
+
 export function buildYahooTravelImport(
   text: string,
   timeZone: string,
@@ -74,11 +110,7 @@ export function buildYahooTravelImport(
   const shifted = (iso: string, minutes: number) => new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 
   // 時刻を広げたあとも電車の発着が分かるよう、メモの末尾に残す。
-  const walkParts = [before > 0 ? `前${before}分` : null, after > 0 ? `後${after}分` : null].filter(Boolean);
-  const note =
-    walkParts.length > 0
-      ? `${route.noteText}\n\n電車の発着 ${route.departTime}〜${route.arriveTime} ／ 徒歩 ${walkParts.join("・")}を含む`
-      : route.noteText;
+  const note = withWalkNote(route.noteText, route.departTime, route.arriveTime, before, after);
 
   return {
     ok: true,

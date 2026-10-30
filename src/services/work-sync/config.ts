@@ -13,7 +13,13 @@ import type {
 
 /** 勤務先別の既定（issue #1099）と、勤務記録ごとの指定の読み書き。 */
 
-export type WorkPlaceDefaultRow = WorkPlaceDefaults & { key: string; isTrip: boolean };
+export type WorkPlaceDefaultRow = WorkPlaceDefaults & {
+  key: string;
+  isTrip: boolean;
+  /** Yahoo!取り込みで足す徒歩の自宅側・勤務先側（issue #1471）。null は設定 ▸ 移動の共通値 */
+  walkHomeMinutes: number | null;
+  walkPlaceMinutes: number | null;
+};
 
 export async function loadPlaceDefaultRows(userId: string): Promise<WorkPlaceDefaultRow[]> {
   const rows = await db.workPlaceDefault.findMany({
@@ -28,6 +34,8 @@ export async function loadPlaceDefaultRows(userId: string): Promise<WorkPlaceDef
     endMinutes: row.endMinutes,
     outboundEnabled: row.outboundEnabled,
     returnEnabled: row.returnEnabled,
+    walkHomeMinutes: row.walkHomeMinutes,
+    walkPlaceMinutes: row.walkPlaceMinutes,
   }));
 }
 

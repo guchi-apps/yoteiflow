@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildYahooTravelImport } from "@/lib/yahoo-transit-import";
+import { buildYahooTravelImport, retargetYahooWalk } from "@/lib/yahoo-transit-import";
 
 const SAMPLE = `草津(滋賀県) ⇒ 高槻
 2026年8月28日(金)
@@ -102,4 +102,43 @@ test("区間を読めない経路（印が2つ未満）は足さない", () => {
   const text = SAMPLE.replace("■草津(滋賀県)\n", "").replace("■高槻\n", "草津(滋賀県) ⇒ 高槻\n");
   const result = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
   if (result.ok) assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
+});
+
+test("共通の徒歩を足し済みの取り込みを、勤務場所の徒歩へ足し直す（#1471）", () => {
+  const built = buildYahooTravelImport(SAMPLE, "Asia/Tokyo", WITH_WALK);
+  assert.ok(built.ok);
+  const result = retargetYahooWalk(built.travel, { before: 8, after: 12 });
+  assert.ok(result);
+  assert.equal(result.departAt, "2026-08-28T11:50:00.000Z");
+  assert.equal(result.arriveAt, "2026-08-28T12:58:00.000Z");
+  assert.ok(result.note.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前8分・後12分を含む"));
+  assert.equal(result.note.match(/電車の発着/g)?.length, 1);
+});
+
+test("共通の徒歩が0の取り込みも足し直せ、0にすればメモの行も消える（#1471）", () => {
+  const built = buildYahooTravelImport(SAMPLE, "Asia/Tokyo");
+  assert.ok(built.ok);
+  const added = retargetYahooWalk(built.travel, { before: 3, after: 0 });
+  assert.ok(added);
+  assert.equal(added.departAt, "2026-08-28T11:55:00.000Z");
+  assert.equal(added.arriveAt, "2026-08-28T12:46:00.000Z");
+  const removed = retargetYahooWalk({ ...built.travel, ...added }, { before: 0, after: 0 });
+  assert.ok(removed);
+  assert.equal(removed.departAt, built.travel.departAt);
+  assert.equal(removed.note, built.travel.note);
+});
+
+test("足し直しでもドアtoドア経路の徒歩側は足さない（#1471）", () => {
+  const text = SAMPLE.replace("■草津(滋賀県)\n↓ 20:58〜21:21", "■草津(滋賀県)\n↓ 徒歩\n▼ 草津駅\n↓ 20:58〜21:21");
+  const built = buildYahooTravelImport(text, "Asia/Tokyo", WITH_WALK);
+  assert.ok(built.ok);
+  const result = retargetYahooWalk(built.travel, { before: 9, after: 10 });
+  assert.ok(result);
+  assert.equal(result.departAt, "2026-08-28T11:58:00.000Z");
+  assert.equal(result.arriveAt, "2026-08-28T12:56:00.000Z");
+});
+
+test("経路を読めないメモは足し直さない（#1471）", () => {
+  const travel = { departAt: "2026-08-28T11:58:00.000Z", arriveAt: "2026-08-28T12:46:00.000Z", note: "メモ" };
+  assert.equal(retargetYahooWalk(travel, { before: 5, after: 5 }), null);
 });

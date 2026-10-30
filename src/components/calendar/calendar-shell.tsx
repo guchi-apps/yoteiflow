@@ -51,6 +51,7 @@ import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelT
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
 import { applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
+import { retargetYahooWalk } from "@/lib/yahoo-transit-import";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -150,6 +151,23 @@ export type CalendarWorkContext = {
   /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
   minutesPerDay: number;
 };
+
+/** 共有で戻った経路の徒歩を、検索時の出発地・目的地の勤務場所に合わせて足し直す。失敗は元の経路のまま返す（issue #1471） */
+async function retargetSharedWalk(
+  origin: string,
+  destination: string,
+  link: { departAt: string; arriveAt: string; note: string },
+): Promise<{ departAt: string; arriveAt: string; note: string }> {
+  try {
+    const query = new URLSearchParams({ origin, destination });
+    const response = await fetch(`/api/travels/walk?${query}`, { signal: AbortSignal.timeout(4000) });
+    if (!response.ok) return link;
+    const { walk } = (await response.json()) as { walk: { before: number; after: number } | null };
+    return (walk && retargetYahooWalk(link, walk)) || link;
+  } catch {
+    return link;
+  }
+}
 
 export function CalendarShell({
   view,
@@ -383,18 +401,24 @@ export function CalendarShell({
       // 自動では保存しない。入力画面で確かめて保存し、閉じれば元の移動・下書きは変わらない。
       const session = handoff.session ? takeTransitSession(handoff.session) : null;
       if (session) {
-        setItemDialog({
-          initialKind: "travel",
-          drafts: {
-            travel: applySharedRoute(session, {
-              origin: handoff.origin,
-              destination: handoff.destination,
-              departAt: isoToLocalInput(handoff.link.departAt, timeZone),
-              arriveAt: isoToLocalInput(handoff.link.arriveAt, timeZone),
-              note: handoff.link.note,
-            }),
-          },
-        });
+        const link = handoff.link;
+        void (async () => {
+          // 検索したときの出発地・目的地が勤務場所なら、サーバーが足した共通の徒歩をその場所の値へ足し直す（issue #1471）。
+          // 取れなければ（オフライン・勤務場所に当たらない）共通値のまま反映する。
+          const route = await retargetSharedWalk(session.draft.origin, session.draft.destination, link);
+          setItemDialog({
+            initialKind: "travel",
+            drafts: {
+              travel: applySharedRoute(session, {
+                origin: handoff.origin,
+                destination: handoff.destination,
+                departAt: isoToLocalInput(route.departAt, timeZone),
+                arriveAt: isoToLocalInput(route.arriveAt, timeZone),
+                note: route.note,
+              }),
+            },
+          });
+        })();
         return;
       }
       if (handoff.session) {
