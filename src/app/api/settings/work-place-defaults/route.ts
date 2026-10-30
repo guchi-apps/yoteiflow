@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { MAX_TRAVEL_WALK_MINUTES } from "@/types/calendar";
 import { loadPlaceDefaultRows } from "@/services/work-sync/config";
 
 /** 勤務先・出張先ごとの既定（反映の有無・勤務時刻。issue #1099・docs/spec.md §46）。 */
@@ -19,6 +20,9 @@ type Body = {
   endMinutes?: number | null;
   outboundEnabled?: boolean;
   returnEnabled?: boolean;
+  /** 未指定は触らない、null は共通値へ戻す（旧クライアントが送らなくても消えない・issue #1471） */
+  walkHomeMinutes?: number | null;
+  walkPlaceMinutes?: number | null;
 };
 
 const isMinutes = (value: unknown): value is number =>
@@ -59,7 +63,20 @@ export async function PUT(request: Request) {
     );
   }
 
+  for (const walk of [body.walkHomeMinutes, body.walkPlaceMinutes]) {
+    if (walk !== undefined && walk !== null && (!Number.isInteger(walk) || walk < 0 || walk > MAX_TRAVEL_WALK_MINUTES)) {
+      return NextResponse.json(
+        { error: "invalid_walk", message: `徒歩は0〜${MAX_TRAVEL_WALK_MINUTES}分で入力してください。` },
+        { status: 400 },
+      );
+    }
+  }
+
   const isTrip = Boolean(body.isTrip);
+  const walk = {
+    ...(body.walkHomeMinutes !== undefined ? { walkHomeMinutes: body.walkHomeMinutes } : {}),
+    ...(body.walkPlaceMinutes !== undefined ? { walkPlaceMinutes: body.walkPlaceMinutes } : {}),
+  };
   const data = {
     workEnabled: body.workEnabled ?? true,
     startMinutes,
@@ -69,8 +86,8 @@ export async function PUT(request: Request) {
   };
   await db.workPlaceDefault.upsert({
     where: { userId_key_isTrip: { userId, key, isTrip } },
-    create: { userId, key, isTrip, ...data },
-    update: data,
+    create: { userId, key, isTrip, ...data, ...walk },
+    update: { ...data, ...walk },
   });
   return NextResponse.json({ defaults: await loadPlaceDefaultRows(userId) });
 }
