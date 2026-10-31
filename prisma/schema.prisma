@@ -518,6 +518,9 @@ model WorkPlaceDefault {
   endMinutes      Int?
   outboundEnabled Boolean @default(true)
   returnEnabled   Boolean @default(true)
+  /// Yahoo!乗換案内の取り込みで電車の前後に足す徒歩（issue #1471）。自宅側・勤務先側。null は設定 ▸ 移動の共通値。
+  walkHomeMinutes  Int?
+  walkPlaceMinutes Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

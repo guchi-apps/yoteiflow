@@ -14,7 +14,7 @@ import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 
 import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
 import { pickDefaultRoute, transitBaseTrain, transitMinutes } from "@/lib/work-sync/route-modes";
-import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
+import { MAX_TRAVEL_WALK_MINUTES, TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
   id: string;
@@ -39,6 +39,9 @@ export type WorkPlaceDefaultRow = {
   endMinutes: number | null;
   outboundEnabled: boolean;
   returnEnabled: boolean;
+  /** Yahoo!取り込みで足す徒歩の自宅側・勤務先側（issue #1471）。null は設定 ▸ 移動の共通値 */
+  walkHomeMinutes: number | null;
+  walkPlaceMinutes: number | null;
 };
 
 export type Entry = { key: string; isTrip: boolean };
@@ -58,6 +61,9 @@ type EntryForm = {
   /** 公共交通の徒歩（分・入力途中の文字列）。電車が登録済みの区間でだけ使う。 */
   outWalk: string;
   backWalk: string;
+  /** Yahoo!取り込みで電車の前後に足す徒歩（入力途中の文字列。空は共通値・issue #1471） */
+  importWalkHome: string;
+  importWalkPlace: string;
 };
 
 type Leg = "out" | "back";
@@ -130,6 +136,8 @@ export function PlaceDefaultFields({
     backDefault: defaultModeOf(backRoutes),
     outWalk: walkOf(outRoutes),
     backWalk: walkOf(backRoutes),
+    importWalkHome: row?.walkHomeMinutes != null ? String(row.walkHomeMinutes) : "",
+    importWalkPlace: row?.walkPlaceMinutes != null ? String(row.walkPlaceMinutes) : "",
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -170,9 +178,20 @@ export function PlaceDefaultFields({
       return value;
     };
 
+    const importWalk = (text: string, label: string) => {
+      if (text.trim() === "") return null;
+      const value = Number(text);
+      if (!Number.isInteger(value) || value < 0 || value > MAX_TRAVEL_WALK_MINUTES) {
+        throw new Error(`${label}の徒歩は0〜${MAX_TRAVEL_WALK_MINUTES}分で入力してください。`);
+      }
+      return value;
+    };
+
     setBusy(true);
     setMessage(null);
     try {
+      const walkHomeMinutes = importWalk(form.importWalkHome, "自宅側");
+      const walkPlaceMinutes = importWalk(form.importWalkPlace, "勤務先側");
       // 入力の検証は書き込みの前に済ませる（途中で失敗して一部だけ保存されるのを避ける）。
       const legs = remote || !home
         ? []
@@ -214,6 +233,7 @@ export function PlaceDefaultFields({
           endMinutes: end,
           outboundEnabled: form.outEnabled,
           returnEnabled: form.backEnabled,
+          ...(remote || entry.isTrip ? {} : { walkHomeMinutes, walkPlaceMinutes }),
         }),
       });
       const body = (await response.json().catch(() => null)) as {
@@ -368,7 +388,7 @@ export function PlaceDefaultFields({
                             <span className="type-body-medium shrink-0 tabular-nums">＝ {total ?? "—"}分</span>
                           </div>
                           <p className="type-body-small text-on-surface-variant">
-                            勤務の自動生成で使う前後の合計です。Yahoo!の経路取り込みで電車の前後に足す徒歩は、設定 ▸ 移動で登録します。
+                            勤務の自動生成で使う前後の合計です。Yahoo!の経路取り込みで電車の前後に足す徒歩は、下の「Yahoo!取り込み時の徒歩」で登録します。
                           </p>
                         </div>
                         <input
@@ -415,6 +435,37 @@ export function PlaceDefaultFields({
             勤務入力で最初に選ばれるのはデフォルトの方法です。日ごとに別の方法へ変えられます。空の方法は登録なしとして扱います。公共交通は、下の「電車」を登録すると、デフォルトの電車（★、無ければ出発が最も早い電車）の所要時間に徒歩を足した時間になります。
           </p>
         </>
+      )}
+
+      {!remote && !entry.isTrip && (
+        <div className="flex flex-col gap-2">
+          <h3 className="type-title-small">Yahoo!取り込み時の徒歩</h3>
+          <p className="type-body-small text-on-surface-variant">
+            Yahoo!乗換案内で調べた経路を移動に反映するとき、電車の発着の前後に足す徒歩です。往路・復路とも使います。空欄は設定 ▸ 移動の共通値になります。
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                ["自宅側（自宅と駅のあいだ）", "importWalkHome"],
+                ["勤務先側（駅と勤務場所のあいだ）", "importWalkPlace"],
+              ] as const
+            ).map(([label, key]) => (
+              <div key={key} className="flex flex-col gap-1">
+                <Label htmlFor={`${key}-${entry.key}`}>{label}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={`${key}-${entry.key}`}
+                    inputMode="numeric"
+                    placeholder="共通値"
+                    value={form[key]}
+                    onChange={(event) => patch({ [key]: event.target.value })}
+                  />
+                  <span className="type-body-medium shrink-0">分</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {!remote && (
