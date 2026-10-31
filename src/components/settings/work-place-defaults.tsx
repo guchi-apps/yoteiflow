@@ -93,6 +93,7 @@ const defaultModeOf = (rows: WorkRouteRow[]): TravelMode =>
  */
 export function PlaceDefaultFields({
   entry,
+  extra,
   remote,
   home,
   linkablePlaces,
@@ -109,6 +110,8 @@ export function PlaceDefaultFields({
   onSavedRoutes,
 }: {
   entry: Entry;
+  /** 勤務場所の選択肢に無い出張先（自由記述の行き先）。場所DBに当たらないため徒歩・紐づけは持たせない（issue #1475） */
+  extra: boolean;
   remote: boolean;
   home: string | null;
   linkablePlaces: LinkablePlace[];
@@ -191,7 +194,7 @@ export function PlaceDefaultFields({
     setMessage(null);
     try {
       const walkHomeMinutes = importWalk(form.importWalkHome, "自宅側");
-      const walkPlaceMinutes = importWalk(form.importWalkPlace, "勤務先側");
+      const walkPlaceMinutes = importWalk(form.importWalkPlace, entry.isTrip ? "出張先側" : "勤務先側");
       // 入力の検証は書き込みの前に済ませる（途中で失敗して一部だけ保存されるのを避ける）。
       const legs = remote || !home
         ? []
@@ -233,7 +236,7 @@ export function PlaceDefaultFields({
           endMinutes: end,
           outboundEnabled: form.outEnabled,
           returnEnabled: form.backEnabled,
-          ...(remote || entry.isTrip ? {} : { walkHomeMinutes, walkPlaceMinutes }),
+          ...(remote || extra ? {} : { walkHomeMinutes, walkPlaceMinutes }),
         }),
       });
       const body = (await response.json().catch(() => null)) as {
@@ -437,7 +440,7 @@ export function PlaceDefaultFields({
         </>
       )}
 
-      {!remote && !entry.isTrip && (
+      {!remote && !extra && (
         <div className="flex flex-col gap-2">
           <h3 className="type-title-small">Yahoo!取り込み時の徒歩</h3>
           <p className="type-body-small text-on-surface-variant">
@@ -447,7 +450,7 @@ export function PlaceDefaultFields({
             {(
               [
                 ["自宅側（自宅と駅のあいだ）", "importWalkHome"],
-                ["勤務先側（駅と勤務場所のあいだ）", "importWalkPlace"],
+                [entry.isTrip ? "出張先側（駅と出張先のあいだ）" : "勤務先側（駅と勤務場所のあいだ）", "importWalkPlace"],
               ] as const
             ).map(([label, key]) => (
               <div key={key} className="flex flex-col gap-1">
@@ -471,7 +474,7 @@ export function PlaceDefaultFields({
       {!remote && (
         <WorkTrains trains={trains} home={home} place={entry.key} canAdd onChange={onTrainsChanged} />
       )}
-      {!entry.isTrip && (
+      {!extra && (
         <WorkPlaceLinkFields
           workPlace={entry.key}
           places={linkablePlaces}
