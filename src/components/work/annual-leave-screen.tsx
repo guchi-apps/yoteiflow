@@ -14,7 +14,10 @@ import {
   fiscalYearLabel,
   fiscalYearRange,
   isPlannedRecord,
+  formatLeaveAmount,
   leaveAmountInDays,
+  remainingLeave,
+  roundLeave as round,
   recordAmountInRange,
   summarizeAnnualLeave,
   type AnnualLeaveMonth,
@@ -85,18 +88,12 @@ export function AnnualLeaveScreen({
   // 残りは日と時間を混ぜずに出す（issue #537）。日は日どうしで引き、時間休のぶんは
   // 「－ 3時間」として並べる。1つの数へ丸めると、所定7時間45分の職場では0.5日が
   // 3時間52分30秒になり、割り切れない数字が画面に並ぶ。
-  const usedDays = summary.taken.days + summary.planned.days;
-  const usedHours = summary.taken.hours + summary.planned.hours;
-  // 日数そのものがマイナス（付与より多く取っている）なら符号を反転して「4.5日 ＋ 3時間 超過」と
-  // 出す。日数は残っていて時間ぶんだけ超えている状態（「0.5日 － 5時間」）は、残りと同じ形の
-  // ままで「超過」と呼ぶ。ここで日へ丸めると、0.5日＝3時間52分30秒の端数が数字に出る。
-  // 付与日数を入れていない年度（`total === null`）ではこの区画ごと出さないため、0で持つ。
+  // 日数そのものがマイナスなら「超過」の量になる。付与日数を入れていない年度（`total === null`）
+  // ではこの区画ごと出さないため、0で持つ。
   const remaining: LeaveAmount =
     total === null
       ? { days: 0, hours: 0 }
-      : total - usedDays < 0
-        ? { days: usedDays - total, hours: usedHours }
-        : { days: total - usedDays, hours: -usedHours };
+      : remainingLeave(total, summary.taken, summary.planned);
   const pace =
     total === null
       ? null
@@ -568,30 +565,6 @@ function RecordGroup({
 // --- 表示のための小さな関数 ---
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-
-/**
- * 年休の量を「日 ＋ 時間」の形で出す（issue #537）。
- *
- * 全休・半休は日、時間休は時間で、1つの数へ丸めない。所定7時間45分の職場では0.5日が
- * 3時間52分30秒になり、足し合わせた時点で割り切れない数字が並ぶため。残りのように引き算で
- * 出す量では時間が負になるので、そのときは「－」でつなぐ。
- *
- * 時間休を1件も入れていない年度は日だけが出る（これまでの見え方と1文字も変わらない）。
- */
-function formatLeaveAmount(amount: LeaveAmount): string {
-  const days = round(amount.days);
-  const hours = round(amount.hours);
-  if (hours === 0) return `${formatDays(days)}日`;
-  // 時間だけの量（時間休1件の行・時間休しか無い月）は「0日 ＋ 3時間」ではなく時間だけを出す。
-  // 引き算で出す残りは 0 日でも「0日 － 3時間」と出す（何も残っていないのではなく足りない）。
-  if (days === 0 && hours > 0) return formatLeaveHours(hours);
-  return `${formatDays(days)}日 ${hours < 0 ? "－" : "＋"} ${formatLeaveHours(Math.abs(hours))}`;
-}
-
-/** 小数の丸め。0.5日単位で持っている値と混ぜても、表示だけが細かくならないようにする。 */
-function round(value: number): number {
-  return Math.round(value * 10) / 10;
-}
 
 function shortDate(dateKey: string): string {
   return `${dateKey.slice(0, 4)}/${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}`;

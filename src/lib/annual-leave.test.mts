@@ -7,6 +7,8 @@ import {
   fiscalYearLabel,
   fiscalYearOf,
   fiscalYearRange,
+  formatLeaveAmount,
+  remainingLeave,
   isPlannedRecord,
   recordAmountInRange,
   summarizeAnnualLeave,
@@ -179,4 +181,24 @@ test("annualLeavePace: diffは取得済み−想定（正なら早め、負な�
   const pace = annualLeavePace({ totalDays: 20, taken: 12, range, todayKey: "2026-07-02" });
   assert.ok(pace);
   assert.ok(pace.diff > 0);
+});
+
+test("remainingLeave: 付与から取得済みと予定を引く", () => {
+  const remaining = remainingLeave(
+    23,
+    { days: 8.5, hours: 0 },
+    { days: 2, hours: 0 },
+  );
+  assert.deepEqual(remaining, { days: 12.5, hours: -0 });
+  assert.equal(formatLeaveAmount(remaining), "12.5日");
+});
+
+test("remainingLeave: 時間休は日と混ぜずに引く", () => {
+  const remaining = remainingLeave(20, { days: 19, hours: 3 }, { days: 0, hours: 0 });
+  assert.equal(formatLeaveAmount(remaining), "1日 － 3時間");
+});
+
+test("remainingLeave: 付与より多く取ると超過の量になる", () => {
+  const remaining = remainingLeave(20, { days: 24.5, hours: 3 }, { days: 0, hours: 0 });
+  assert.equal(formatLeaveAmount(remaining), "4.5日 ＋ 3時間");
 });

@@ -1,5 +1,11 @@
 import { isAutoOffDay } from "@/lib/work-days";
-import { annualLeaveDays, annualLeaveHours, type WorkRecordItem } from "@/types/work";
+import {
+  annualLeaveDays,
+  annualLeaveHours,
+  formatDays,
+  formatLeaveHours,
+  type WorkRecordItem,
+} from "@/types/work";
 
 /**
  * 年休の取得状況を年度で数える（docs/spec.md §34）。
@@ -302,4 +308,45 @@ export function recordAmountInRange(
  */
 export function isPlannedRecord(record: WorkRecordItem, todayKey: string): boolean {
   return record.startDate > todayKey;
+}
+
+/**
+ * 付与＋繰越から、取得済みと予定を引いた残り（issue #1484）。
+ *
+ * 年休画面とヘッダーのチップが同じ数字を出すため、ここに1つだけ置く。日は日どうしで引き、
+ * 時間休のぶんは時間のまま別に引く（issue #537）。日数そのものがマイナス（付与より多く
+ * 取っている）なら符号を反転して「超過」の量として返す。日数は残っていて時間ぶんだけ超える
+ * 状態は、残りと同じ形（`{ days: 0.5, hours: -5 }`）のまま返す。
+ */
+export function remainingLeave(
+  totalDays: number,
+  taken: LeaveAmount,
+  planned: LeaveAmount,
+): LeaveAmount {
+  const usedDays = taken.days + planned.days;
+  const usedHours = taken.hours + planned.hours;
+  return totalDays - usedDays < 0
+    ? { days: usedDays - totalDays, hours: usedHours }
+    : { days: totalDays - usedDays, hours: -usedHours };
+}
+
+/** 小数の丸め。0.5日単位で持っている値と混ぜても、表示だけが細かくならないようにする。 */
+export function roundLeave(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * 年休の量を「日 ＋ 時間」の形で出す（issue #537）。
+ *
+ * 全休・半休は日、時間休は時間で、1つの数へ丸めない。残りのように引き算で出す量では
+ * 時間が負になるので、そのときは「－」でつなぐ。時間休を1件も入れていない年度は日だけが出る。
+ */
+export function formatLeaveAmount(amount: LeaveAmount): string {
+  const days = roundLeave(amount.days);
+  const hours = roundLeave(amount.hours);
+  if (hours === 0) return `${formatDays(days)}日`;
+  // 時間だけの量は「0日 ＋ 3時間」ではなく時間だけを出す。引き算で出す残りは 0 日でも
+  // 「0日 － 3時間」と出す（何も残っていないのではなく足りない）。
+  if (days === 0 && hours > 0) return formatLeaveHours(hours);
+  return `${formatDays(days)}日 ${hours < 0 ? "－" : "＋"} ${formatLeaveHours(Math.abs(hours))}`;
 }
