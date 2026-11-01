@@ -151,7 +151,13 @@ function WorkMonthScreen({
   const placeOptions = useMemo(() => resource.data?.placeOptions ?? [], [resource.data]);
   const loadError = resource.error;
   const loaded = resource.data !== null;
-  useWriteSynced(resource.reload);
+  // 年休の残り日数のチップを取り直す合図。記録の保存・再計算・オフラインの送信完了で増やす（issue #1484）。
+  const [leaveReloadKey, setLeaveReloadKey] = useState(0);
+  const bumpLeave = useCallback(() => setLeaveReloadKey((key) => key + 1), []);
+  useWriteSynced(() => {
+    resource.reload();
+    bumpLeave();
+  });
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +216,7 @@ function WorkMonthScreen({
         return false;
       }
       resource.reload();
+      bumpLeave();
       return true;
     } catch {
       setError(fallback);
@@ -279,7 +286,7 @@ function WorkMonthScreen({
         <span className="flex-1" />
 
         {/* 年休の残り日数。押すと取得状況を開く（issue #1484）。年休の列が無いDBでは出ない。 */}
-        {capabilities.annualLeave && <AnnualLeaveChip />}
+        {capabilities.annualLeave && <AnnualLeaveChip reloadKey={leaveReloadKey} />}
 
         {/* 対応が必要な出張・年休（issue #1271）。件数はバッジで常に見え、押すとシートで開く。
             読み上げでは件数まで含めて名前にする（バッジは装飾として隠す）。 */}
@@ -558,6 +565,8 @@ function WorkMonthScreen({
             setDraft(null);
             setSyncNote(syncNote ?? null);
             resource.reload();
+            bumpLeave();
+      bumpLeave();
           }}
         />
       )}

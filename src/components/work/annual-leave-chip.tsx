@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { useApiResource } from "@/components/offline/use-api-resource";
@@ -27,12 +27,26 @@ const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
  * チップごと出さない。付与日数をまだ入れていない年度は「未設定」と出す（残りは求められない）。
  * 詳細に出す記録は年度の全件のうち、次に来る予定と直近の取得済みだけ。全件は年休画面で見る。
  */
-export function AnnualLeaveChip({ disabled = false }: { disabled?: boolean }) {
+export function AnnualLeaveChip({
+  disabled = false,
+  reloadKey = 0,
+}: {
+  disabled?: boolean;
+  /** 増えるたびに取り直す。年休の登録・付与日数の保存のあとに、月の一覧と数字が食い違わないように。 */
+  reloadKey?: number;
+}) {
   const resource = useApiResource<AnnualLeaveSummaryData>(
     "/api/work/leave-summary",
     "年休の取得状況を取得できませんでした。",
   );
   const [open, setOpen] = useState(false);
+  const { reload } = resource;
+  const lastKey = useRef(reloadKey);
+  useEffect(() => {
+    if (lastKey.current === reloadKey) return;
+    lastKey.current = reloadKey;
+    reload();
+  }, [reloadKey, reload]);
   const data = resource.data;
 
   const view = useMemo(() => {
