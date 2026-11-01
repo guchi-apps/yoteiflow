@@ -552,6 +552,7 @@ export function WorkPlacesPanel({
           <PlaceDefaultFields
             key={`${entry.isTrip}:${entry.key}`}
             entry={entry}
+            extra={entry.extra}
             remote={remote}
             home={home}
             linkablePlaces={linkablePlaces}

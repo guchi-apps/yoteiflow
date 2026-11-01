@@ -81,7 +81,6 @@ jobs:
     # このブロックは scripts/generate-workflow-env-block.sh で生成する。
     env:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      TARGET_DIR: ${{ secrets.TARGET_DIR }}
       DB_NAME: ${{ secrets.DB_NAME }}
       GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
@@ -133,71 +132,3 @@ jobs:
             echo "ci.yml と deploy.yml の secrets-check ジョブの env へ足してください（scripts/generate-workflow-env-block.sh で生成できます）"
           fi
           exit 1
-
-  notify:
-    needs: [lint-and-build, secrets-check]
-    if: always()
-    runs-on: ubuntu-latest
-
-    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んで
-    # いたが、サービスアカウントの日次レート制限を使い切ってフリート全体の
-    # デプロイが止まった（guchi-apps/issue-deck#1302）。SERVER_*・SHARED_DB_*・
-    # SUPABASE_* はorganizationの共通値。
-    #
-    # このブロックは scripts/generate-workflow-env-block.sh で生成する（guchi-apps/issue-deck#1307）。
-    env:
-      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Determine workflow status
-        id: status
-        # needsの結果は`needs['secrets-check']`で読む。式の中では`-`を含む名前を
-        # ドットで辿れない（`needs.secrets-check`は構文エラーになる）。
-        env:
-          LINT_AND_BUILD: ${{ needs.lint-and-build.result }}
-          SECRETS_CHECK: ${{ needs['secrets-check'].result }}
-        run: |
-          result=success
-          jobs=""
-          for entry in "lint-and-build:$LINT_AND_BUILD" "secrets-check:$SECRETS_CHECK"; do
-            name="${entry%%:*}"
-            state="${entry#*:}"
-            if [ "$state" = "success" ]; then
-              continue
-            fi
-            jobs="${jobs:+$jobs, }$name: $state"
-            if [ "$state" = "cancelled" ] && [ "$result" != "failure" ]; then
-              result=cancelled
-            else
-              result=failure
-            fi
-          done
-          if [ -z "$jobs" ]; then
-            jobs="lint-and-build, secrets-check"
-          fi
-          echo "result=$result" >> "$GITHUB_OUTPUT"
-          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
-          # develop push: failure only. main PR: success, failure, and cancelled.
-          if [ "$result" = "failure" ]; then
-            echo "should_notify=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]; then
-            echo "should_notify=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_notify=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Signaly に通知
-        if: steps.status.outputs.should_notify == 'true'
-        # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を
-        # 落とさない（guchi-apps/issue-deck#1302）。
-        continue-on-error: true
-        env:
-          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
-          NOTIFY_APP: dayspan
-          NOTIFY_KIND: CI
-          NOTIFY_STATUS: ${{ steps.status.outputs.result }}
-          NOTIFY_JOB: ${{ steps.status.outputs.jobs }}
-        run: bash .github/scripts/signaly-notify.sh

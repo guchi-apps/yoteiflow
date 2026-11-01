@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
+import { db } from "@/lib/db";
 import { resolvePlaceWalk } from "@/lib/travel-walk";
+import { workTripPlaces } from "@/services/notion/work-logs";
 import { getTravelWalk } from "@/services/travel/settings";
 import { loadPlaceDefaultRows } from "@/services/work-sync/config";
 import { loadPlacesForSync } from "@/services/work-sync/sync";
@@ -22,13 +24,16 @@ export async function GET(request: Request) {
   const destination = params.get("destination") ?? "";
   if (!origin.trim() || !destination.trim()) return NextResponse.json({ walk: null });
 
-  const [placesResult, rows, fallback] = await Promise.all([
+  const [placesResult, rows, fallback, connection] = await Promise.all([
     loadPlacesForSync(userId),
     loadPlaceDefaultRows(userId),
     getTravelWalk(userId),
+    db.notionConnection.findUnique({ where: { userId } }),
   ]);
   if (!placesResult.available) return NextResponse.json({ walk: null });
 
-  const workRows = rows.filter((row) => !row.isTrip);
-  return NextResponse.json({ walk: resolvePlaceWalk(origin, destination, placesResult.places, workRows, fallback) });
+  const tripPlaces = workTripPlaces(connection);
+  return NextResponse.json({
+    walk: resolvePlaceWalk(origin, destination, placesResult.places, rows, fallback, tripPlaces),
+  });
 }
