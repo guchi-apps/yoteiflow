@@ -103,6 +103,8 @@ const CACHED_DATA_PATHS = new Set([
   "/api/tasks/all",
   // 勤務の月ごとの記録（issue #974）。月送りがRSC要求だと保存されず、オフライン・低速時に別の月を見られない。
   "/api/work/month",
+  // ヘッダーの年休の残り日数（issue #1484）。
+  "/api/work/leave-summary",
   // 下部ナビの記録のクイックシートが開くときに読む項目と記録中の1件（issue #974）。
   "/api/activities",
 ]);

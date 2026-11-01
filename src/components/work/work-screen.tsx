@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
+import { AnnualLeaveChip } from "@/components/work/annual-leave-chip";
 import { HeaderActions } from "@/components/nav/main-shell";
 import { describeSync, type SyncSummary } from "@/lib/work-sync/message";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -276,6 +277,9 @@ function WorkMonthScreen({
           <span>勤務</span>
         </div>
         <span className="flex-1" />
+
+        {/* 年休の残り日数。押すと取得状況を開く（issue #1484）。年休の列が無いDBでは出ない。 */}
+        {capabilities.annualLeave && <AnnualLeaveChip />}
 
         {/* 対応が必要な出張・年休（issue #1271）。件数はバッジで常に見え、押すとシートで開く。
             読み上げでは件数まで含めて名前にする（バッジは装飾として隠す）。 */}
