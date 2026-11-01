@@ -4,7 +4,7 @@ import { createECDH, createPrivateKey, type KeyObject } from "node:crypto";
  * VAPID鍵の読み込み（RFC 8292。docs/notifications.md）。
  *
  * 鍵は1行のbase64urlで持つ。PEMを環境変数へ入れると改行が `\n` の文字列になり、復元し損ねた
- * ときに「鍵が途中で切れている」形の失敗になる（signalyが踏んでいる）。公開鍵はブラウザの
+ * ときに「鍵が途中で切れている」形の失敗になる。公開鍵はブラウザの
  * `subscribe()` へそのまま渡す65バイトの非圧縮点、秘密鍵は32バイトのdとし、どちらも1行に収める。
  *
  * 鍵の生成は `node scripts/gen-vapid-keys.mjs`。

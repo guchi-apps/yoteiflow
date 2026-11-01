@@ -17,7 +17,7 @@
 | `VAPID_SUBJECT` | 送信先が見る連絡先。`mailto:` か `https://` で始める |
 
 PEMではなく1行のbase64urlで持つ。PEMを環境変数へ入れると改行が `\n` の文字列になり、
-復元し損ねたときに「鍵が途中で切れている」形の失敗になる（signalyが踏んでいる）。
+復元し損ねたときに「鍵が途中で切れている」形の失敗になる。
 
 ### 作る
 
@@ -50,7 +50,7 @@ scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_S
 **同期を忘れると、デプロイは空文字をそのまま `.env` へ書く。** 起動には要らない値のため何も落ちず、
 設定画面に「鍵が設定されていません」と出るだけになる（#359 はこの状態が続いていた）。
 デプロイのたびに `secrets-check` ジョブ（`.github/scripts/check-repo-secrets.sh`）が
-マニフェストの `repo` 項目と突き合わせ、空のものがあればSignalyへ1通出す（値そのものは出さない）。
+マニフェストの `repo` 項目と突き合わせ、空のものがあればログにwarningを出す（値そのものは出さない）。
 
 ### 「鍵が設定されていません」と出たとき
 
@@ -71,7 +71,7 @@ gh secret list
 
 **デプロイが緑であることは、値が揃っている根拠にならない。** `secrets-check` は空の値を見つけても
 warning を出すだけでジョブは success のまま終わる（無くても他の機能が動く値を含むため、デプロイを
-止めない判断。`.github/workflows/deploy.yml`）。空だったことが残るのはSignalyの1通と
+止めない判断。`.github/workflows/deploy.yml`）。空だったことが残るのは
 Actionsのログの warning だけで、画面にも本番のログにも出ない。
 
 ### 公開鍵と秘密鍵の食い違い
