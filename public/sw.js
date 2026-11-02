@@ -27,7 +27,10 @@ const VERSION = "v3";
 const ASSET_CACHE = `dayspan-assets-${VERSION}`;
 const PAGE_CACHE = `dayspan-pages-${VERSION}`;
 const DATA_CACHE = `dayspan-data-${VERSION}`;
-const CACHES = [ASSET_CACHE, PAGE_CACHE, DATA_CACHE];
+// iOSアプリが先に保存する今日から1週間ぶん（issue #1489）。DATA_CACHE は日付を動かすたびに
+// 増えて古い順に捨てられるため分ける。件数の間引き（trim）はせず、1巡ごとに対象外を掃除する。
+const WEEK_CACHE = `dayspan-week-${VERSION}`;
+const CACHES = [ASSET_CACHE, PAGE_CACHE, DATA_CACHE, WEEK_CACHE];
 
 // 保存する件数の上限。ページは表示形式×日付ぶん増えるため、際限なく貯めない。
 const PAGE_LIMIT = 40;
@@ -41,6 +44,24 @@ const DATA_LIMIT = 40;
  * 開いた直後は保存済みがこの範囲に入るため、何もせず終わる。
  */
 const WARM_MAX_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * 1週間ぶんの先取り（dayspan:warm-week）を取り直す間隔（issue #1489）。
+ *
+ * 1巡でカレンダーの取得2回とタスクの全件取得などが走る（docs/spec.md §20）。開くたびには
+ * 取らない。失敗が続いても同じ間隔でしか試さない。
+ */
+const WEEK_REFRESH_MS = 60 * 60 * 1000;
+
+/**
+ * 先取りの結果の控えを置くURL。実在しないパスで、fetch はここへ来ない。
+ * `src/lib/offline-week.ts` の `OFFLINE_WEEK_META_PATH` と同じ値にする。
+ */
+const WEEK_META_PATH = "/__dayspan-week-meta";
+
+/** 週の保存（`/api/calendar?view=day7&date=S`）が持つ範囲。Sを基準にした日数（両端を含む）。 */
+const WEEK_COVERED_BEFORE_DAYS = 7;
+const WEEK_COVERED_AFTER_DAYS = 13;
 
 /**
  * 通信が遅いとき、これだけ待っても届かなければ保存済みへ切り替える（issue #718）。
@@ -145,6 +166,12 @@ self.addEventListener("message", (event) => {
   // 開いている画面から呼ぶ（issue #321）。その画面のHTMLを先に保存しておく。
   if (event.data?.type === "dayspan:warm") {
     event.waitUntil(warmPages(event.data.paths));
+    return;
+  }
+
+  // iOSアプリの画面から呼ぶ（issue #1489）。今日から1週間ぶんを先に保存しておく。
+  if (event.data?.type === "dayspan:warm-week") {
+    event.waitUntil(warmWeek(event.data));
     return;
   }
 
@@ -478,10 +505,89 @@ function withStaleHeader(response) {
  */
 async function matchCached(cache, request, allowOtherQuery) {
   const cached = await cache.match(request, { ignoreVary: true });
-  if (cached) return cached;
-  if (!allowOtherQuery) return undefined;
 
-  return cache.match(request, { ignoreVary: true, ignoreSearch: true });
+  if (allowOtherQuery) {
+    return cached ?? cache.match(request, { ignoreVary: true, ignoreSearch: true });
+  }
+
+  return matchWeekData(request, cached);
+}
+
+/**
+ * APIの保存済みに、先に保存した1週間ぶん（issue #1489）を合わせて選ぶ。
+ *
+ * 同じURLの保存があれば新しいほうを返す。カレンダーは日付ごとにURLが違うため、さらに週の保存で
+ * 代用できるかを見る。代用してよい範囲は weekFallbackKind() が決める。先取りをしていない端末では
+ * WEEK_CACHE が空なので、これまでと同じ結果になる。
+ */
+async function matchWeekData(request, cached) {
+  const week = await caches.open(WEEK_CACHE);
+  const best = newerResponse(cached, await week.match(request, { ignoreVary: true }));
+
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/calendar") return best;
+
+  let result = best;
+  for (const key of await week.keys()) {
+    const keyUrl = new URL(key.url);
+    if (keyUrl.pathname !== "/api/calendar") continue;
+
+    const kind = weekFallbackKind(url.searchParams, keyUrl.searchParams.get("date"));
+    if (kind === "none" || (kind === "ifMissing" && best)) continue;
+
+    result = newerResponse(result, await week.match(key, { ignoreVary: true }));
+  }
+  return result;
+}
+
+/**
+ * カレンダーの要求を週の保存で代用してよいか（issue #1489）。
+ *
+ * - `"cover"`: 1日・3日・週表示で、表示する日がすべて保存範囲に入る。新しければ同じURLの保存より優先する
+ * - `"ifMissing"`: `months=` で、保存範囲と重なる月を含む。保存は月の一部しか持たないため、
+ *   その月をまるごと持つ同じURLの保存があればそちらを使う
+ * - `"none"`: 範囲外。代用すると「取得できて予定が1件も無い」ように見えるので、取れなかったことにする
+ */
+function weekFallbackKind(params, weekDateKey) {
+  if (!isDateKey(weekDateKey)) return "none";
+
+  const start = shiftDateKey(weekDateKey, -WEEK_COVERED_BEFORE_DAYS);
+  const end = shiftDateKey(weekDateKey, WEEK_COVERED_AFTER_DAYS);
+
+  const view = params.get("view");
+  const date = params.get("date");
+  if (view !== null || date !== null) {
+    const length = { day1: 1, day3: 3, day7: 7 }[view];
+    if (!length || !isDateKey(date)) return "none";
+    return date >= start && shiftDateKey(date, length - 1) <= end ? "cover" : "none";
+  }
+
+  const months = (params.get("months") ?? "").split(",");
+  const overlaps = months.some((month) => month >= start.slice(0, 7) && month <= end.slice(0, 7));
+  return overlaps ? "ifMissing" : "none";
+}
+
+function isDateKey(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** 日付キーを日数ぶんずらす。タイムゾーンの影響を受けないようUTC正午で扱う。 */
+function shiftDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** 取得時刻（date ヘッダー）の新しいほうを返す。同じか比べられないときは先に渡したほうを残す。 */
+function newerResponse(current, candidate) {
+  if (!current) return candidate;
+  if (!candidate) return current;
+
+  const currentDate = Date.parse(current.headers.get("date") ?? "");
+  const candidateDate = Date.parse(candidate.headers.get("date") ?? "");
+  if (Number.isNaN(candidateDate)) return current;
+  if (Number.isNaN(currentDate)) return candidate;
+  return candidateDate > currentDate ? candidate : current;
 }
 
 /** 上限を超えたぶんを古い順に捨てる。Cache API は追加した順に keys() を返す。 */
@@ -528,6 +634,116 @@ async function warmPages(paths) {
     } catch {
       // オフラインなら取れなくて当然。保存済みがあればそれが使われる。
     }
+  }
+}
+
+/** 先取りの実行中か・最後に試した時刻。Service Worker が止まると消えるが、控えの時刻が残る。 */
+let weekWarming = false;
+let weekAttemptedAt = 0;
+
+/**
+ * 今日から1週間ぶんを先に保存する（issue #1489）。呼ぶのはiOSアプリの画面だけ。
+ *
+ * 画面の取得とNotionの回数制限を取り合わないよう、1件ずつ順に取る。カレンダーは一部の取得元が
+ * 失敗しても200で空を返すため、errors のある応答では前回の保存を上書きしない。
+ */
+async function warmWeek({ startKey, timeZone, calendar, data, pages }) {
+  if (weekWarming || !isDateKey(startKey) || !isSameOriginPath(calendar)) return;
+  if (Date.now() - weekAttemptedAt < WEEK_REFRESH_MS) return;
+
+  const week = await caches.open(WEEK_CACHE);
+  const meta = await readWeekMeta(week);
+  if (meta?.startKey === startKey && Date.now() - meta.savedAt < WEEK_REFRESH_MS) return;
+
+  weekWarming = true;
+  weekAttemptedAt = Date.now();
+
+  try {
+    const calendarResult = await saveWeekCalendar(week, calendar);
+
+    // 届かなかったときは残りも取れない。通信が戻ったらすぐ試せるよう、間引きの起点も戻す。
+    if (calendarResult === "unreachable") {
+      weekAttemptedAt = 0;
+      return;
+    }
+
+    const dataPaths = (Array.isArray(data) ? data : []).filter(isSameOriginPath);
+    for (const path of dataPaths) {
+      await saveWeekData(week, path);
+    }
+
+    await warmPages(pages);
+
+    if (calendarResult === "saved") {
+      await cleanWeekCache(week, [calendar, ...dataPaths]);
+      await week.put(
+        WEEK_META_PATH,
+        new Response(JSON.stringify({ startKey, timeZone, savedAt: Date.now() }), {
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+  } finally {
+    weekWarming = false;
+  }
+}
+
+function isSameOriginPath(path) {
+  return (
+    typeof path === "string" &&
+    path.startsWith("/") &&
+    new URL(path, self.location.origin).origin === self.location.origin
+  );
+}
+
+async function readWeekMeta(week) {
+  const response = await week.match(WEEK_META_PATH);
+  if (!response) return null;
+
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** カレンダーを保存する。`"saved"`＝保存した／`"rejected"`＝届いたが保存しない／`"unreachable"`＝届かない。 */
+async function saveWeekCalendar(week, path) {
+  let response;
+  try {
+    response = await fetch(new Request(path, { credentials: "same-origin" }));
+  } catch {
+    return "unreachable";
+  }
+
+  try {
+    if (!isCacheable(response)) return "rejected";
+
+    const body = await response.clone().json();
+    if (!Array.isArray(body?.errors) || body.errors.length > 0) return "rejected";
+
+    await week.put(path, response);
+    return "saved";
+  } catch {
+    return "rejected";
+  }
+}
+
+async function saveWeekData(week, path) {
+  try {
+    const response = await fetch(new Request(path, { credentials: "same-origin" }));
+    if (isCacheable(response)) await week.put(path, response);
+  } catch {
+    // 取れなければ前回の保存を残す。次の巡回でまた試す。
+  }
+}
+
+/** 今回の対象から外れたものを消す。カレンダーの保存ができた回だけ呼ぶ（前回の保存を失わないため）。 */
+async function cleanWeekCache(week, keepPaths) {
+  const keep = new Set(keepPaths.map((path) => new URL(path, self.location.origin).href));
+
+  for (const key of await week.keys()) {
+    if (!keep.has(key.url)) await week.delete(key);
   }
 }
 

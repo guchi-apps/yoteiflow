@@ -18,6 +18,7 @@ import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { RunningActivityBar } from "@/components/nav/running-activity-bar";
+import { useOfflineWeekCache } from "@/components/offline/use-offline-week-cache";
 import type { RunningActivitySummary } from "@/types/activity";
 
 /** カレンダー画面だけが差し込む、下部ナビの「カレンダー」の動き（main-nav.tsx）。 */
@@ -103,6 +104,8 @@ export function MainShell({
 }) {
   const pathname = usePathname();
   const current = navKeyOf(pathname);
+
+  useOfflineWeekCache(timeZone);
 
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [calendarHandlers, setCalendarHandlers] = useState<CalendarNavHandlers | null>(null);
