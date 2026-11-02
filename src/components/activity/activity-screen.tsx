@@ -3,10 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Clock3, Moon, Settings2, Square, Timer } from "lucide-react";
 
-import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activity/activity-time";
+import {
+  invalidEnd,
+  invalidStartAt,
+  invalidStartEdit,
+  savedRangeLabel,
+} from "@/components/activity/activity-time";
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
@@ -62,6 +67,13 @@ export function ActivityScreen({
   // 開始時刻の修正欄。押し忘れて後から気付くほうが多いため、記録中でも直せるようにする。
   const [editingStart, setEditingStart] = useState(false);
   const [startInput, setStartInput] = useState("");
+  // 開始時刻の自動保存（issue #1483）。入力が揃って止まったら、保存ボタン無しで反映する。
+  const [startError, setStartError] = useState<string | null>(null);
+  const startInputRef = useRef("");
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startSavingRef = useRef(false);
+  const startLastSentRef = useRef<string | null>(null);
+  const runningRef = useRef<RunningActivityItem | null>(null);
 
   // 終了時刻を指定して止めるときの欄。止め忘れに気付いてから止めるための経路で、
   // 押した時点で止める「停止して保存」はそのまま残す。
@@ -176,23 +188,90 @@ export function ActivityScreen({
     startTransition(() => router.refresh());
   };
 
-  const saveStart = async () => {
-    if (!startInput) return;
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
-    const result = await submit(
-      { kind: "updateStart", startedAt: localInputToIso(startInput, timeZone) },
-      "開始時刻を変更できませんでした。",
-    );
-    if (!result) return;
+  useEffect(() => {
+    return () => {
+      if (startTimerRef.current) clearTimeout(startTimerRef.current);
+    };
+  }, []);
 
-    if (result.status === "done" && result.running) setRunning(result.running);
+  /**
+   * 開始時刻の欄の最新の値を保存する。欄は閉じず、画面の取り直しもしない
+   * （続けて日付→時刻と直す操作を切らないため。取り直しは欄を閉じるときに1回だけ）。
+   * 保存中に入力が変わったら、終わったあとに最新の値でもう一度送る。
+   * 成功時の表示は出さない。経過時間が変わるので、反映されたことは分かる。
+   */
+  const flushStart = async () => {
+    if (startSavingRef.current) return;
+    startSavingRef.current = true;
+    try {
+      for (let i = 0; i < 5; i++) {
+        const value = startInputRef.current;
+        const current = runningRef.current;
+        if (!current) return;
+
+        const invalid = invalidStartEdit(value, isoToLocalInput(new Date().toISOString(), timeZone));
+        setStartError(invalid);
+        if (invalid) return;
+        if (value === isoToLocalInput(current.startedAt, timeZone)) return;
+        if (value === startLastSentRef.current) return;
+
+        startLastSentRef.current = value;
+        const result = await submit(
+          { kind: "updateStart", startedAt: localInputToIso(value, timeZone) },
+          "開始時刻を変更できませんでした。",
+        );
+        if (!result) {
+          // 失敗した値は、同じ値のまま再送できるようにする。
+          startLastSentRef.current = null;
+          return;
+        }
+        if (result.status === "done" && result.running) {
+          setRunning(result.running);
+          runningRef.current = result.running;
+        }
+        if (startInputRef.current === value) return;
+      }
+    } finally {
+      startSavingRef.current = false;
+    }
+  };
+
+  const changeStartInput = (value: string) => {
+    setStartInput(value);
+    startInputRef.current = value;
+    if (startTimerRef.current) clearTimeout(startTimerRef.current);
+
+    // 空・未来は理由をその場で出し、保存はしない。
+    const invalid = invalidStartEdit(value, isoToLocalInput(new Date().toISOString(), timeZone));
+    setStartError(invalid);
+    if (invalid) return;
+
+    startTimerRef.current = setTimeout(() => void flushStart(), 600);
+  };
+
+  const closeEditStart = async () => {
+    // 待っている変更は捨てず、いま送ってから閉じる。
+    if (startTimerRef.current) {
+      clearTimeout(startTimerRef.current);
+      startTimerRef.current = null;
+      await flushStart();
+    }
     setEditingStart(false);
+    setStartError(null);
     startTransition(() => router.refresh());
   };
 
   const beginEditStart = () => {
     if (!running) return;
-    setStartInput(isoToLocalInput(running.startedAt, timeZone));
+    const initial = isoToLocalInput(running.startedAt, timeZone);
+    setStartInput(initial);
+    startInputRef.current = initial;
+    startLastSentRef.current = null;
+    setStartError(null);
     // 開始と終了の欄を同時に出すと、どちらの日時を触っているのか読めなくなる。
     setEditingEnd(false);
     setEditingStart(true);
@@ -289,10 +368,10 @@ export function ActivityScreen({
                 disabled={disabled}
                 editingStart={editingStart}
                 startInput={startInput}
-                onStartInputChange={setStartInput}
+                onStartInputChange={changeStartInput}
+                startError={startError}
                 onBeginEditStart={beginEditStart}
-                onCancelEditStart={() => setEditingStart(false)}
-                onSaveStart={saveStart}
+                onCloseEditStart={closeEditStart}
                 editingEnd={editingEnd}
                 endInput={endInput}
                 endTouched={endTouched}
@@ -444,8 +523,8 @@ function RunningCard({
   startInput,
   onStartInputChange,
   onBeginEditStart,
-  onCancelEditStart,
-  onSaveStart,
+  onCloseEditStart,
+  startError,
   editingEnd,
   endInput,
   endTouched,
@@ -463,8 +542,9 @@ function RunningCard({
   startInput: string;
   onStartInputChange: (value: string) => void;
   onBeginEditStart: () => void;
-  onCancelEditStart: () => void;
-  onSaveStart: () => void;
+  onCloseEditStart: () => void;
+  /** 開始時刻の欄を保存できない理由（空・未来）。無ければ null。 */
+  startError: string | null;
   editingEnd: boolean;
   endInput: string;
   /**
@@ -511,12 +591,15 @@ function RunningCard({
               value={startInput}
               onChange={onStartInputChange}
             />
+            {/* 入力が揃って止まったら自動で保存する。成功時の表示は出さない。 */}
+            {startError && (
+              <p className="type-body-small text-destructive" role="alert">
+                {startError}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" disabled={disabled} onClick={onCancelEditStart}>
-                やめる
-              </Button>
-              <Button size="sm" disabled={disabled || !startInput} onClick={onSaveStart}>
-                開始時刻を直す
+              <Button variant="ghost" size="sm" disabled={disabled} onClick={onCloseEditStart}>
+                閉じる
               </Button>
             </div>
           </div>

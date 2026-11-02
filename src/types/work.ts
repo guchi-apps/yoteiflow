@@ -349,3 +349,18 @@ export type WorkMonthData = {
   openLeaves: WorkRecordItem[];
   placeOptions: TagOption[];
 };
+
+/**
+ * 今年度の年休の取得状況の材料（`GET /api/work/leave-summary`・issue #1484）。
+ * 集計は受け取った側が `summarizeAnnualLeave()` / `remainingLeave()` でかける。
+ */
+export type AnnualLeaveSummaryData = {
+  fiscalYear: number;
+  startMonth: number;
+  todayKey: string;
+  records: WorkRecordItem[];
+  /** 付与日数。まだ入れていない年度は null。 */
+  grantedDays: number | null;
+  carriedOverDays: number;
+  workMinutesPerDay: number;
+};

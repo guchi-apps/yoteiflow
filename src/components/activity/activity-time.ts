@@ -34,6 +34,18 @@ export function invalidStartAt(
   return null;
 }
 
+/**
+ * 記録中の開始時刻を直すときの入力を受け付けられない理由（issue #1483）。受け付けられるなら null。
+ *
+ * 空と未来だけを断る。`invalidStartAt` は切り替え用で、いまの記録の開始より前を断るが、
+ * 開始時刻の修正は押し忘れて後から前倒しするのが主な使い方のため、前倒しは受け付ける。
+ */
+export function invalidStartEdit(value: string, nowInput: string | null): string | null {
+  if (!value) return "開始日と開始時刻の両方を入れてください。";
+  if (nowInput && value > nowInput) return "これから先の時刻は指定できません。";
+  return null;
+}
+
 /** 指定された終了時刻を受け付けられない理由。受け付けられるなら null。 */
 export function invalidEnd(
   value: string,
