@@ -230,7 +230,7 @@ export function TaskDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-x-hidden overflow-y-auto sm:max-w-md">
         {confirmingDelete && (
           <DeleteItemDialog
             item={{ kind: "task", task }}
@@ -301,6 +301,7 @@ export function TaskDetailDialog({
                 options={progressOptions ?? []}
                 value={progress ? [progress] : []}
                 multiple={false}
+                allowAdd={false}
                 onChange={(next) => {
                   if (busy || readOnly) return;
                   void changeProgress(next[0] ?? null);
@@ -408,7 +409,14 @@ export function TaskDetailDialog({
               <TagChipList names={task.tags} options={tagOptions} />
             </DetailField>
           )}
-          {task.memo && <DetailField label="メモ" value={task.memo} />}
+          {/* モーダル全体を1画面に収めるため、メモは高さを固定して中だけスクロールさせる（issue #1494）。 */}
+          {task.memo && (
+            <DetailField
+              label="メモ"
+              value={task.memo}
+              valueClassName="max-h-60 overflow-x-hidden overflow-y-auto"
+            />
+          )}
 
           {task.url && (
             <a
@@ -440,15 +448,25 @@ function DetailField({
   label,
   value,
   children,
+  valueClassName,
 }: {
   label: string;
   value?: string;
   children?: ReactNode;
+  valueClassName?: string;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      {children ?? (value !== undefined && <LinkifiedText as="span" text={value} />)}
+      {children ??
+        (value !== undefined &&
+          (valueClassName ? (
+            <div className={valueClassName}>
+              <LinkifiedText as="span" text={value} />
+            </div>
+          ) : (
+            <LinkifiedText as="span" text={value} />
+          )))}
     </div>
   );
 }
