@@ -1,20 +1,20 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
-import { MainShell } from "@/components/nav/main-shell";
+import { AppShell } from "@/components/nav/app-shell";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 import { getRunningActivity } from "@/services/activity/running";
 
 /**
- * 下部ナビから開く5画面（カレンダー・タスク・記録・勤務・買い物）の共通レイアウト（issue #1395）。
+ * ログイン後の全画面（下部ナビの5画面・睡眠・日付・場所・設定・年休）の共通レイアウト（issue #1499）。
  *
- * サイドバー・ヘッダーの枠・下部ナビ・記録中バーはここで1度だけ描き、画面を移っても作り直さない。
- * 睡眠（`/activity/sleep`）と年休（`/work/leave`）は戻るボタン付きの別の骨格を使うため、
- * このグループの外に置いている。
+ * 左のサイドバーと記録中の状態はここで1度だけ描き、画面を移っても作り直さない。
+ * 以前は5画面（`(main)`）と戻るボタン付きだった画面が別々の階層でサイドバーを持っていたため、
+ * 階層をまたぐ移動のたびにサイドバーが作り直され、再取得も走っていた。
  */
-export default async function MainLayout({ children }: { children: ReactNode }) {
+export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_UNLINKED_LOGIN_PATH);
 
@@ -26,8 +26,8 @@ export default async function MainLayout({ children }: { children: ReactNode }) 
   ]);
 
   return (
-    <MainShell initialRunning={running} timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}>
+    <AppShell initialRunning={running} timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}>
       {children}
-    </MainShell>
+    </AppShell>
   );
 }
