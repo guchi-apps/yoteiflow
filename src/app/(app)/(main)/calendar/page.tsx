@@ -12,6 +12,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import {
   getContinuousMonthWeeks,
   getMonthsFetchRange,
+  alignToWeekStart,
   getSwipeFetchRange,
   getVisibleDays,
   monthsOfWeeks,
@@ -69,9 +70,18 @@ export default async function CalendarPage({
 
   // URLにも記憶にも日付が無いときの「今日」は、設定タイムゾーンで決める。サーバー（VPS）の
   // ローカル時刻はUTCのため、new Date() 任せにすると日本時間の 00:00〜09:00 が前日になる。
-  const anchor = parseDateKey(
-    params.date ?? memory?.dateKey ?? createCalendarDateUtils(timeZone).todayKey(),
-  );
+  // 週表示は今日へ落ちたときだけ、週の開始曜日を左端にそろえる（issue #1498）。URLの date と
+  // 記憶の日付は「直前の続き」なのでそのまま使う。
+  const weekStartsOnSetting = uiSetting?.weekStartsOn ?? 0;
+  const explicitDateKey = params.date ?? memory?.dateKey;
+  const anchor = explicitDateKey
+    ? parseDateKey(explicitDateKey)
+    : view === "day7"
+      ? alignToWeekStart(
+          parseDateKey(createCalendarDateUtils(timeZone).todayKey()),
+          weekStartsOnSetting,
+        )
+      : parseDateKey(createCalendarDateUtils(timeZone).todayKey());
 
   // どちらも未接続の状態でカレンダーだけ出しても何も表示されないため、設定へ誘導する。
   if (googleAccountCount === 0 && !notionConnection?.taskDataSourceId && !notionConnection?.reminderDataSourceId) {

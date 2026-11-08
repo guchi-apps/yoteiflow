@@ -50,6 +50,15 @@ export function dateKeyDiffDays(startKey: string, endKey: string): number {
   return Math.round((parseDateKey(endKey).getTime() - parseDateKey(startKey).getTime()) / 86_400_000);
 }
 
+/**
+ * 基準日を含む週の開始曜日（weekStartsOn: 0=日曜）の日へそろえる。
+ * 週表示（7日）の先頭列を、今日ではなく設定した週の開始曜日にするために使う（issue #1498）。
+ */
+export function alignToWeekStart(date: Date, weekStartsOn: number): Date {
+  const offset = (date.getUTCDay() - weekStartsOn + 7) % 7;
+  return addDays(date, -offset);
+}
+
 export function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
   next.setUTCMonth(next.getUTCMonth() + months);
