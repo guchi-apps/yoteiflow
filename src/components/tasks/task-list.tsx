@@ -331,7 +331,7 @@ export function TaskList({
         {/*
           広い画面では区分をカードにして格子に並べ、全区分を一度に見せる（issue #636）。1列のままだと
           「今後」が長い日は、その下の「期限未設定」までスクロールしないと何件あるかが読めない。
-          列の数は画面幅ではなく本文の幅（AppFrame の @container/main）で決める。
+          列の数は画面幅ではなく本文の幅（AppShell の @container/main）で決める。
         */}
         <div className="@xl/main:grid @xl/main:grid-cols-2 @xl/main:items-start @xl/main:gap-3 @xl/main:p-3 @5xl/main:grid-cols-4">
           {sections.map((section) => {

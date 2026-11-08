@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { SettingsFrame } from "@/components/nav/settings-frame";
 import { SettingsBottomNav } from "@/components/nav/settings-bottom-nav";
 import { SettingsMenuButton } from "@/components/nav/settings-menu-button";
 import { OfflineNotice } from "@/components/offline/offline-notice";
@@ -38,7 +37,7 @@ export function SettingsShell({
   children: ReactNode;
 }) {
   return (
-    <SettingsFrame>
+    <>
     <div className="flex min-h-app flex-col">
       <header className="sticky top-[env(safe-area-inset-top,0px)] z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <SettingsMenuButton />
@@ -66,6 +65,6 @@ export function SettingsShell({
       {/* スマホ幅では下部ナビを下端に固定する（issue #1348）。本文が短くても flex-1 で下端へ押される。 */}
       <SettingsBottomNav />
     </div>
-    </SettingsFrame>
+    </>
   );
 }

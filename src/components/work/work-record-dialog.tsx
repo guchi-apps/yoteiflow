@@ -286,7 +286,7 @@ export function WorkRecordDialog({
   // （issue #899）。iOSではボタンを押しても入力欄のフォーカスが外れず、キーボードを出したまま
   // 保存するとフォーカス中の欄ごとダイアログが消える。そのときiOSは、欄を見せるためにずらした
   // 文書のスクロールを戻さず、画面全体が上にずれたまま残る。戻し切らなかった分は
-  // `StrandedScrollReset`（AppFrame）が拾う。
+  // `StrandedScrollReset`（AppShell）が拾う。
   const blurTextInput = () => {
     const active = document.activeElement;
     if (isTextInput(active)) active.blur();
