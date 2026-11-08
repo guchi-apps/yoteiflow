@@ -30,6 +30,7 @@ import { RefreshButton } from "@/components/ui/refresh-button";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import {
   addDays,
+  alignToWeekStart,
   CALENDAR_VIEWS,
   getContinuousMonthWeeks,
   getContinuousMonthSpan,
@@ -1075,6 +1076,9 @@ export function CalendarShell({
     navigate(nav.view, toDateKey(addDays(parseDateKey(nav.anchorKey), deltaDays)));
   };
 
+  const alignWeekKey = (key: string) =>
+    toDateKey(alignToWeekStart(parseDateKey(key), weekStartsOn));
+
   const goToday = () => {
     if (nav.view === "month") {
       // 月の先頭週ではなく今日を含む週へ合わせる。月の先頭週に合わせると、今日が月の
@@ -1086,7 +1090,11 @@ export function CalendarShell({
     }
 
     setCenterNowRequest((count) => count + 1);
-    navigate(nav.view, utils.todayKey());
+    // 週表示は今日ではなく、今日を含む週の開始曜日を左端にする（issue #1498）。
+    navigate(
+      nav.view,
+      nav.view === "day7" ? alignWeekKey(utils.todayKey()) : utils.todayKey(),
+    );
   };
 
   /** スクロールで見えている月が変わったとき。 */
@@ -1188,6 +1196,12 @@ export function CalendarShell({
    * 両方から呼ぶため、月表示への特別な分岐を含めてここへまとめている。
    */
   const switchView = (view: CalendarView) => {
+    if (view === "day7" && nav.view !== "day7" && nav.view !== "month") {
+      // 1日・3日表示から週へ。見ていた日を含む週の開始曜日を左端にする（issue #1498）。
+      navigate(view, alignWeekKey(nav.anchorKey));
+      return;
+    }
+
     if (view === "month") {
       // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
       if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
