@@ -4159,15 +4159,18 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 
 設定 ▸ 表示の「カレンダーの初期表示」で、カレンダーを開いたときの表示形式を「月表示」「1日表示」「3日表示」「週表示（7日）」から選べる（issue #1153）。
 週表示は768px以上でだけ選択肢に出す（カレンダーの週ボタンと同じ条件。保存済みの値のときは常に出す）。
-設定は全端末共通のため、URLに `view` が無く設定由来で週になったときは、768px未満ではクライアント
-（`NarrowWeekFallback`）が3日表示へ `router.replace` で退避する。未設定は月表示。保存先は `UiSetting.defaultMobileView`（列名は Mobile だが
-全端末・Web/iOS共通。マイグレーションを避けて未使用だった列を流用。`MONTH` / `DAY_1` / `DAY_3` / `DAY_7` を受ける）。
+設定は**端末ごと**（issue #1510）。スマートフォンは3日・iPadは週のように変えられるよう、保存先は
+ユーザー単位のDBではなく端末のCookie `dayspan_initial_view`（`month` / `day1` / `day3` / `day7`・400日。起動画面と同じく
+ホーム画面のアプリとブラウザは別々）。`UiSetting.defaultMobileView` は #1510 より前の設定を引き継ぐ**読み取り専用のフォールバック**で、
+もう書き込まない。URLに `view` が無く週になったときは、768px未満ではクライアント（`NarrowWeekFallback`）が3日表示へ
+`router.replace` で退避する。未設定は月表示。
 
 表示形式の決まり方（`/calendar`・`resolveCalendarView()`）:
 
 1. URL の `view`（明示された指定が常に最優先。カレンダー内の切り替え・月表示のURL同期・再読み込み・共有リンク）
-2. 設定の初期表示
-3. 月表示
+2. この端末の初期表示（Cookie）
+3. 従来のDB値（`UiSetting.defaultMobileView`。端末で選び直すまでの引き継ぎ）
+4. 月表示
 
 端末Cookieの前回の表示形式（§前回の状態の復元・issue #279）は**表示形式には使わない**。復元するのは日付だけで、
 日付の決まり方（URL → Cookie → 今日）と今日への位置合わせは従来どおり。このため、下部ナビの「カレンダー」

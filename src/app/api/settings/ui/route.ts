@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
-import {
-  initialViewFromSetting,
-  isInitialCalendarView,
-  settingFromInitialView,
-} from "@/lib/calendar-initial-view";
 import { db } from "@/lib/db";
 
-type Body = { weekStartsOn?: number; defaultView?: string };
+type Body = { weekStartsOn?: number };
 
 /**
  * UI表示設定（docs/spec.md §19 の「UI表示設定」）を更新する。
@@ -22,9 +17,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { weekStartsOn, defaultView } = (await request.json()) as Body;
+  const { weekStartsOn } = (await request.json()) as Body;
 
-  if (weekStartsOn === undefined && defaultView === undefined) {
+  if (weekStartsOn === undefined) {
     return NextResponse.json({ error: "nothing to update" }, { status: 400 });
   }
 
@@ -39,17 +34,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "weekStartsOn must be 0-6" }, { status: 400 });
   }
 
-  // 初期表示は月・1日・3日・週（issue #1144・#1153）。
-  if (defaultView !== undefined && !isInitialCalendarView(defaultView)) {
-    return NextResponse.json({ error: "defaultView must be month, day1, day3 or day7" }, { status: 400 });
-  }
-
-  const data = {
-    ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
-    ...(defaultView !== undefined
-      ? { defaultMobileView: settingFromInitialView(defaultView) }
-      : {}),
-  };
+  // 初期表示は端末ごとのCookieに持つ（issue #1510）ため、ここでは受けない。
+  const data = { weekStartsOn };
 
   const setting = await db.uiSetting.upsert({
     where: { userId },
@@ -57,8 +43,5 @@ export async function PATCH(request: Request) {
     update: data,
   });
 
-  return NextResponse.json({
-    weekStartsOn: setting.weekStartsOn,
-    defaultView: initialViewFromSetting(setting.defaultMobileView),
-  });
+  return NextResponse.json({ weekStartsOn: setting.weekStartsOn });
 }
