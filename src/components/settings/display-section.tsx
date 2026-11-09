@@ -15,6 +15,7 @@ import {
 import {
   INITIAL_CALENDAR_VIEW_OPTIONS,
   isInitialCalendarView,
+  rememberInitialView,
   type InitialCalendarView,
 } from "@/lib/calendar-initial-view";
 import { WEEK_START_OPTIONS } from "@/lib/week-start";
@@ -53,14 +54,15 @@ export function DisplaySection({
     await save({ weekStartsOn: next }, () => setValue(next), () => setValue(previous));
   };
 
-  const changeView = async (next: string) => {
+  // 端末ごとのCookieへ書くだけで、サーバーへは送らない（issue #1510）。
+  const changeView = (next: string) => {
     if (!isInitialCalendarView(next)) return;
-    const previous = view;
-    await save({ defaultView: next }, () => setView(next), () => setView(previous));
+    setView(next);
+    rememberInitialView(next);
   };
 
   const save = async (
-    body: { weekStartsOn: number } | { defaultView: InitialCalendarView },
+    body: { weekStartsOn: number },
     apply: () => void,
     revert: () => void,
   ) => {
@@ -104,11 +106,11 @@ export function DisplaySection({
           <div className="flex flex-col gap-1">
             <Label htmlFor="initial-view">カレンダーの初期表示</Label>
             <p className="type-body-small text-on-surface-variant">
-              カレンダーを開いたときの表示形式です。週表示は幅の広い画面でだけ選べ、狭い画面では3日表示で開きます。画面内で切り替えても、この設定は変わりません。
+              カレンダーを開いたときの表示形式です。いま設定を開いているこの端末（ホーム画面のアプリ・ブラウザごと）だけに反映されるため、スマートフォンとiPadで別々に選べます。週表示は幅の広い画面でだけ選べ、狭い画面では3日表示で開きます。画面内で切り替えても、この設定は変わりません。
             </p>
           </div>
 
-          <Select value={view} onValueChange={changeView} disabled={busy || pending}>
+          <Select value={view} onValueChange={changeView} >
             <SelectTrigger id="initial-view" className="w-40">
               <SelectValue />
             </SelectTrigger>
