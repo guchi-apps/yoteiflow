@@ -15,6 +15,7 @@ import {
   requestHash,
   taskGateway,
 } from "@/services/internal/tasks";
+import { withTaskId } from "@/services/internal/task-id";
 import { assertIdempotencyKey, runCreateOperation, type OperationOutcome } from "@/services/internal/task-operations";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
 export function operationResponse(outcome: OperationOutcome<unknown>, successStatus: number, operation: string): NextResponse {
   switch (outcome.kind) {
     case "succeeded":
-      return json(outcome.result, outcome.replayed ? 200 : successStatus);
+      return json(withTaskId(outcome.result), outcome.replayed ? 200 : successStatus);
     case "in_progress":
       return retryLater({ error: "operation_in_progress", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
     case "reconciliation_required":

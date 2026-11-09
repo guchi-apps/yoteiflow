@@ -114,6 +114,9 @@ export type EventNotificationOverride = {
 
 export type TaskPriority = string | null;
 
+/** タスクに持たせる外部リンク（Morrowのメール詳細など。issue #1508）。 */
+export type ExternalLink = { label: string; url: string };
+
 export type TaskItem = {
   kind: "task";
   id: string;
@@ -149,6 +152,8 @@ export type TaskItem = {
   canProgress: boolean;
   priority: TaskPriority;
   tags: string[];
+  /** 外部リンク。「リンク」プロパティの無いDB・古い保存済み応答では無い */
+  externalLinks?: ExternalLink[];
   memo: string | null;
   recurrence: string | null;
   /**

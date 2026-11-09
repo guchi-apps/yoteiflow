@@ -40,3 +40,20 @@ test("日付絞り込み: due/planned は両端を含み、値が無いタスク
   assert.equal(matchesInternalDate({ due: null, planned: "2026-10-05" }, input), false);
   assert.equal(matchesInternalDate({ due: null, planned: "2026-10-05" }, { ...input, dateField: "planned" }), true);
 });
+
+test("links: 検証して整形し、http(s)以外・件数超過・形式違いは拒否する", () => {
+  assert.deepEqual(
+    parseInternalTaskWrite({ links: [{ label: " メール ", url: "https://example.com/a" }, { url: "http://example.com/b" }] }).links,
+    [
+      { label: "メール", url: "https://example.com/a" },
+      { label: "http://example.com/b", url: "http://example.com/b" },
+    ],
+  );
+  assert.deepEqual(parseInternalTaskWrite({ links: [] }).links, []);
+  for (const links of ["x", [{ label: "a", url: "javascript:alert(1)" }], [{ label: "a" }], [null], Array(21).fill({ url: "https://e.com" })])
+    assert.throws(() => parseInternalTaskWrite({ links }), InternalTaskInputError);
+});
+
+test("links だけの更新は他の項目を含まない", () => {
+  assert.deepEqual(Object.keys(parseInternalTaskWrite({ links: [{ label: "a", url: "https://e.com" }] })), ["links"]);
+});
