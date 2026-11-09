@@ -45,7 +45,7 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
 
 `dateField=none` は期限・予定日の両方が未設定のタスクだけを返す。Notion接続・タスクDBが未設定なら `source: "not_configured"` と空配列を返し、取得に失敗した場合は `502 notion_request_failed` とする。空配列かつ `source: "ready"` は該当タスクが無いことを表す。
 
-各タスクにはID、名称、`status`、期限、予定日、進捗、優先度、タグ、メモ、繰り返し、URL、`version` を含める。`version` は更新・状態変更時に必須で、古い値なら `409 task_version_conflict` とする。
+各タスクにはID、名称、`status`、期限、予定日、進捗、優先度、タグ、メモ、外部リンク `links`（`[{ label, url }]`。リンク列が無いDBでは空配列）、繰り返し、URL、`version` を含める。`version` は更新・状態変更時に必須で、古い値なら `409 task_version_conflict` とする。
 
 ## タスクの書き込み
 
@@ -67,7 +67,7 @@ Authorization: Bearer <DAYSPAN_INTERNAL_API_KEY>
 - `PROCESSING`（実行中）の記録は5分を過ぎたら停止したものとして、同じキーの再送で引き取る。それまでは `409 operation_in_progress` を返す。
 - 同じキーで本文が違う要求は `409 idempotency_key_reused`（未実行の記録を除く）。
 
-更新可能な項目は `title`、`due`、`planned`、`priority`、`memo`、`tags`、`recurrence`、`progress` だけである。`null` は期限・予定日・任意の選択肢・メモをクリアする。未知の項目・不正な日付・設定済みDBに対応プロパティが無い項目は `400` で拒否し、黙って成功とはしない。期限または予定日を直接変更したときは、その日付の紐づけだけを既存画面と同じ規則で外す。
+更新可能な項目は `title`、`due`、`planned`、`priority`、`memo`、`links`、`tags`、`recurrence`、`progress` だけである。`links` は最大20件・`url` は http(s) のみ・`label` は100字まで（省略時はURL）で、`[]` で全消去、省略すれば触らない（`links` だけの更新で他の項目は変わらない）。保存先はタスクDBの「リンク」列（ハイパーリンク付きのrich_text。名前が当たったときだけ対応付け）で、無いDBでは `unsupported_field:links` の `400`。作成・更新の結果は `task` に加え、作成ではトップレベルに `taskId` も返す。`null` は期限・予定日・任意の選択肢・メモをクリアする。未知の項目・不正な日付・設定済みDBに対応プロパティが無い項目は `400` で拒否し、黙って成功とはしない。期限または予定日を直接変更したときは、その日付の紐づけだけを既存画面と同じ規則で外す。
 
 `complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。**次回分の作成は元タスク1件につき1回に限る。** 冪等キーと同じ一意制約に、元タスクごとの確保行（キー `complete-guard <taskId>`。空白を含むため呼び出し側のキーとは重ならない）を置いて確保してから作るため、同じキーの再送・別キーでの完了・同時の完了・応答が失われた後の再完了（`RESULT_UNKNOWN` を含む）のどれでも二重に作られない。確保中に別の完了が来たら `409 operation_in_progress`（未実行）にする。一度確保した回は、`reopen` してから `complete` し直しても次回を作らず、`nextTaskId` には最初に作った次回分のIDを返す。内部API以外（画面）ですでに完了済みの回を `complete` しても次回は作らない（画面の経路が作っているため）。
 

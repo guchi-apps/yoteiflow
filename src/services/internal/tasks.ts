@@ -15,7 +15,7 @@ import {
   type NotionTaskPage,
   type TaskWriteInput,
 } from "@/services/notion/tasks";
-import type { TaskItem } from "@/types/calendar";
+import type { ExternalLink, TaskItem } from "@/types/calendar";
 import {
   INTERNAL_TASK_ACTIONS,
   INTERNAL_TASK_DATE_FIELDS,
@@ -50,7 +50,9 @@ export {
 export type { InternalTaskAction, InternalTaskDateField, InternalTaskStatus };
 
 
-export type InternalTask = Omit<TaskItem, "kind" | "done" | "skipped" | "canSkip" | "canProgress" | "links"> & {
+export type InternalTask = Omit<TaskItem, "kind" | "done" | "skipped" | "canSkip" | "canProgress" | "links" | "externalLinks"> & {
+  /** 外部リンク（issue #1508）。TaskItem.links（予定への紐づけ）とは別 */
+  links: ExternalLink[];
   status: InternalTaskStatus;
   version: string;
 };
@@ -87,6 +89,7 @@ function toInternalTask(page: NotionTaskPage, propertyMap: PropertyMap): Interna
     priority: task.priority,
     tags: task.tags,
     memo: task.memo,
+    links: task.externalLinks ?? [],
     recurrence: task.recurrence,
     url: task.url,
     progress: task.progress,

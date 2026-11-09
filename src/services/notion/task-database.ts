@@ -13,7 +13,8 @@ export type TaskField =
   | "recurrence"
   | "tags"
   | "outcome"
-  | "progress";
+  | "progress"
+  | "links";
 
 type FieldRequirement = {
   field: TaskField;
@@ -46,6 +47,9 @@ export const TASK_FIELD_REQUIREMENTS: FieldRequirement[] = [
   // 「承認待ち」などの途中の状態（issue #873）。完了状態とは独立し、選択肢は利用者が決める。
   // 「ステータス」「status」は完了状態のヒントと重なるため、ヒントに含めない。
   { field: "progress", label: "進捗", types: ["select"], required: false, nameHints: ["進捗", "進行", "progress"], hintOnly: true },
+  // 外部リンク（Morrowのメール詳細など。issue #1508）。ハイパーリンク付きのrich_textに持つ。
+  // メモと同じrich_textのため、名前が当たったときだけ対応付ける（型だけで割り当てるとメモ等を取り違える）。
+  { field: "links", label: "リンク", types: ["rich_text"], required: false, nameHints: ["リンク", "links", "link", "関連リンク"], hintOnly: true },
 ];
 
 /** 新規作成・プロパティ追加で入れる進捗の初期の選択肢。以後はNotion側・設定画面で自由に直せる。 */
@@ -211,6 +215,7 @@ export const TASK_DATABASE_TEMPLATE = {
   tags: "タグ",
   outcome: "対応状況",
   progress: "進捗",
+  links: "リンク",
 } as const satisfies Required<Record<TaskField, string>>;
 
 export const PRIORITY_OPTIONS = ["高", "中", "低"];
@@ -292,6 +297,7 @@ export async function createTaskDatabase(
         [TASK_DATABASE_TEMPLATE.progress]: {
           select: { options: DEFAULT_PROGRESS_OPTIONS.map((name) => ({ name })) },
         },
+        [TASK_DATABASE_TEMPLATE.links]: { rich_text: {} },
       },
     },
   });
@@ -343,6 +349,8 @@ function optionalPropertyConfig(field: TaskField): Record<string, unknown> | nul
       return { select: { options: [{ name: SKIPPED_OUTCOME }] } };
     case "progress":
       return { select: { options: DEFAULT_PROGRESS_OPTIONS.map((name) => ({ name })) } };
+    case "links":
+      return { rich_text: {} };
     default:
       return null;
   }

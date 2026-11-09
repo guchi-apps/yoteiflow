@@ -2,7 +2,8 @@ import { shouldApplyEdit } from "@/lib/offline-queue/conflict";
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
-import type { TaskItem } from "@/types/calendar";
+import type { ExternalLink, TaskItem } from "@/types/calendar";
+import { externalLinksToRichText, readExternalLinks } from "@/lib/external-links";
 
 import type { NotionQueryFilter } from "./client";
 import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
@@ -25,7 +26,7 @@ import {
 type NotionPropertyValue = {
   type?: string;
   title?: Array<{ plain_text?: string }>;
-  rich_text?: Array<{ plain_text?: string }>;
+  rich_text?: Array<{ plain_text?: string; href?: string | null; text?: { content?: string; link?: { url?: string } | null } }>;
   checkbox?: boolean;
   status?: { name?: string } | null;
   select?: { name?: string } | null;
@@ -96,6 +97,7 @@ export function normalizeTask(page: NotionTaskPage, propertyMap: PropertyMap): T
     priority: readChoice(get("priority")),
     tags: (get("tags")?.multi_select ?? []).map((tag) => tag.name ?? "").filter(Boolean),
     memo: plainText(get("memo")?.rich_text) || null,
+    externalLinks: readExternalLinks(get("links")),
     recurrence: readChoice(get("recurrence")),
     // 予定への紐づけはDaySpanのDBにある（docs/spec.md §31）。Notionの応答からは分からないため、
     // ここでは空にしておき、読み込み側（services/task-links/links.ts）で埋める。
@@ -236,6 +238,8 @@ export type TaskWriteInput = {
   done?: boolean;
   priority?: string | null;
   memo?: string | null;
+  /** 外部リンク（issue #1508）。空配列で全消去。 */
+  links?: ExternalLink[];
   tags?: string[];
   recurrence?: string | null;
   /** 対応状況。null は未設定（issue #750）。 */
@@ -290,6 +294,10 @@ function toProperties(
     set("memo", {
       rich_text: input.memo ? [{ type: "text", text: { content: input.memo } }] : [],
     });
+  }
+
+  if (input.links !== undefined) {
+    set("links", { rich_text: externalLinksToRichText(input.links) });
   }
 
   if (input.tags !== undefined) {
@@ -479,7 +487,9 @@ export async function completeTask(
   return { nextTaskId: (await createNextRecurrence(notion, connection, current))?.id ?? null };
 }
 
-type RecurringTask = Pick<TaskItem, "title" | "due" | "planned" | "priority" | "memo" | "tags" | "recurrence">;
+type RecurringTask = Pick<TaskItem, "title" | "due" | "planned" | "priority" | "memo" | "tags" | "recurrence"> & {
+  externalLinks?: ExternalLink[];
+};
 
 /** 完了した回から作る次回分の内容。繰り返しが無い・次の期限が決まらないときは null。 */
 export function nextRecurrenceInput(current: RecurringTask): TaskWriteInput | null {
@@ -495,6 +505,8 @@ export function nextRecurrenceInput(current: RecurringTask): TaskWriteInput | nu
     done: false,
     priority: current.priority,
     memo: current.memo,
+    // 戻り先のリンクは完了のたびに消えないよう次回分へ写す（issue #1508）。
+    ...(current.externalLinks?.length ? { links: current.externalLinks } : {}),
     tags: current.tags,
     recurrence: formatRecurrence(recurrence),
   };

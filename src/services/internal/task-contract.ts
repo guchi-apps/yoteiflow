@@ -1,4 +1,5 @@
 import { isRealDateKey } from "@/lib/calendar-range";
+import type { ExternalLink } from "@/types/calendar";
 import type { TaskWriteInput } from "@/services/notion/tasks";
 
 export const INTERNAL_TASK_STATUSES = ["open", "completed", "skipped"] as const;
@@ -11,7 +12,7 @@ export class InternalTaskInputError extends Error {}
 export class InternalTaskConflictError extends Error {}
 
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-const EDITABLE_FIELDS = new Set(["title", "due", "planned", "priority", "memo", "tags", "recurrence", "progress"]);
+const EDITABLE_FIELDS = new Set(["title", "due", "planned", "priority", "memo", "links", "tags", "recurrence", "progress"]);
 
 export function parseInternalTaskWrite(value: unknown, { create = false }: { create?: boolean } = {}): TaskWriteInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new InternalTaskInputError("body_must_be_object");
@@ -36,12 +37,38 @@ export function parseInternalTaskWrite(value: unknown, { create = false }: { cre
     if (item !== null && (typeof item !== "string" || item.length > 2000)) throw new InternalTaskInputError(`invalid_${field}`);
     result[field] = item;
   }
+  if ("links" in body) result.links = parseLinks(body.links);
   if ("tags" in body) {
     if (!Array.isArray(body.tags) || body.tags.length > 50 || body.tags.some((tag) => typeof tag !== "string" || !tag || tag.length > 100)) throw new InternalTaskInputError("invalid_tags");
     result.tags = body.tags as string[];
   }
   if (!create && Object.keys(result).length === 0) throw new InternalTaskInputError("empty_update");
   return result;
+}
+
+export const MAX_LINKS = 20;
+const MAX_LINK_LABEL = 100;
+const MAX_LINK_URL = 1800;
+
+function parseLinks(value: unknown): ExternalLink[] {
+  if (!Array.isArray(value) || value.length > MAX_LINKS) throw new InternalTaskInputError("invalid_links");
+  return value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new InternalTaskInputError("invalid_links");
+    const { label, url } = item as Record<string, unknown>;
+    if (typeof url !== "string" || !isHttpUrl(url)) throw new InternalTaskInputError("invalid_links");
+    if (label !== undefined && (typeof label !== "string" || label.trim().length > MAX_LINK_LABEL)) throw new InternalTaskInputError("invalid_links");
+    return { label: (typeof label === "string" ? label.trim() : "") || url, url };
+  });
+}
+
+function isHttpUrl(value: string): boolean {
+  if (value.length > MAX_LINK_URL) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 function isTaskDate(value: string): boolean {

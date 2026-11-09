@@ -15,6 +15,7 @@ import {
   requestHash,
   taskGateway,
 } from "@/services/internal/tasks";
+import { withTaskId } from "@/services/internal/task-id";
 import { assertIdempotencyKey, runCreateOperation, type OperationOutcome } from "@/services/internal/task-operations";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +74,12 @@ export async function POST(request: Request) {
       { userId, idempotencyKey: key, requestHash: requestHash(input) },
       input,
     );
-    return operationResponse(outcome, 201, "内部タスクの作成");
+    // taskIdは作成の応答にだけ添える（更新・完了の共有関数には入れない）。
+    return operationResponse(
+      outcome.kind === "succeeded" ? { ...outcome, result: withTaskId(outcome.result) } : outcome,
+      201,
+      "内部タスクの作成",
+    );
   } catch (error) { return taskError(error, "内部タスクの作成"); }
 }
 

@@ -409,6 +409,26 @@ export function TaskDetailDialog({
               <TagChipList names={task.tags} options={tagOptions} />
             </DetailField>
           )}
+          {/* 外部リンク（Morrowのメール詳細など。issue #1508）。素の <a> にして、Universal Linkに対応するアプリが入っていればアプリで開かせる。 */}
+          {(task.externalLinks?.length ?? 0) > 0 && (
+            <DetailField label="リンク">
+              <ul className="flex flex-col gap-1">
+                {task.externalLinks?.map((link, index) => (
+                  <li key={`${index}:${link.url}`} className="min-w-0">
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex max-w-full items-center gap-1 break-all text-sm text-primary hover:underline"
+                    >
+                      <ExternalLink className="size-3 shrink-0" />
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </DetailField>
+          )}
           {/* モーダル全体を1画面に収めるため、メモは高さを固定して中だけスクロールさせる（issue #1494）。 */}
           {task.memo && (
             <DetailField
