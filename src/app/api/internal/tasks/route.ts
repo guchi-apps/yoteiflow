@@ -74,7 +74,12 @@ export async function POST(request: Request) {
       { userId, idempotencyKey: key, requestHash: requestHash(input) },
       input,
     );
-    return operationResponse(outcome, 201, "内部タスクの作成");
+    // taskIdは作成の応答にだけ添える（更新・完了の共有関数には入れない）。
+    return operationResponse(
+      outcome.kind === "succeeded" ? { ...outcome, result: withTaskId(outcome.result) } : outcome,
+      201,
+      "内部タスクの作成",
+    );
   } catch (error) { return taskError(error, "内部タスクの作成"); }
 }
 
@@ -86,7 +91,7 @@ export async function POST(request: Request) {
 export function operationResponse(outcome: OperationOutcome<unknown>, successStatus: number, operation: string): NextResponse {
   switch (outcome.kind) {
     case "succeeded":
-      return json(withTaskId(outcome.result), outcome.replayed ? 200 : successStatus);
+      return json(outcome.result, outcome.replayed ? 200 : successStatus);
     case "in_progress":
       return retryLater({ error: "operation_in_progress", executed: "unknown", retryWithSameKey: true }, outcome.retryAfterSeconds);
     case "reconciliation_required":
