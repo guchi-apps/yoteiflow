@@ -1,23 +1,15 @@
 // カレンダーの初期表示（issue #1144）。
 //
-// 保存先は UiSetting.defaultMobileView（CalendarViewType）。列名は "Mobile" だが、端末によらず
-// 全端末共通の「初期表示」として使う。専用列を足すとマイグレーション（自動マージ不可カテゴリ）が
-// 要るため、使われていなかったこの列を流用している。選べるのは月・1日・3日・週（7日）。
+// 保存先は端末ごとのCookie（INITIAL_VIEW_COOKIE・issue #1510）。スマホは3日・iPadは週のように
+// 端末ごとに変えたいため、ユーザー単位のDBには書かない。UiSetting.defaultMobileView
+// （CalendarViewType）は #1510 より前の設定を引き継ぐ読み取り専用のフォールバックとして残す。
+// 選べるのは月・1日・3日・週（7日）。
 // 週は狭い画面では出せないため、設定画面では768px以上でだけ選択肢に出し、URLに view が無く
 // 設定由来で週になったときの狭い画面での退避は narrow-week-fallback.tsx が行う（issue #1153）。
 
 import { parseView, type CalendarView } from "@/lib/calendar-range";
 
 export type InitialCalendarView = "month" | "day1" | "day3" | "day7";
-
-type StoredView = "MONTH" | "DAY_1" | "DAY_3" | "DAY_7";
-
-const STORED_BY_VIEW: Record<InitialCalendarView, StoredView> = {
-  month: "MONTH",
-  day1: "DAY_1",
-  day3: "DAY_3",
-  day7: "DAY_7",
-};
 
 const VIEW_BY_STORED: Record<string, InitialCalendarView> = {
   MONTH: "month",
@@ -39,7 +31,7 @@ export const INITIAL_CALENDAR_VIEW_OPTIONS: {
 ];
 
 export function isInitialCalendarView(value: unknown): value is InitialCalendarView {
-  return typeof value === "string" && Object.hasOwn(STORED_BY_VIEW, value);
+  return typeof value === "string" && Object.values(VIEW_BY_STORED).includes(value as InitialCalendarView);
 }
 
 /** DBの値（CalendarViewType）から初期表示を求める。未設定・不明な値は月表示。 */
@@ -47,9 +39,34 @@ export function initialViewFromSetting(stored: string | null | undefined): Initi
   return (stored && VIEW_BY_STORED[stored]) || "month";
 }
 
-/** 初期表示をDBの値へ。 */
-export function settingFromInitialView(view: InitialCalendarView): StoredView {
-  return STORED_BY_VIEW[view];
+/** 初期表示の記憶（端末ごと・issue #1510）を持つCookie名。起動画面（START_PATH_COOKIE）と同じ理由でCookie。 */
+export const INITIAL_VIEW_COOKIE = "dayspan_initial_view";
+
+/** 400日（主要ブラウザのCookie上限）。選んだらしばらく効き続ける設定のため長期間にする。 */
+export const INITIAL_VIEW_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
+
+/**
+ * 端末ごとの初期表示を覚える（クライアント専用）。
+ * DBへは書かない（書くと別端末へ同期してしまう・issue #1510）。
+ */
+export function rememberInitialView(view: InitialCalendarView): void {
+  if (typeof document === "undefined") return;
+
+  const secure = window.location.protocol === "https:" ? "; secure" : "";
+  document.cookie =
+    `${INITIAL_VIEW_COOKIE}=${view}` +
+    `; path=/; max-age=${INITIAL_VIEW_MAX_AGE_SECONDS}; samesite=lax${secure}`;
+}
+
+/**
+ * 初期表示を求める。この端末のCookie > 従来のDB値（移行用。端末ごとに選び直すまで今までの表示）> 月。
+ * /calendar と設定 ▸ 表示の両方がこの関数を通す。
+ */
+export function resolveInitialView(
+  cookieValue: string | null | undefined,
+  stored: string | null | undefined,
+): InitialCalendarView {
+  return isInitialCalendarView(cookieValue) ? cookieValue : initialViewFromSetting(stored);
 }
 
 /**
@@ -58,7 +75,8 @@ export function settingFromInitialView(view: InitialCalendarView): StoredView {
  */
 export function resolveCalendarView(
   urlView: string | undefined,
+  cookieValue: string | null | undefined,
   stored: string | null | undefined,
 ): CalendarView {
-  return urlView ? parseView(urlView) : initialViewFromSetting(stored);
+  return urlView ? parseView(urlView) : resolveInitialView(cookieValue, stored);
 }
