@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseYahooTransitRoute,
+  readYahooRouteStops,
   yahooRouteFields,
   yahooSearchedDateKey,
   yahooStationName,
@@ -156,4 +157,53 @@ test("yahooStationName: 同名駅を区別する（都道府県）の注記を�
 
 test("yahooStationName: 注記が無ければそのまま返す", () => {
   assert.equal(yahooStationName("高槻"), "高槻");
+});
+
+test("readYahooRouteStops: 途中駅の駅名・発車時刻・行番号を読む（issue #1515）", () => {
+  const note = `燕三条 ⇒ 高槻市
+------------------------------
+■燕三条
+↓ 16:30〜16:42
+↓ ＪＲ新幹線とき325号 新潟行
+■新潟
+↓ 16:44〜16:48
+↓ 徒歩
+■新潟駅(高速・連絡バス)
+↓ 17:20〜17:45
+↓ 連絡バス
+▼[乗換不要] 新潟空港
+↓ 23:50〜00:20
+■高槻市
+
+[Yahoo!乗換案内]
+■広告`;
+  const stops = readYahooRouteStops(note);
+  assert.deepEqual(
+    stops.map((s) => [s.station, s.departTime, s.dayOffset]),
+    [
+      ["新潟", "16:44", 0],
+      ["新潟駅", "17:20", 0],
+      ["新潟空港", "23:50", 0],
+    ],
+  );
+  assert.equal(note.split("\n")[stops[0].lineIndex], "■新潟");
+});
+
+test("readYahooRouteStops: 日またぎは翌日へ数える", () => {
+  const note = "■A\n↓ 23:00〜23:30\n■B\n↓ 23:40〜00:10\n■C\n↓ 00:20〜00:40\n■D";
+  assert.deepEqual(
+    readYahooRouteStops(note).map((s) => [s.station, s.dayOffset]),
+    [
+      ["B", 0],
+      ["C", 1],
+    ],
+  );
+});
+
+test("readYahooRouteStops: 途中駅が無い経路・経路でないメモは空、時刻が読めない駅はnull", () => {
+  assert.deepEqual(readYahooRouteStops("■草津\n↓ 20:58〜21:21\n■高槻"), []);
+  assert.deepEqual(readYahooRouteStops("普通のメモ"), []);
+  const stops = readYahooRouteStops("■A\n↓ 10:00〜10:10\n■B\n↓ 徒歩\n■C");
+  assert.equal(stops[0].station, "B");
+  assert.equal(stops[0].departTime, null);
 });
