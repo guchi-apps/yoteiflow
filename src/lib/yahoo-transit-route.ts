@@ -256,3 +256,67 @@ export function yahooSearchedDateKey(route: YahooTransitRoute): string | null {
 export function yahooStationName(station: string): string {
   return station.replace(/[（(][^（）()]*[）)]\s*$/, "").trim();
 }
+
+/** 途中駅（出発・到着を除く乗換駅・乗降駅）。メモの何行目か・再検索に使う駅名と発車時刻を持つ。 */
+export type YahooRouteStop = {
+  /** メモを改行で分けたときの行番号（0始まり）。 */
+  lineIndex: number;
+  /** Yahoo!へ渡す駅名。`▼[乗換不要]` の前置きと末尾の `(都道府県)`・`(路線名)` の注記を落としたもの。 */
+  station: string;
+  /** その駅の発車時刻（`HH:MM`）。駅の直後の `↓ 16:44〜16:48` の前半。読めなければ null。 */
+  departTime: string | null;
+  /** 経路の始点の発車を0日目として、日をまたいだ日数。 */
+  dayOffset: number;
+};
+
+const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～]/;
+
+/**
+ * 経路のメモから途中駅（issue #1515）。先頭の印が出発、末尾の印が到着で、その間の `■`／`▼` が途中駅。
+ *
+ * 途中駅から先を調べ直すボタンの置き場所を決めるための読み取りで、経路として読めない
+ * メモ（印が3つ未満）は空配列を返す。発車時刻が読めない駅も含め、時刻は null のまま返す
+ * （遅れたときに利用者が直せるよう、ボタンは隠さない）。時刻が前の駅より戻ったら日をまたいだと数える。
+ */
+export function readYahooRouteStops(text: string): YahooRouteStop[] {
+  const lines = text.split(/\r?\n/);
+  const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
+  const body = end === -1 ? lines : lines.slice(0, end);
+
+  const marks = body.flatMap((line, index) => {
+    const trimmed = line.trim();
+    return trimmed.startsWith("■") || trimmed.startsWith("▼") ? [index] : [];
+  });
+  if (marks.length < 3) return [];
+
+  let previous = -1;
+  let dayOffset = 0;
+  const stops: YahooRouteStop[] = [];
+
+  marks.slice(0, -1).forEach((mark, order) => {
+    const next = marks[order + 1];
+    let departTime: string | null = null;
+    for (const line of body.slice(mark + 1, next)) {
+      const matched = SEGMENT_TIME.exec(line.trim());
+      if (matched) {
+        departTime = toTime(matched[1], matched[2]);
+        break;
+      }
+    }
+
+    if (departTime) {
+      const minutes = Number(departTime.slice(0, 2)) * 60 + Number(departTime.slice(3, 5));
+      if (previous !== -1 && minutes < previous) dayOffset += 1;
+      previous = minutes;
+    }
+
+    if (order === 0) return;
+    const station = yahooStationName(
+      body[mark].trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, ""),
+    );
+    if (station === "") return;
+    stops.push({ lineIndex: mark, station, departTime, dayOffset });
+  });
+
+  return stops;
+}

@@ -19,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
 import {
   TRAVEL_MODE_LABELS,
@@ -33,6 +32,7 @@ import {
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelChangeSheet } from "./travel-change-sheet";
+import { TravelNote } from "./travel-note";
 import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
@@ -248,7 +248,16 @@ export function TravelDetailDialog({
             </span>
           </DetailRow>
 
-          {travel.note && <LinkifiedText className="text-on-surface-variant" text={travel.note} />}
+          {travel.note && (
+            <TravelNote
+              note={travel.note}
+              startIso={travel.start}
+              timeZone={timeZone}
+              destination={travel.destination}
+              places={places}
+              readOnly={readOnly}
+            />
+          )}
 
           {/* 書き出せていない移動はDaySpanの中だけに見える。他の端末で探しても出てこないため伝える。 */}
           {!travel.exported && (
