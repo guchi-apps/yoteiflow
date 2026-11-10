@@ -11,6 +11,10 @@ import {
   updateEvent,
   type EventWriteInput,
 } from "@/services/google-calendar/events";
+import {
+  dropActivityLinksForEvent,
+  moveActivityLinkCalendar,
+} from "@/services/calendar/activity-event-links";
 import { dropOutcomesForEvent, moveEventOutcome } from "@/services/calendar/event-outcomes";
 import {
   dropNotificationSettingsForEvent,
@@ -108,6 +112,7 @@ export async function PATCH(
       // 記録そのものは予定IDで引くため移動に追随するが、写しが古いままだと
       // 「どのカレンダーの予定だったか」を偽ることになる。
       await moveEventOutcome(userId, eventId, body.calendarId);
+      await moveActivityLinkCalendar(userId, eventId, body.calendarId);
       // 予定ごとの通知設定が持つカレンダーの写しも同様に合わせる（issue #708）。
       await moveEventNotificationSetting(userId, eventId, body.calendarId);
     }
@@ -179,6 +184,8 @@ export async function DELETE(
 
     // 中止・不参加の記録も一緒に消す（docs/spec.md §37）。予定が無くなれば指す先が無い。
     await dropOutcomesForEvent(userId, eventId, scope);
+    // 活動記録との紐づけも消す（記録側・予定側のどちらでも・issue #1514）。
+    await dropActivityLinksForEvent(userId, eventId, scope);
 
     // 予定ごとの通知設定も一緒に消す（issue #708）。予定が無くなれば指す先が無い。
     await dropNotificationSettingsForEvent(userId, eventId, scope);

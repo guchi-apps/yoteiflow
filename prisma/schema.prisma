@@ -44,6 +44,7 @@ model User {
   taskEventLinks       TaskEventLink[]
   taskBringItems       TaskBringItem[]
   eventOutcomes        EventOutcome[]
+  activityEventLinks   ActivityEventLink[]
   annualLeaveGrants    AnnualLeaveGrant[]
   internalTaskOperations InternalTaskOperation[]
 
@@ -1114,4 +1115,33 @@ model WorkPlaceLink {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, workPlace])
+}
+
+// --- 活動記録と予定の紐づけ（issue #1514） ---
+// 予定は事前に入れるもの、活動記録は事後に残る事実。両者を結ぶ線だけをここに持つ
+// （Googleには相手を指す欄が無い。EventOutcome・TaskEventLink と同じ方針）。
+// 活動記録の本体は保存先カレンダーのGoogle予定。取得範囲の外でも一覧に出せるよう、
+// 記録の項目名・時間帯と予定名は写しで持つ（範囲内なら最新の値で上書きして返す）。
+model ActivityEventLink {
+  id     String @id @default(cuid())
+  userId String
+
+  recordCalendarId String
+  recordEventId    String
+  recordTitle      String
+  recordStart      DateTime
+  recordEnd        DateTime
+
+  plannedCalendarId String
+  plannedEventId    String // 繰り返し予定は展開した1回分のID
+  plannedTitle      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 記録1件につき予定は1件まで。予定には複数の記録を紐づけられる（睡眠が分かれる等）。
+  @@unique([userId, recordEventId])
+  @@index([userId, plannedEventId])
 }

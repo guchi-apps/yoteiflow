@@ -3,6 +3,7 @@ import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { createLoadTimer, formatLoadSpans, SLOW_LOAD_LOG_MS, type LoadTimer } from "@/lib/load-timing";
 import { db } from "@/lib/db";
 import { listActivityCalendarIds } from "@/services/activity/settings";
+import { attachActivityLinks, listActivityLinks } from "@/services/calendar/activity-event-links";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import {
   attachEventNotificationSettings,
@@ -230,6 +231,8 @@ export async function loadGoogleEvents(
   // 予定ごとの通知設定（issue #708）。DaySpanのDBのみのため外部APIの往復は増えない。
   // outcomesと同じ理由で並行にはしない。
   const notificationSettings = await listEventNotificationSettings(userId);
+  // 活動記録と予定の紐づけ（issue #1514）。DaySpanのDBのみ。
+  const activityLinks = await listActivityLinks(userId);
 
   const items: CalendarEventItem[] = [];
   const calendars: WritableCalendar[] = [];
@@ -338,7 +341,10 @@ export async function loadGoogleEvents(
   }
 
   return {
-    items: attachEventNotificationSettings(attachEventOutcomes(items, outcomes), notificationSettings),
+    items: attachActivityLinks(
+      attachEventNotificationSettings(attachEventOutcomes(items, outcomes), notificationSettings),
+      activityLinks,
+    ),
     calendars,
     errors,
   };
