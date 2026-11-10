@@ -38,6 +38,7 @@ import type { PlaceItem } from "@/services/notion/places";
 import { cn } from "@/lib/utils";
 import {
   EVENT_OUTCOME_KIND_LABELS,
+  type ActivityLinkItem,
   TRAVEL_MODE_LABELS,
   type CalendarEventItem,
   type EventOutcomeItem,
@@ -45,6 +46,7 @@ import {
   type TravelItem,
 } from "@/types/calendar";
 
+import { ActivityLinkSection } from "./activity-link-section";
 import { BringItemsSection } from "./bring-items-section";
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
@@ -89,6 +91,8 @@ export function EventDetailDialog({
   onConfirmed,
   weekStartsOn = 0,
   onTravelLinkChanged,
+  onActivityLinksChanged,
+  onOpenEventById,
 }: {
   event: CalendarEventItem;
   timeZone: string;
@@ -142,6 +146,10 @@ export function EventDetailDialog({
   weekStartsOn?: number;
   /** 既存の移動を後から結んだ・外したあと（issue #1105）。変わった期間を渡して取り直す。 */
   onTravelLinkChanged?: (touched: TouchedRange[] | null) => void;
+  /** 活動記録と予定の紐づけが変わったとき（issue #1514）。開いている予定へ反映して取り直す。 */
+  onActivityLinksChanged?: (links: ActivityLinkItem[]) => void;
+  /** 紐づけの相手の予定を開く。手元に無ければ false（押せない表示にする）。 */
+  onOpenEventById?: (eventId: string) => boolean;
 }) {
   // 既存の移動を後から結ぶ（issue #1105）。選ぶ画面を出す間は表示画面を閉じる。
   const [linkingTravel, setLinkingTravel] = useState(false);
@@ -551,6 +559,17 @@ export function EventDetailDialog({
               })}
             </div>
           )}
+
+          {/* 活動記録と予定の紐づけ（issue #1514）。 */}
+          <ActivityLinkSection
+            event={event}
+            timeZone={timeZone}
+            weekStartsOn={weekStartsOn}
+            isActivity={isActivity}
+            readOnly={readOnly}
+            onChanged={(links) => onActivityLinksChanged?.(links)}
+            onOpenEvent={(id) => onOpenEventById?.(id) ?? false}
+          />
 
           {/* 予定の持ち物（issue #1080）。期限は向かう移動の出発から自動で決まる。 */}
           {!isActivity && (
