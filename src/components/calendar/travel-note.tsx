@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { ExternalLink, RefreshCw } from "lucide-react";
 
@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LinkifiedText } from "@/components/ui/linkified-text";
+import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
+import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import { readYahooRouteStops, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
@@ -132,13 +134,25 @@ function ResearchSheet({
     setTimeout(onClose, 150);
   };
 
-  const href = yahooTransitLink({
-    origin: resolveYahooPlace(stop.station, places),
-    destination: resolveYahooPlace(destination, places),
-    departAt: date && time ? `${date}T${time}` : "",
-    arriveAt: "",
-    basis: "depart",
-  });
+  const origin = resolveYahooPlace(stop.station, places);
+  const target = resolveYahooPlace(destination, places);
+  const departAt = date && time ? `${date}T${time}` : "";
+  const href = yahooTransitLink({ origin, destination: target, departAt, arriveAt: "", basis: "depart" });
+  // アプリ用のリンク（issue #1520）。Web用のURLはiOSでUniversal Linkとしてアプリに渡ると、日時の指定が
+  // 捨てられて「いま」で検索される。移動の入力画面（#1330）と同じ `ytransit://` で日時ごと渡す。
+  // 発着地・日時が揃わなければ null で、Web版だけで開く。
+  const condition = transitSearchCondition({ origin, destination: target, departAt, arriveAt: "", basis: "depart" });
+  const appHref = condition.ok ? yahooTransitAppLink(condition) : null;
+  const nativeTransit = useSyncExternalStore(() => () => {}, hasNativeTransit, () => false);
+  const [opened, setOpened] = useState<NativeTransitOpened | null>(null);
+
+  /** アプリ内: Yahoo!アプリを開く。開けなければアプリが同じ条件のWeb版を開く */
+  const openInNativeApp = async () => {
+    // 再検索は共有で戻す下書きを持たない。移動の入力画面で置いた印が残っていると、ここで選んだ経路が
+    // 別の移動の下書きへ反映されうるため、開く前に消す（ブリッジはメッセージを順に処理する）
+    clearTransitInNativeApp();
+    setOpened(await openTransitInNativeApp({ appUrl: appHref ?? "", webUrl: href, session: null }));
+  };
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
@@ -155,6 +169,11 @@ function ResearchSheet({
             <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
+          {opened && opened !== "app" && (
+            <p className="text-xs text-on-surface-variant" role="status">
+              {opened === "web" ? "アプリを開けなかったため、Web版で開きました。" : "Yahoo!乗換案内を開けませんでした。"}
+            </p>
+          )}
           {!time && (
             <p className="text-xs text-on-surface-variant">
               時刻を入れると、その時刻に出発する経路で調べます。空のままでは時刻を指定せずに開きます。
@@ -166,13 +185,30 @@ function ResearchSheet({
           <Button variant="ghost" onClick={close}>
             閉じる
           </Button>
-          {/* 素の<a>にするのは、iOSがUniversal LinkでYahoo!乗換案内アプリを開けるようにするため。 */}
-          <Button asChild>
-            <a href={href} target="_blank" rel="noopener noreferrer">
+          {nativeTransit ? (
+            <Button onClick={() => void openInNativeApp()}>
               Yahoo!乗換案内で検索
               <ExternalLink className="size-3.5" />
-            </a>
-          </Button>
+            </Button>
+          ) : (
+            <>
+              {/* 素の<a>。アプリ未導入の端末でブラウザが警告を出すため、Web版を自動では試さず並べて選ばせる */}
+              {appHref && (
+                <Button asChild variant="outline" className="hidden pointer-coarse:inline-flex">
+                  <a href={appHref}>
+                    アプリで検索
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                </Button>
+              )}
+              <Button asChild>
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {appHref ? "Yahoo!乗換案内（Web版）で検索" : "Yahoo!乗換案内で検索"}
+                  <ExternalLink className="size-3.5" />
+                </a>
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
