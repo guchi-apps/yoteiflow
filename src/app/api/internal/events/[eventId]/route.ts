@@ -1,6 +1,7 @@
 import { calendarWriteError, externalApiError } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import { requireInternalEventsApiKey, resolveInternalUserId } from "@/lib/internal-auth";
+import { dropActivityLinksForEvent } from "@/services/calendar/activity-event-links";
 import { dropOutcomesForEvent } from "@/services/calendar/event-outcomes";
 import { dropNotificationSettingsForEvent } from "@/services/calendar/event-notification-settings";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
@@ -137,6 +138,7 @@ export async function DELETE(
     await deleteEventWithScope(target.account, calendarId, eventId, "single");
     await dropLinksForEvent(userId, eventId, "single");
     await dropOutcomesForEvent(userId, eventId, "single");
+    await dropActivityLinksForEvent(userId, eventId, "single");
     await dropNotificationSettingsForEvent(userId, eventId, "single");
 
     return json({ ok: true }, 200);

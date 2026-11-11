@@ -2250,6 +2250,17 @@ function CalendarBody({
           }}
           // 仮の予定の確定（issue #688）。続けて直せるようダイアログは閉じず、
           // 開いている予定だけ差し替えてから、その予定がかかる月を取り直す。
+          // 活動記録と予定の紐づけ（issue #1514）。ダイアログは閉じず、開いている予定へ反映する。
+          onActivityLinksChanged={(links) => {
+            onOpenEvent({ ...viewingEvent, activityLinks: links });
+            handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
+          }}
+          onOpenEventById={(eventId) => {
+            const target = data.events.find((item) => item.id === eventId);
+            if (!target) return false;
+            onOpenEvent(target);
+            return true;
+          }}
           onConfirmed={() => {
             onOpenEvent({ ...viewingEvent, tentative: false });
             handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);

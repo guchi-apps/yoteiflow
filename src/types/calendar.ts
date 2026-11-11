@@ -57,6 +57,25 @@ export type CalendarEventItem = {
    * 古い応答には無いため任意項目にし、読む側は `?? false` で受ける。
    */
   workGenerated?: boolean;
+  /**
+   * 活動記録と予定の紐づけ（issue #1514）。この予定が「記録」側でも「予定」側でも、紐づいている
+   * 線をすべて持つ。無ければ undefined（古い応答・紐づけの無い予定）。
+   */
+  activityLinks?: ActivityLinkItem[];
+};
+
+/** 活動記録と予定の紐づけ1件。両側の項目名・時間帯の写しを持つ（取得範囲外でも出せるように）。 */
+export type ActivityLinkItem = {
+  id: string;
+  recordCalendarId: string;
+  recordEventId: string;
+  recordTitle: string;
+  /** ISO 8601 */
+  recordStart: string;
+  recordEnd: string;
+  plannedCalendarId: string;
+  plannedEventId: string;
+  plannedTitle: string;
 };
 
 /**
