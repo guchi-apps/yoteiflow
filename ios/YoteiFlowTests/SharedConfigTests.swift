@@ -55,6 +55,10 @@ final class SharedConfigTests: XCTestCase {
         XCTAssertEqual(SharedConfig.path(fromUniversalLink: URL(string: "https://dayspan.gucchii.com/calendar")!), "/calendar")
     }
 
+    func testUniversalLinkOpensTasks() {
+        XCTAssertEqual(SharedConfig.path(fromUniversalLink: URL(string: "https://dayspan.gucchii.com/tasks")!), "/tasks")
+    }
+
     func testUniversalLinkDropsOtherQuery() {
         let url = URL(string: "https://dayspan.gucchii.com/calendar?date=2026-11-09&next=//evil.com")!
         XCTAssertEqual(SharedConfig.path(fromUniversalLink: url), "/calendar?date=2026-11-09")

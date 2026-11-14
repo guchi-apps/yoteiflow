@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { appleAppSiteAssociation } from "@/lib/universal-links";
 
-test("AASAはアプリのIDと /calendar だけを対象にする（issue #1366）", () => {
+test("AASAはアプリのIDと /calendar・/tasks だけを対象にする（issue #1366・#1525）", () => {
   assert.deepEqual(appleAppSiteAssociation(), {
     applinks: {
-      details: [{ appIDs: ["6AA3WFTR94.com.gucchii.yoteiflow"], components: [{ "/": "/calendar" }] }],
+      details: [{ appIDs: ["6AA3WFTR94.com.gucchii.yoteiflow"], components: [{ "/": "/calendar" }, { "/": "/tasks" }] }],
     },
   });
 });
