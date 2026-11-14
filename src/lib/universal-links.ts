@@ -9,7 +9,7 @@
 export const APPLE_APP_ID = "6AA3WFTR94.com.gucchii.yoteiflow";
 
 /** アプリで開くパス。ほかの画面は従来どおりSafari（ブラウザ）で開く。 */
-export const UNIVERSAL_LINK_PATHS = ["/calendar"];
+export const UNIVERSAL_LINK_PATHS = ["/calendar", "/tasks"];
 
 /** `/.well-known/apple-app-site-association` の中身。 */
 export function appleAppSiteAssociation() {
