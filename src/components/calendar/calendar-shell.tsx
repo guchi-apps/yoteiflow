@@ -2369,6 +2369,9 @@ function CalendarBody({
           linkedEventRange={
             data.events.find((event) => event.id === viewingTravel.linkedEventId) ?? null
           }
+          linkedEventColor={
+            data.events.find((event) => event.id === viewingTravel.linkedEventId)?.color ?? null
+          }
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}
