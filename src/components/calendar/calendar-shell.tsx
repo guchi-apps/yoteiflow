@@ -2074,6 +2074,11 @@ function CalendarBody({
     actions: shortcutActions,
   });
 
+  // 移動の表示画面に出す、紐づく予定（名前・日時・色を1回の検索で引く）。
+  const linkedEventOfTravel = viewingTravel?.linkedEventId
+    ? (data.events.find((event) => event.id === viewingTravel.linkedEventId) ?? null)
+    : null;
+
   return (
     <WorkShortLabelsContext.Provider value={work.shortLabels}>
       {/* オフラインならすでに OfflineNotice が出ているため、二重に出さない（issue #718）。 */}
@@ -2363,15 +2368,9 @@ function CalendarBody({
           onLinked={handleSaved}
           weekStartsOn={weekStartsOn}
           places={placeCatalog.places}
-          linkedEventTitle={
-            data.events.find((event) => event.id === viewingTravel.linkedEventId)?.title ?? null
-          }
-          linkedEventRange={
-            data.events.find((event) => event.id === viewingTravel.linkedEventId) ?? null
-          }
-          linkedEventColor={
-            data.events.find((event) => event.id === viewingTravel.linkedEventId)?.color ?? null
-          }
+          linkedEventTitle={linkedEventOfTravel?.title ?? null}
+          linkedEventRange={linkedEventOfTravel ?? null}
+          linkedEventColor={linkedEventOfTravel?.color ?? null}
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}
