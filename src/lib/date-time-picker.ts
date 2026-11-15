@@ -42,6 +42,28 @@ export function monthGrid(year: number, month: number): PickerCell[] {
   });
 }
 
+/** `YYYY-MM-DD` を日数だけ動かす。 */
+export function shiftDateKey(key: string, days: number): string {
+  const [year, month, day] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return dateKey(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+/**
+ * 基準日の週と、その前後1週ずつの3週間分（21マス・日曜始まり）。
+ * 時刻ホイールを開いている間、カレンダーをこの範囲へ縮めて高さを空ける（issue #1580）。
+ * 月の境をまたぐため、`inMonth` は常に true（薄く塗り分けない）。
+ */
+export function weekWindow(anchor: string): PickerCell[] {
+  const [year, month, day] = anchor.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const start = shiftDateKey(anchor, -weekday - 7);
+  return Array.from({ length: 21 }, (_, index) => {
+    const key = shiftDateKey(start, index);
+    return { key, day: Number(key.slice(8, 10)), inMonth: true };
+  });
+}
+
 export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
   const index = year * 12 + (month - 1) + delta;
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };

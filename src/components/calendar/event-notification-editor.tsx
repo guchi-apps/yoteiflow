@@ -128,10 +128,14 @@ export function EventNotificationEditor({
               </div>
               {openIndex === index && (
                 <div className="mb-1 rounded-xl bg-surface-container">
+                  <p className="pt-2 text-center text-base font-bold text-primary">
+                    {minutes === 0 ? "予定の時刻ちょうどに通知" : `${eventLeadLabel(minutes)}に通知`}
+                  </p>
                   <TimeWheels
                     time={leadMinutesToWheelTime(minutes)}
                     onChange={(time) => setMinutes(index, time)}
-                    rows={3}
+                    rows={5}
+                    units
                   />
                 </div>
               )}

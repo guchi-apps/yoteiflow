@@ -26,7 +26,9 @@ import {
   monthGrid,
   pad2,
   parsePickerValue,
+  shiftDateKey,
   shiftMonth,
+  weekWindow,
 } from "@/lib/date-time-picker";
 import { cn } from "@/lib/utils";
 
@@ -139,15 +141,37 @@ function RangeDialog({
     month: Number(initial.start.slice(5, 7)),
   });
   const [activeRow, setActiveRow] = useState<"start" | "end" | null>(null);
+  // 時刻ホイールを開いている間は、カレンダーを基準日の前後1週ずつの3週間分へ縮める（issue #1580）。
+  const [anchor, setAnchor] = useState(datePart(initial.start));
+  const compact = activeRow !== null;
 
   const startDate = datePart(state.start);
   const endDate = datePart(state.end);
   const multi = isMultiDay(state);
-  const grid = monthGrid(view.year, view.month);
+  const shown = compact ? { year: Number(anchor.slice(0, 4)), month: Number(anchor.slice(5, 7)) } : view;
+  const grid = compact ? weekWindow(anchor) : monthGrid(view.year, view.month);
   const years = Array.from({ length: YEAR_SPAN * 2 + 1 }, (_, i) => Number(startDate.slice(0, 4)) - YEAR_SPAN + i);
-  if (!years.includes(view.year)) years.push(view.year);
+  if (!years.includes(shown.year)) years.push(shown.year);
 
-  const move = (delta: number) => setView((v) => shiftMonth(v.year, v.month, delta));
+  const gotoMonth = (year: number, month: number) => {
+    setView({ year, month });
+    setAnchor(`${String(year).padStart(4, "0")}-${pad2(month)}-01`);
+  };
+  const move = (delta: number) => {
+    if (compact) {
+      const next = shiftDateKey(anchor, delta * 7);
+      setAnchor(next);
+      setView({ year: Number(next.slice(0, 4)), month: Number(next.slice(5, 7)) });
+    } else {
+      setView((v) => shiftMonth(v.year, v.month, delta));
+    }
+  };
+  const toggleRow = (row: "start" | "end") => {
+    const next = activeRow === row ? null : row;
+    setActiveRow(next);
+    if (next) setAnchor(row === "start" ? startDate : endDate);
+    else setView({ year: Number(anchor.slice(0, 4)), month: Number(anchor.slice(5, 7)) });
+  };
 
   // 帯を引くのは開始・終了が決まっていて日が違うときだけ（終了日を待っている間は開始日だけ塗る）。
   const banded = !state.pending && endDate > startDate;
@@ -167,13 +191,13 @@ function RangeDialog({
         </DialogHeader>
 
         <div className="flex items-center justify-center gap-2">
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="前の月" onClick={() => move(-1)}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={compact ? "前の週" : "前の月"} onClick={() => move(-1)}>
             <ChevronLeft />
           </Button>
           <select
             aria-label="年"
-            value={view.year}
-            onChange={(e) => setView((v) => ({ ...v, year: Number(e.target.value) }))}
+            value={shown.year}
+            onChange={(e) => gotoMonth(Number(e.target.value), shown.month)}
             className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
           >
             {years.sort((a, b) => a - b).map((year) => (
@@ -184,8 +208,8 @@ function RangeDialog({
           </select>
           <select
             aria-label="月"
-            value={view.month}
-            onChange={(e) => setView((v) => ({ ...v, month: Number(e.target.value) }))}
+            value={shown.month}
+            onChange={(e) => gotoMonth(shown.year, Number(e.target.value))}
             className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
@@ -194,7 +218,7 @@ function RangeDialog({
               </option>
             ))}
           </select>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="次の月" onClick={() => move(1)}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={compact ? "次の週" : "次の月"} onClick={() => move(1)}>
             <ChevronRight />
           </Button>
         </div>
@@ -296,7 +320,7 @@ function RangeDialog({
                 date={startDate}
                 time={timePart(state.start)}
                 active={activeRow === "start"}
-                onToggle={() => setActiveRow((r) => (r === "start" ? null : "start"))}
+                onToggle={() => toggleRow("start")}
                 onTime={(time) => setState((s) => setStartTime(s, time, follow))}
               />
               <TimeRow
@@ -306,7 +330,7 @@ function RangeDialog({
                 pending={state.pending}
                 time={timePart(state.end)}
                 active={activeRow === "end"}
-                onToggle={() => setActiveRow((r) => (r === "end" ? null : "end"))}
+                onToggle={() => toggleRow("end")}
                 onTime={(time) => setState((s) => setEndTime(s, time))}
               />
               {!state.pending && (
@@ -374,7 +398,7 @@ function TimeRow({
       </button>
       {active && (
         <div className="rounded-lg bg-surface-container-low">
-          <TimeWheels time={time} onChange={onTime} rows={3} />
+          <TimeWheels time={time} onChange={onTime} rows={5} />
         </div>
       )}
     </>
