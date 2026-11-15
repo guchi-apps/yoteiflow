@@ -115,3 +115,13 @@ test("session は発着時刻つきの紐づけのときだけ受け、形の違
   const bad = parseShareHandoff(`${base}${times}&session=${encodeURIComponent("<script>")}`);
   assert.equal(bad?.kind === "travel" ? bad.session : "x", null);
 });
+
+test("Googleマップの再取得（resolve）の共有は link なしでも session を受ける（issue #1604）", () => {
+  const base = "?newTravel=1&origin=A&destination=B&mode=CAR&url=" + encodeURIComponent("https://maps.app.goo.gl/abc");
+  const id = "0b8f3c2e-1111-4222-8333-944445555666";
+  const ok = parseShareHandoff(`${base}&resolve=1&session=${id}`);
+  assert.equal(ok?.kind === "travel" ? ok.session : "x", id);
+  assert.equal(ok?.kind === "travel" ? ok.resolve : "x", true);
+  const noResolve = parseShareHandoff(`${base}&session=${id}`);
+  assert.equal(noResolve?.kind === "travel" ? noResolve.session : "x", null);
+});

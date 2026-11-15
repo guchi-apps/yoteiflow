@@ -45,8 +45,12 @@ export type TransitSearchDraft = {
   home?: string | null;
 };
 
+/** 下書きを待たせている検索の種類。共有の取り込み元と一致するときだけ反映する（issue #1604）。旧い保存値は yahoo。 */
+export type TransitSearchKind = "yahoo" | "google";
+
 export type TransitSearchSession = {
   id: string;
+  kind?: TransitSearchKind;
   /** 共有拡張のボタンに出す名前（「梅田→本社」）。 */
   label: string;
   draft: TransitSearchDraft;
@@ -58,12 +62,18 @@ export function isTransitSessionId(value: unknown): value is string {
 }
 
 /** 保存した値から、まだ有効でIDが一致するものだけを返す（純粋関数・テスト用）。 */
-export function matchTransitSession(raw: string | null, id: string, now: number): TransitSearchSession | null {
+export function matchTransitSession(
+  raw: string | null,
+  id: string,
+  now: number,
+  kind: TransitSearchKind = "yahoo",
+): TransitSearchSession | null {
   if (!raw || !isTransitSessionId(id)) return null;
   try {
     const value = JSON.parse(raw) as Partial<TransitSearchSession>;
     if (
       value.id !== id ||
+      (value.kind ?? "yahoo") !== kind ||
       typeof value.expiresAt !== "number" ||
       value.expiresAt <= now ||
       typeof value.label !== "string" ||
@@ -94,8 +104,9 @@ export function rememberTransitSession(
   label: string,
   draft: TransitSearchDraft,
   now = Date.now(),
+  kind: TransitSearchKind = "yahoo",
 ): TransitSearchSession {
-  const session: TransitSearchSession = { id: newSessionId(), label, draft, expiresAt: now + TRANSIT_SEARCH_SESSION_TTL_MS };
+  const session: TransitSearchSession = { id: newSessionId(), kind, label, draft, expiresAt: now + TRANSIT_SEARCH_SESSION_TTL_MS };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch {
@@ -105,9 +116,9 @@ export function rememberTransitSession(
 }
 
 /** 共有で戻ってきたIDが一致したときだけ取り出し、取り出したら消す（同じ共有で2回反映しない）。 */
-export function takeTransitSession(id: string, now = Date.now()): TransitSearchSession | null {
+export function takeTransitSession(id: string, now = Date.now(), kind: TransitSearchKind = "yahoo"): TransitSearchSession | null {
   try {
-    const matched = matchTransitSession(localStorage.getItem(STORAGE_KEY), id, now);
+    const matched = matchTransitSession(localStorage.getItem(STORAGE_KEY), id, now, kind);
     if (matched) localStorage.removeItem(STORAGE_KEY);
     return matched;
   } catch {
@@ -163,6 +174,44 @@ export function applySharedRoute(
     notice,
     // 元の移動を更新するときは、保存の前に予定の今の状態と紐づけを確かめる（issue #1332）
     adoptCheck: Boolean(draft.travel && draft.linkedEvent),
+  };
+}
+
+/**
+ * 覚えていた下書きへ、Googleマップの共有で戻った経路を重ねた入力の初期値（純粋関数・テスト用・issue #1604）。
+ *
+ * 予定との紐づけ・時刻・通知・編集中の移動はそのまま。発着地・経由地・交通手段は共有のもので置き換える
+ * （Yahoo!と違い交通手段は固定しない）。新規の入力は日時・所要時間を再取得（`resolveUrl`）で埋める。
+ * 編集中の移動は `resolveUrl` が動かないため、時刻は保持し、共有URLをメモへ残す。
+ */
+export function applyGoogleShare(
+  session: TransitSearchSession,
+  share: {
+    origin: string;
+    destination: string;
+    via: string[];
+    mode: TravelMode;
+    url: string | null;
+    route: { name: string; distance: string | null } | null;
+  },
+): TransitSearchDraft & { notice: string; resolveUrl?: string; preselectRoute?: { name: string; distance: string | null } } {
+  const { draft } = session;
+  const editing = Boolean(draft.travel);
+  const previousNote = (draft.note ?? "").trim();
+  const note = editing && share.url && !previousNote.includes(share.url) ? [previousNote, share.url].filter(Boolean).join("\n\n") : previousNote;
+  const resolveUrl = !editing && share.url ? share.url : undefined;
+  return {
+    ...draft,
+    mode: share.mode,
+    origin: share.origin,
+    destination: share.destination,
+    via: share.via,
+    note,
+    resolveUrl,
+    preselectRoute: share.route ?? undefined,
+    notice: resolveUrl
+      ? "Googleマップから日時・所要時間を取得しています。取得できなかった項目は手入力してください。"
+      : "選んだ経路の発着地・交通手段を入力しました。時刻は変えていないため確かめてから保存してください。",
   };
 }
 

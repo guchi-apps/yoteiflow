@@ -48,3 +48,11 @@ export async function openTransitInNativeApp(input: {
 export function clearTransitInNativeApp(): void {
   void bridge()?.postMessage({ action: "clear" }).catch(() => undefined);
 }
+
+/**
+ * 下書きの印だけをApp Groupへ置く（URLは開かない・issue #1604）。「Googleマップで経路を開く」の素の `<a>` を
+ * 押したときに、遷移を止めずに送る（iOSがGoogleマップのアプリを開けるよう `<a>` のままにするため待たない）。
+ */
+export function rememberInNativeApp(session: { id: string; label: string; expiresAt: number; kind: "yahoo" | "google" }): void {
+  void bridge()?.postMessage({ action: "remember", session }).catch(() => undefined);
+}
