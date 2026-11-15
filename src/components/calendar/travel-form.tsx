@@ -934,17 +934,17 @@ export function TravelForm({
           </FormRow>
         )}
 
-        {/* 行の間隔を増やさないよう、上下の行へ食い込ませて右端に置く。 */}
-        <div className="relative z-10 -my-4 flex justify-end pr-2">
+        {/* 入れ替えは頻度が低いため小さくし、右端の✕・地図ボタンと重ならない左のアイコン列の境目の線上に置く。 */}
+        <div className="relative z-10 -my-3 flex h-6 justify-start">
           <button
             type="button"
-            className="flex size-11 items-center justify-center rounded-md border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-sm disabled:opacity-38"
+            className="flex size-6 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-on-surface-variant active:bg-surface-container-highest disabled:opacity-38"
             aria-label="出発地と目的地を入れ替える"
             title="出発地と目的地を入れ替える"
             disabled={!origin.trim() && !destination.trim()}
             onClick={swapEnds}
           >
-            <ArrowUpDown className="size-5" aria-hidden="true" />
+            <ArrowUpDown className="size-3.5" aria-hidden="true" />
           </button>
         </div>
 
