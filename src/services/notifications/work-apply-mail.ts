@@ -57,7 +57,8 @@ async function postToAide(
 ): Promise<SendOutcome> {
   const baseUrl = aideBaseUrl();
   const token = await getSharedToken(TOKEN_NAME, TOKEN_NAME);
-  if (!token) return { ok: false, retry: false, reason: "AIDE_TEXT_MAIL_TOKEN を取得できません" };
+  // 未設定・取得失敗は復旧しうるため、同じ16時台のうちは再試行する（完了扱いにすると同日に直しても送られない・#1560）。
+  if (!token) return { ok: false, retry: true, reason: "AIDE_TEXT_MAIL_TOKEN を取得できません" };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
