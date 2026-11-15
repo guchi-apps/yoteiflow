@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { dayTone, weekdayLabel } from "@/lib/day-tone";
+import { travelConnectors } from "@/lib/travel-connector";
 import { cn } from "@/lib/utils";
 import { subduedEventColors, tintedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
@@ -808,6 +809,51 @@ function DayColumn({
     gridHeight - MARK_ROW_HEIGHT / 2,
   );
 
+  /**
+   * 移動と紐づく予定の色帯をつなぐ線（issue #1554・docs/spec.md §38）。
+   *
+   * 日をまたがずにこの列へ描いた項目だけを渡す。日をまたぐ項目は列ごとに切り詰めて描くため、
+   * つないだ先が実際の端ではなくなる。掴んでいる項目も外し、離した先で引き直す。
+   */
+  const sameDay = (item: { start: string; end: string }) =>
+    utils.itemDateKey(item.start) === dateKey && utils.itemDateKey(item.end) === dateKey;
+  const connectorEvents = new Map(
+    positioned
+      .filter(({ event }) => !preview || preview.id !== event.id)
+      .filter(({ event }) => sameDay(event))
+      .map((entry) => [entry.event.id, entry]),
+  );
+  const connectors = travelConnectors(
+    positionedTravels
+      .filter(({ travel }) => !preview || preview.id !== travelDragKey(travel.id))
+      .filter(({ travel }) => sameDay(travel))
+      .map(({ travel, column, columns }) => {
+        const start = utils.minutesFromMidnight(travel.start);
+        const end = utils.minutesFromMidnight(travel.end);
+        return {
+          id: travel.id,
+          linkedEventId: travel.linkedEventId,
+          top: offsetOf(start),
+          height: Math.max(offsetOf(end - start), MIN_EVENT_HEIGHT),
+          column,
+          columns,
+        };
+      }),
+    [...connectorEvents.values()].map(({ event, column, columns }) => {
+      const range = utils.eventRange(event, dateKey);
+      return {
+        id: event.id,
+        top: offsetOf(range.startMinutes),
+        height: Math.max(offsetOf(range.endMinutes - range.startMinutes), MIN_EVENT_HEIGHT),
+        column,
+        columns,
+      };
+    }),
+  );
+  /** 列の色帯の位置（帯3pxの中に2pxの線を収める）。 */
+  const bandLeft = ({ column, columns }: { column: number; columns: number }) =>
+    `calc(${contentLeft}px + (100% - ${contentLeft}px) * ${column} / ${columns} + 0.5px)`;
+
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
     // ピンチや予定のドラッグの後始末で来たclickでは、空き時間を選んだことにしない。
     if (onConsumeDragClick()) return;
@@ -891,6 +937,60 @@ function DayColumn({
           }}
         />
       )}
+
+      {/*
+        移動と紐づく予定をつなぐ線。予定の色帯と同じ色を薄めずに使い、幅2px・不透明度60%で
+        「予定そのもの」ではなく「つなぎ」だと分かる細さにする。押下は背面の空き時間へ抜ける。
+        仮の予定は破線、中止・不参加の予定はさらに薄くする（帯の見え方に揃える）。
+      */}
+      {connectors.map((connector) => {
+        const entry = connectorEvents.get(connector.eventId);
+        if (!entry) return null;
+        const { event } = entry;
+        const color = tintedEventColors(event.color).accent;
+        const opacity = event.outcome ? 0.3 : 0.6;
+        const vertical = (key: string, left: string, top: number, bottom: number) => (
+          <div
+            key={key}
+            aria-hidden
+            className="pointer-events-none absolute w-0"
+            style={{
+              left,
+              top,
+              height: bottom - top,
+              borderLeft: `2px ${event.tentative ? "dashed" : "solid"} ${color}`,
+              opacity,
+            }}
+          />
+        );
+
+        if (connector.bendAt === null) {
+          return vertical(connector.key, bandLeft(connector.upper), connector.top, connector.bottom);
+        }
+
+        // 左端の位置がずれるときは、上の項目の色帯から下りて中間で横へ折り、下の項目の色帯へ届かせる。
+        const upperFraction = connector.upper.column / connector.upper.columns;
+        const lowerFraction = connector.lower.column / connector.lower.columns;
+        const from = upperFraction < lowerFraction ? connector.upper : connector.lower;
+        const span = Math.abs(lowerFraction - upperFraction);
+
+        return [
+          vertical(`${connector.key}:upper`, bandLeft(connector.upper), connector.top, connector.bendAt + 2),
+          <div
+            key={`${connector.key}:across`}
+            aria-hidden
+            className="pointer-events-none absolute h-0"
+            style={{
+              left: bandLeft(from),
+              width: `calc((100% - ${contentLeft}px) * ${span} + 2px)`,
+              top: connector.bendAt,
+              borderTop: `2px ${event.tentative ? "dashed" : "solid"} ${color}`,
+              opacity,
+            }}
+          />,
+          vertical(`${connector.key}:lower`, bandLeft(connector.lower), connector.bendAt, connector.bottom),
+        ];
+      })}
 
       {/*
         移動は予定より先に置き、予定と同じ重なり計算（layoutOverlaps）で横に並べる（issue #1172）。
