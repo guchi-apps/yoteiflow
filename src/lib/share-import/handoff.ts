@@ -37,8 +37,8 @@ export type ShareHandoff =
       /** 既存の予定に紐づけて作る（issue #1128）。共有で読めた発着時刻（ISO）を伴う。 */
       link: { departAt: string; arriveAt: string; note: string } | null;
       /**
-       * 移動の入力から「Yahoo!乗換案内で検索」したときの下書きのID（issue #1330）。共有拡張の
-       * 「『…』に反映」から戻ったときだけ付く。`link`（発着時刻）があるときに限る。
+       * 移動の入力から「Yahoo!乗換案内で検索」「Googleマップで経路を開く」したときの下書きのID（issue #1330・#1604）。
+       * 共有拡張の「『…』に反映」から戻ったときだけ付く。`link`（発着時刻）か `resolve` があるときに限る。
        */
       session: string | null;
     };
@@ -123,6 +123,8 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
     const validMinutes = Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES ? minutes : null;
     const link = params.get("link") === "1" ? linkTimes(params.get("departAt"), params.get("arriveAt"), params.get("note")) : null;
     const routeName = text(params.get("routeName"));
+    const url = googleMapsUrl(params.get("url"));
+    const resolve = params.get("resolve") === "1" && url !== null && link === null;
     return {
       kind: "travel",
       origin,
@@ -131,11 +133,12 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
       mode,
       minutes: validMinutes,
       estimated: validMinutes !== null && params.get("estimated") === "1",
-      url: googleMapsUrl(params.get("url")),
-      resolve: params.get("resolve") === "1" && googleMapsUrl(params.get("url")) !== null && link === null,
+      url,
+      resolve,
       link,
       route: routeName ? { name: routeName, distance: text(params.get("routeDistance")) } : null,
-      session: link && isTransitSessionId(params.get("session")) ? params.get("session") : null,
+      // 発着時刻つきの紐づけ（Yahoo!）か、Googleマップの再取得（`resolve`）のときだけ受ける（issue #1604）
+      session: (link || resolve) && isTransitSessionId(params.get("session")) ? params.get("session") : null,
     };
   }
   return null;

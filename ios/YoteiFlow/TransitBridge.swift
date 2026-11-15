@@ -22,8 +22,27 @@ final class TransitBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
             TransitSearchSession.clear()
             return (["cleared": true], nil)
         }
+        if body["action"] as? String == "remember" {
+            // 印だけ置く（URLは開かない・issue #1604）。Googleマップの経路を開く前に呼ばれる
+            saveSession(body)
+            return (["remembered": true], nil)
+        }
         guard body["action"] as? String == "open" else { return (["opened": "failed"], nil) }
         return (["opened": await open(body)], nil)
+    }
+
+    private func saveSession(_ body: [String: Any]) {
+        if let session = body["session"] as? [String: Any],
+           let id = session["id"] as? String,
+           let label = session["label"] as? String,
+           let expiresAt = session["expiresAt"] as? Double {
+            TransitSearchSession.save(
+                id: id,
+                label: label,
+                expiresAt: Date(timeIntervalSince1970: expiresAt / 1000),
+                kind: session["kind"] as? String ?? "yahoo"
+            )
+        }
     }
 
     // UIApplication はメインアクターで呼ぶ
@@ -33,12 +52,7 @@ final class TransitBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
         let webURL = (body["webUrl"] as? String).flatMap(URL.init(string:))
 
         // 印は開く前に置く。アプリへ移った直後に共有されても拡張が読めるように
-        if let session = body["session"] as? [String: Any],
-           let id = session["id"] as? String,
-           let label = session["label"] as? String,
-           let expiresAt = session["expiresAt"] as? Double {
-            TransitSearchSession.save(id: id, label: label, expiresAt: Date(timeIntervalSince1970: expiresAt / 1000))
-        }
+        saveSession(body)
 
         if let appURL, appURL.scheme == "ytransit", appURL.host == "conditions",
            await UIApplication.shared.open(appURL) {

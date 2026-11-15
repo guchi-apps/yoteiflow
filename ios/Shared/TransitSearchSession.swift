@@ -11,12 +11,15 @@ enum TransitSearchSession {
         let id: String
         let label: String
         let expiresAt: Date
+        /// 待たせている検索の種類（"yahoo" / "google"・issue #1604）。共有元と一致するときだけ反映する
+        let kind: String
     }
 
     private static let defaults = UserDefaults(suiteName: SharedConfig.appGroup)
     private static let idKey = "transit.sessionId"
     private static let labelKey = "transit.sessionLabel"
     private static let expiresAtKey = "transit.sessionExpiresAt"
+    private static let kindKey = "transit.sessionKind"
     /// Web側の `TRANSIT_SEARCH_SESSION_TTL_MS` と同じ。Webが送った期限がこれより先でも、ここで切る
     private static let lifetime: TimeInterval = 30 * 60
 
@@ -25,8 +28,9 @@ enum TransitSearchSession {
         (8...64).contains(id.count) && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
     }
 
-    static func save(id: String, label: String, expiresAt: Date, now: Date = .now) {
+    static func save(id: String, label: String, expiresAt: Date, kind: String = "yahoo", now: Date = .now) {
         guard isValidID(id) else { return }
+        defaults?.set(kind == "google" ? "google" : "yahoo", forKey: kindKey)
         defaults?.set(id, forKey: idKey)
         defaults?.set(String(label.prefix(80)), forKey: labelKey)
         defaults?.set(min(expiresAt, now.addingTimeInterval(lifetime)).timeIntervalSince1970, forKey: expiresAtKey)
@@ -42,12 +46,13 @@ enum TransitSearchSession {
             clear()
             return nil
         }
-        return Pending(id: id, label: label, expiresAt: expiresAt)
+        return Pending(id: id, label: label, expiresAt: expiresAt, kind: defaults.string(forKey: kindKey) == "google" ? "google" : "yahoo")
     }
 
     static func clear() {
         defaults?.removeObject(forKey: idKey)
         defaults?.removeObject(forKey: labelKey)
         defaults?.removeObject(forKey: expiresAtKey)
+        defaults?.removeObject(forKey: kindKey)
     }
 }
