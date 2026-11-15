@@ -11,11 +11,14 @@ import { cn } from "@/lib/utils";
  */
 export function Accordion({
   title,
+  description,
   children,
   forceOpen = false,
   className,
 }: {
   title: string;
+  /** 見出しの右に添える一言。閉じていても何が入っているか分かるようにする。 */
+  description?: string;
   children: ReactNode;
   forceOpen?: boolean;
   className?: string;
@@ -31,7 +34,12 @@ export function Accordion({
         aria-expanded={expanded}
         onClick={() => setOpen(!expanded)}
       >
-        {title}
+        <span className="flex min-w-0 items-baseline gap-2">
+          {title}
+          {description && (
+            <span className="type-body-small truncate font-normal text-on-surface-variant">{description}</span>
+          )}
+        </span>
         <ChevronDown className={cn("size-4 shrink-0 transition-transform", expanded && "rotate-180")} />
       </button>
       {expanded && <div className="flex flex-col gap-3 px-3 pb-3">{children}</div>}
