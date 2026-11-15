@@ -423,8 +423,7 @@ export function ActivityScreen({
               <div className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-container-low p-3">
                 <DateTimeInput
                   id="activity-start-at"
-                  dateLabel="開始日"
-                  timeLabel="開始時刻"
+                  label="開始"
                   value={startAtInput}
                   onChange={(value) => {
                     setStartAtInput(value);
@@ -586,8 +585,7 @@ function RunningCard({
           <div className="flex flex-col gap-2">
             <DateTimeInput
               id="activity-started-at"
-              dateLabel="開始日"
-              timeLabel="開始時刻"
+              label="開始"
               value={startInput}
               onChange={onStartInputChange}
             />
@@ -619,8 +617,7 @@ function RunningCard({
           <div className="flex flex-col gap-2">
             <DateTimeInput
               id="activity-ended-at"
-              dateLabel="終了日"
-              timeLabel="終了時刻"
+              label="終了"
               value={endInput}
               onChange={onEndInputChange}
             />

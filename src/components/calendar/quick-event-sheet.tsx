@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
+import { DateTimeInput } from "./date-time-input";
 import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-form";
 import { ItemFormActions } from "./item-form-actions";
@@ -380,27 +381,26 @@ export function QuickEventSheet({
               className={cn("col-start-1 row-start-1 flex min-w-0 flex-col gap-3", isTask && "invisible")}
               inert={isTask}
             >
-              <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)] gap-2">
-                <Input
-                  id="quick-event-date"
-                  label="日付"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-                <Input
+              {/* 簡易入力は同じ日の中で作る。どちらの欄で日付を選んでもその日全体が動く
+                  （開始と終了で日をまたがせない。日をまたぐ予定は通常の入力で作る）。 */}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <DateTimeInput
                   id="quick-event-start"
                   label="開始"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => changeStartTime(e.target.value)}
+                  value={join(date, startTime)}
+                  onChange={(next) => {
+                    setDate(next.slice(0, 10));
+                    changeStartTime(next.slice(11, 16));
+                  }}
                 />
-                <Input
+                <DateTimeInput
                   id="quick-event-end"
                   label="終了"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
+                  value={join(date, endTime)}
+                  onChange={(next) => {
+                    setDate(next.slice(0, 10));
+                    setEndTime(next.slice(11, 16));
+                  }}
                 />
               </div>
 
@@ -452,23 +452,17 @@ export function QuickEventSheet({
                   </div>
                 </div>
 
-                {/* 時刻を空にすると日付だけのタスクになる。 */}
-                <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
-                  <Input
-                    id="quick-task-date"
-                    label={`${TASK_TARGET_LABELS[taskTarget]}の日付`}
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                  />
-                  <Input
-                    id="quick-task-time"
-                    label="時刻（任意）"
-                    type="time"
-                    value={taskTime}
-                    onChange={(e) => setTaskTime(e.target.value)}
-                  />
-                </div>
+                {/* 時刻なし（ー:ー）にすると日付だけのタスクになる。 */}
+                <DateTimeInput
+                  id="quick-task-date"
+                  label={`${TASK_TARGET_LABELS[taskTarget]}の日時`}
+                  value={taskTime ? join(date, taskTime) : date}
+                  allowNoTime
+                  onChange={(next) => {
+                    setDate(next.slice(0, 10));
+                    setTaskTime(next.slice(11, 16));
+                  }}
+                />
               </div>
             )}
           </div>

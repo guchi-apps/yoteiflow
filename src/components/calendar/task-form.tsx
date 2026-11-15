@@ -59,8 +59,9 @@ type DueMode = "datetime" | "date" | "none";
  * DueMode（入力欄の状態）には含めない。
  */
 const DATE_MODES: [DueMode | "link", string][] = [
-  ["datetime", "日時指定"],
-  ["date", "日付のみ"],
+  // 時刻の有無は日付ピッカーの中で選ぶ（issue #1527。旧: 日時指定・日付のみの2チップ）。
+  // 値に時刻があれば datetime、無ければ date として扱う。
+  ["datetime", "日付を指定"],
   ["link", "予定・移動と紐付け"],
   ["none", "未設定"],
 ];
@@ -800,6 +801,9 @@ function DateModeField({
       return;
     }
 
+    // すでに日付を指定している間に押し直しても、時刻の有無などの入力は変えない。
+    if (mode !== "none") return;
+
     // 未設定から切り替えた直後は日付を持っていない。設定タイムゾーンでの今日を入れる。
     // 実行環境のローカル時刻ではなく設定タイムゾーンで求めるのは、他の日時と揃えるため。
     const date =
@@ -807,7 +811,7 @@ function DateModeField({
 
     onChange({
       mode: next,
-      value: next === "datetime" ? `${date}T${value.slice(11, 16) || defaultTime}` : date,
+      value: `${date}T${value.slice(11, 16) || defaultTime}`,
     });
   };
 
@@ -820,7 +824,7 @@ function DateModeField({
           <Button
             key={option}
             type="button"
-            variant={mode === option ? "secondary" : "outline"}
+            variant={(option === "datetime" ? mode !== "none" : mode === option) ? "secondary" : "outline"}
             size="sm"
             onClick={() => (option === "link" ? onPickEvent() : changeMode(option))}
           >
@@ -828,22 +832,14 @@ function DateModeField({
           </Button>
         ))}
       </div>
-      {mode === "datetime" && (
+      {mode !== "none" && (
         <DateTimeInput
           id={id}
-          dateLabel={`${label}の日付`}
-          timeLabel={`${label}の時刻`}
+          label={`${label}の日時`}
           value={value}
-          onChange={(next) => onChange({ mode, value: next })}
-        />
-      )}
-      {mode === "date" && (
-        <Input
-          id={`${id}-date`}
-          label={`${label}の日付`}
-          type="date"
-          value={value}
-          onChange={(e) => onChange({ mode, value: e.target.value })}
+          allowNoTime
+          defaultTime={defaultTime}
+          onChange={(next) => onChange({ mode: next.includes("T") ? "datetime" : "date", value: next })}
         />
       )}
     </div>
