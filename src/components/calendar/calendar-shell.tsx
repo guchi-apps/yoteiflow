@@ -73,7 +73,7 @@ import { dayTone, weekdayLabel } from "@/lib/day-tone";
 
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
-import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
+import { duplicateEventDraft, EventForm, toEventDraft, type EventDraft } from "./event-form";
 import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
@@ -1842,7 +1842,11 @@ function CalendarBody({
    * 公共交通は探し直す条件を出し（電車は新しい時刻に便があるとは限らないため、ずらさない）、
    * それ以外はずらす候補を出す。どちらも無ければ何も出さない。
    */
-  const askTravelFollow = (event: CalendarEventItem, previous: FollowEventState, next: FollowEventState) => {
+  const askTravelFollow = (
+    event: CalendarEventItem,
+    previous: FollowEventState,
+    next: FollowEventState,
+  ): boolean => {
     const shifts = planLinkedTravelShifts(
       data.travels.filter((travel) => travel.mode !== "PUBLIC_TRANSIT"),
       event.id,
@@ -1860,13 +1864,14 @@ function CalendarBody({
       });
       return follow ? [{ travel, follow, event: followEvent(event, next) }] : [];
     });
-    if (shifts.length === 0 && follows.length === 0) return;
+    if (shifts.length === 0 && follows.length === 0) return false;
     setTravelFollow({
       title: "紐づいている移動も変更しますか？",
       description: `「${event.title}」を変えました。紐づくタスクは自動で合わせています。移動はまだ変えていません。`,
       shifts,
       follows,
     });
+    return true;
   };
 
   /**
@@ -1954,7 +1959,9 @@ function CalendarBody({
    * ページごと描き直す（`router.refresh()`）と表示中の範囲すべてを外部APIから取り直す
    * ことになり、保存のたびにその待ち時間が乗るため使わない（issue #697）。
    */
-  const handleSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
+  /** 保存後の反映の中核（閉じる処理は含まない）。移動追随の確認を開いたら true。 */
+  const applySaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange): boolean => {
+    let askedFollow = false;
     // 編集画面で予定の時刻・場所を変えたときも、ドラッグと同じく紐づく移動の確認へ進む（issue #1301）。
     // 取り直しの前に、手元にある編集前の予定と比べる。新規作成（編集前が無い）は対象外。
     if (change?.type === "upsert") {
@@ -1963,18 +1970,46 @@ function CalendarBody({
         (event) => event.id === before.id && event.calendarId === before.calendarId,
       );
       if (previous) {
-        askTravelFollow(
+        askedFollow = askTravelFollow(
           change.item,
           { start: previous.start, end: previous.end, allDay: previous.allDay, location: previous.location ?? null },
           { start: change.item.start, end: change.item.end, allDay: change.item.allDay, location: change.item.location ?? null },
         );
       }
     }
-    onCloseDialogs();
-    setWorkDraft(null);
     // 保存した予定は、取り直しを待たずに画面へ重ねる（issue #787）。
     if (change) onOptimisticEvent(change);
     data.invalidate(touched);
+    return askedFollow;
+  };
+
+  const handleSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
+    applySaved(touched, change);
+    onCloseDialogs();
+    setWorkDraft(null);
+  };
+
+  /**
+   * 詳細画面の中の編集フォームの保存（issue #1553）。詳細へ戻してよければ true。
+   * 移動追随の確認を開いたとき・予定のIDやカレンダーが変わったときは閉じる（確認の上に重ねない）。
+   */
+  const handleEventEditSaved = (touched: TouchedRange[] | null, change: OptimisticEventChange): boolean => {
+    const askedFollow = applySaved(touched, change);
+    if (!viewingEvent || change.type !== "upsert") return false;
+    const sameEvent =
+      change.item.id === viewingEvent.id && change.item.calendarId === viewingEvent.calendarId;
+    if (askedFollow || !sameEvent) {
+      setWorkDraft(null);
+      return false;
+    }
+    // 楽観オブジェクトには中止・不参加の記録などが無いため、元の予定へ重ねて残す。
+    onOpenEvent({
+      ...viewingEvent,
+      ...change.item,
+      outcome: viewingEvent.outcome,
+      activityLinks: viewingEvent.activityLinks,
+    });
+    return true;
   };
 
   /**
@@ -2221,6 +2256,23 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
+          renderEdit={({ title, onTitleChange, onSaved }) => (
+            <EventForm
+              draft={toEventDraft(viewingEvent, timeZone)}
+              calendars={data.calendars}
+              placeCatalog={placeCatalog}
+              timeZone={timeZone}
+              weekStartsOn={weekStartsOn}
+              title={title}
+              autoFocusTitle={false}
+              onTitleChange={onTitleChange}
+              onSaved={onSaved}
+              travelCalendarId={travelCalendarId}
+              onOpenTravel={onOpenStandaloneTravel}
+              activityCalendarIds={activityCalendars}
+            />
+          )}
+          onEditSaved={handleEventEditSaved}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
           isActivity={activityCalendars.has(viewingEvent.calendarId)}
