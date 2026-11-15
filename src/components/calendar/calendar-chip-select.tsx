@@ -121,7 +121,7 @@ export function CalendarChipSelect({
                 }
               }}
               className={cn(
-                "type-label-large flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 whitespace-nowrap transition-colors",
+                "type-label-large flex h-8 shrink-0 items-center gap-1.5 leading-none rounded-lg border px-3 whitespace-nowrap transition-colors",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
                 selected ? "border-transparent" : "border-outline hover:bg-muted",
               )}

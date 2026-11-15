@@ -72,13 +72,13 @@ export function DateRangePickerFields({
       onClick={() => setOpen(true)}
       className={
         flat
-          ? "flex min-h-11 w-full items-center gap-3 text-left text-base text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:text-sm"
+          ? "flex min-h-10 w-full items-center gap-2 text-left text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           : cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")
       }
     >
       {flat ? (
         <>
-          <span className="w-9 shrink-0 text-on-surface-variant">{text}</span>
+          <span className="shrink-0 text-on-surface-variant">{text}</span>
           <span className="truncate">{label(value)}</span>
         </>
       ) : (
