@@ -108,3 +108,39 @@ export function sameNotificationOverride(
     aMinutes.length === bMinutes.length && aMinutes.every((value, index) => value === bMinutes[index])
   );
 }
+
+/** 通知を追加するときの既定の分数。使用済みなら、この並びで最初の未使用を取る。 */
+const ADD_LEAD_CANDIDATES = [10, 5, 15, 30, 60, 0, 120, 180];
+
+/**
+ * 「通知を追加」で入れる分数（issue #1569）。10分前から始め、すでに入っている値と
+ * 重ならないものを選ぶ（重複は保存時に1件へ潰れるため、押しても増えないのを避ける）。
+ */
+export function nextLeadMinutesToAdd(existing: number[]): number {
+  const used = new Set(existing);
+  for (const candidate of ADD_LEAD_CANDIDATES) {
+    if (!used.has(candidate)) return candidate;
+  }
+  for (let minutes = 1; minutes <= MAX_EVENT_LEAD_MINUTES; minutes += 1) {
+    if (!used.has(minutes)) return minutes;
+  }
+  return 0;
+}
+
+/**
+ * 分数を時刻ホイール（時0〜23・分0〜59）の値 `HH:mm` へ直す。ホイールに24時間は無いため、
+ * 上限の24時間ちょうどは23:59に丸める。
+ */
+export function leadMinutesToWheelTime(minutes: number): string {
+  const clamped = Math.min(Math.max(0, Math.trunc(minutes)), 23 * 60 + 59);
+  const hours = Math.floor(clamped / 60);
+  const rest = clamped % 60;
+  return `${String(hours).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+/** ホイールの値 `HH:mm` を分数へ戻す。読めない値は0分。 */
+export function wheelTimeToLeadMinutes(time: string): number {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return 0;
+  return Number(match[1]) * 60 + Number(match[2]);
+}

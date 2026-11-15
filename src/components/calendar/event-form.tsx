@@ -3,14 +3,13 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { AlignLeft, Bell, BellOff, CalendarDays, Clock, MapPin, Repeat } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
+import { sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -19,7 +18,7 @@ import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { FormRow } from "./event-form-row";
-import { EventNotificationDialog } from "./event-notification-dialog";
+import { EventNotificationEditor } from "./event-notification-editor";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { TravelEntryHint } from "./travel-entry-hint";
@@ -112,7 +111,6 @@ export function EventForm({
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
     editing?.notification ?? draft.notification ?? null,
   );
-  const [editingNotification, setEditingNotification] = useState(false);
   // 保存先に移動カレンダーを利用者が選び直したか（issue #895）。値で判定すると、複製の
   // 引き継ぎや既定の保存先が移動カレンダーのときも入口が出てしまうため、選んだ操作で立てる。
   const [pickedTravel, setPickedTravel] = useState(draft.pickedTravel ?? false);
@@ -303,18 +301,6 @@ export function EventForm({
           className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-2xl text-foreground outline-none placeholder:text-muted-foreground"
         />
 
-        {editingNotification && (
-          <EventNotificationDialog
-            title={title || "この予定"}
-            initial={notification}
-            onCancel={() => setEditingNotification(false)}
-            onSaved={(next) => {
-              setEditingNotification(false);
-              setNotification(next);
-            }}
-          />
-        )}
-
         <FormRow icon={<Clock />}>
           {/*
             終日・仮の予定（issue #688・#739）。仮の予定はGoogle Calendarの status をそのまま使う
@@ -380,26 +366,12 @@ export function EventForm({
           recurrenceが動かないため、このガードは常にfalseで副作用なく共存する）。
         */}
         {!allDay && !draft.fromQuick && (
-          <FormRow icon={notification?.enabled ? <Bell /> : <BellOff />}>
-            <div className="flex min-h-11 flex-wrap items-center gap-x-3">
-              <button
-                type="button"
-                disabled={recurrence.frequency !== "none"}
-                onClick={() => setEditingNotification(true)}
-                className={cn(
-                  "text-left text-base md:text-sm disabled:opacity-38",
-                  notification?.enabled ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {eventNotificationSummary(notification)}
-              </button>
-              {recurrence.frequency !== "none" && (
-                <span className="type-label-small text-on-surface-variant">
-                  繰り返し予定は保存してから設定できます
-                </span>
-              )}
-            </div>
-          </FormRow>
+          <EventNotificationEditor
+            value={notification}
+            onChange={setNotification}
+            disabled={recurrence.frequency !== "none"}
+            hint={recurrence.frequency !== "none" ? "繰り返し予定は保存してから設定できます" : undefined}
+          />
         )}
 
         {!editing && (
