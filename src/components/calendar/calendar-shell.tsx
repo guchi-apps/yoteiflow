@@ -799,6 +799,15 @@ export function CalendarShell({
   };
 
   /**
+   * 移動の表示画面から、紐づく予定の表示画面へ移る（issue #1595）。
+   * 予定の表示画面から移動へ移る `openTravelFromEvent` の逆向き。
+   */
+  const openEventFromTravel = (event: CalendarEventItem) => {
+    setViewingTravel(null);
+    setViewingEvent(event);
+  };
+
+  /**
    * 予定の表示画面から、その予定に紐づくタスクへ移る（issue #835）。
    *
    * 移動と同じく、画面のどこに何が乗っているかに関係なく、予定の側からたどれるようにする。
@@ -1425,6 +1434,7 @@ export function CalendarShell({
         onOpenReminder={openReminder}
         onOpenTravel={openTravel}
         onOpenTravelForEvent={openTravelFromEvent}
+        onOpenEventForTravel={openEventFromTravel}
         onOpenTaskForEvent={openTaskFromEvent}
         onEditEvent={editEvent}
         onDuplicateEvent={duplicateEvent}
@@ -1525,6 +1535,7 @@ function CalendarBody({
   onOpenReminder,
   onOpenTravel,
   onOpenTravelForEvent,
+  onOpenEventForTravel,
   onOpenTaskForEvent,
   onEditEvent,
   onDuplicateEvent,
@@ -1607,6 +1618,7 @@ function CalendarBody({
   onOpenTravel: (travel: TravelItem) => void;
   /** 予定の表示画面から、その予定に紐づく移動を開く（issue #327）。 */
   onOpenTravelForEvent: (travel: TravelItem) => void;
+  onOpenEventForTravel: (event: CalendarEventItem) => void;
   /** 予定の表示画面から、その予定に紐づくタスクを開く（issue #835）。 */
   onOpenTaskForEvent: (task: TaskItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
@@ -2371,6 +2383,7 @@ function CalendarBody({
           linkedEventTitle={linkedEventOfTravel?.title ?? null}
           linkedEventRange={linkedEventOfTravel ?? null}
           linkedEventColor={linkedEventOfTravel?.color ?? null}
+          onOpenLinkedEvent={linkedEventOfTravel ? () => onOpenEventForTravel(linkedEventOfTravel) : undefined}
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}
