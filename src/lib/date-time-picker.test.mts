@@ -7,8 +7,10 @@ import {
   joinPickerValue,
   monthGrid,
   parsePickerValue,
+  shiftDateKey,
   shiftMonth,
   splitTime,
+  weekWindow,
   wrapIndex,
 } from "@/lib/date-time-picker";
 
@@ -68,4 +70,19 @@ test("formatPickerDateLabel は時刻を添えない", () => {
   assert.equal(formatPickerDateLabel({ date: "2026-11-15", time: null }), "2026年11月15日（日）");
   assert.equal(formatPickerDateLabel({ date: "2026-11-15", time: "09:00" }), "2026年11月15日（日）");
   assert.equal(formatPickerDateLabel({ date: "", time: null }), "未選択");
+});
+
+test("weekWindow は基準日の週と前後1週の3週間分を日曜始まりで返す（issue #1580）", () => {
+  const cells = weekWindow("2026-11-15"); // 日曜
+  assert.equal(cells.length, 21);
+  assert.equal(cells[0].key, "2026-11-08");
+  assert.equal(cells[20].key, "2026-11-28");
+  assert.ok(cells.some((c) => c.key === "2026-11-15"));
+});
+
+test("weekWindow は月・年をまたいでも連続する", () => {
+  const cells = weekWindow("2026-01-01"); // 木曜
+  assert.equal(cells[0].key, "2025-12-21");
+  assert.equal(cells[20].key, "2026-01-10");
+  assert.equal(shiftDateKey("2026-03-01", -1), "2026-02-28");
 });
