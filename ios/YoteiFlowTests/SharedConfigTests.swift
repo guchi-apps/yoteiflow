@@ -69,7 +69,7 @@ final class SharedConfigTests: XCTestCase {
             "http://dayspan.gucchii.com/calendar?date=2026-11-09",
             "https://evil.com/calendar?date=2026-11-09",
             "https://dayspan.gucchii.com:8443/calendar?date=2026-11-09",
-            "https://dayspan.gucchii.com/tasks",
+            "https://dayspan.gucchii.com/tasks/other",
             "https://dayspan.gucchii.com/calendar/x",
             "https://dayspan.gucchii.com/calendar?date=2026-11-9",
             "https://dayspan.gucchii.com/calendar?date=tomorrow",
