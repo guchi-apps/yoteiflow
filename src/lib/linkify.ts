@@ -15,6 +15,18 @@
 /** `label` は表示用の文字列（省略時は `url` をそのまま見せる）。 */
 export type TextSegment = { type: "text"; value: string } | { type: "link"; url: string; label?: string };
 
+type LinkSegment = Extract<TextSegment, { type: "link" }>;
+
+/** リンクの飛び先。表示用の `label` ではなく常に `url`（Morrowの相対パスは補った絶対URL）を使う（issue #1538）。 */
+export function linkHref(segment: LinkSegment): string {
+  return segment.url;
+}
+
+/** リンクの表示テキスト。 */
+export function linkText(segment: LinkSegment): string {
+  return segment.label ?? segment.url;
+}
+
 /**
  * Morrow（メール連携）がタスク・予定のメモへ書く「Morrowで開く: /mail/<メールID>」は、サイトのパスだけで
  * ホストを持たないためそのままではリンクにならない（issue #1524）。直前の「Morrowで開く:」を手掛かりに
