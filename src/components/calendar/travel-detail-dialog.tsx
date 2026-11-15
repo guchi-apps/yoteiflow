@@ -65,6 +65,7 @@ export function TravelDetailDialog({
   linkedEventTitle,
   linkedEventRange,
   linkedEventColor = null,
+  onOpenLinkedEvent,
   weekStartsOn = 0,
   places = [],
 }: {
@@ -91,6 +92,8 @@ export function TravelDetailDialog({
   linkedEventRange?: { start: string; end: string; allDay: boolean } | null;
   /** 紐づく予定のカレンダー色。色帯に使う。取れないときは null。 */
   linkedEventColor?: string | null;
+  /** 紐づく予定の表示画面へ移る（issue #1595）。予定が手元に無いとき（表示範囲外）は渡さず、行は押せない。 */
+  onOpenLinkedEvent?: () => void;
   weekStartsOn?: number;
   /** 場所DB。座標を持つ地点は座標でGoogleマップを開く。 */
   places?: PlaceItem[];
@@ -125,6 +128,8 @@ export function TravelDetailDialog({
     setOpen(false);
     setTimeout(() => setLinkingEvent(true), 150);
   };
+
+  const RowEl = onOpenLinkedEvent ? "button" : "div";
 
   const unlink = async () => {
     setUnlinkError(null);
@@ -290,9 +295,10 @@ export function TravelDetailDialog({
           */}
           {travel.linkedEventId ? (
             <div className="flex items-stretch gap-1">
-              <div
-                className="flex min-w-0 flex-1 items-center gap-3 border-l-[3px] py-2 pr-2 pl-3"
+              <RowEl
+                className="flex min-w-0 flex-1 text-left items-center gap-3 border-l-[3px] py-2 pr-2 pl-3"
                 style={{ borderLeftColor: tintedEventColors(linkedEventColor).accent }}
+                {...(onOpenLinkedEvent ? { type: "button" as const, onClick: onOpenLinkedEvent } : {})}
               >
                 <Link2 className="size-4 shrink-0 text-on-surface-variant" />
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -302,7 +308,8 @@ export function TravelDetailDialog({
                     {linkedEventRange && ` ・ ${formatTravelTime({ ...travel, start: linkedEventRange.start, end: linkedEventRange.end }, timeZone, linkedEventRange.allDay)}`}
                   </span>
                 </span>
-              </div>
+                {onOpenLinkedEvent && <ChevronRight className="size-4 shrink-0 opacity-70" />}
+              </RowEl>
               <Button
                 variant="ghost"
                 size="icon-sm"
