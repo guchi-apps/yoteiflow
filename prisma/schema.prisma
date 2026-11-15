@@ -900,6 +900,10 @@ model NotificationSetting {
   // 記録の開始通知は廃止（issue #999）。列はマイグレーションを避けて残し、読み書きしない。
   activityEnabled Boolean @default(true)
 
+  /// 出張・年休の事前申請が未完了のとき、通知日（開始日の前営業日）の16時に会社宛てメールで知らせるか（issue #1552）。
+  /// メールは外へ出るため既定はオフ。
+  workApplyMailEnabled Boolean @default(false)
+
   /// 下書きを作り直した最後の時刻。取得の間隔を空けるために持つ。
   plannedAt DateTime?
 

@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { followEnd } from "@/lib/date-range-picker";
 import { classifyQuickTaskFailure, newQuickTaskClientId } from "@/lib/quick-task-create";
 import { cn } from "@/lib/utils";
 import type { WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
+import { DateRangePickerFields } from "./date-range-picker";
 import { DateTimeInput } from "./date-time-input";
 import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-form";
@@ -120,6 +122,9 @@ export function QuickEventSheet({
   const [date, setDate] = useState(draft.date);
   const [startTime, setStartTime] = useState(draft.startTime);
   const [endTime, setEndTime] = useState(draft.endTime);
+  // 終了日。押した位置からは同じ日で始まるが、日時の画面で日をまたげる（issue #1551）。
+  // `date` は開始日で、タスクの日付とも共有する。
+  const [endDate, setEndDate] = useState(draft.date);
   const [taskTarget, setTaskTarget] = useState<QuickTaskTarget>("due");
   // タスクの時刻は予定の開始と別に持つ。予定で開始を直したあとに切り替えても、押した位置の
   // 時刻（月表示から開いたときは空）のまま始める。空なら日付だけのタスクになる。
@@ -156,31 +161,15 @@ export function QuickEventSheet({
     if (!next) close();
   };
 
-  // 開始を動かしたら、それまでの長さを保ったまま終了も動かす。
-  // 押した位置から作った1時間を、開始だけ直すたびに作り直さずに済む。
-  // 活動記録は長さが決まっていないため動かさない（issue #1309）。
-  const changeStartTime = (value: string) => {
-    const previous = toMinutes(startTime);
-    const next = toMinutes(value);
-    const finish = toMinutes(endTime);
-
-    if (
-      previous !== null &&
-      next !== null &&
-      finish !== null &&
-      finish > previous &&
-      !activityCalendarIds?.has(calendarId)
-    ) {
-      setEndTime(formatMinutes(Math.min(next + (finish - previous), MINUTES_PER_DAY - 1)));
-    }
-
-    setStartTime(value);
-  };
+  // 開始を動かしたときの終了の追従（長さを保つ・活動記録は動かさない issue #1309）は、
+  // 開始・終了を1枚で選ぶ範囲ピッカー（`DateRangePickerFields`・issue #1551）が行う。
 
   // 同じ書式でゼロ埋めされているため、文字列のまま比較して前後関係が判定できる。
   const rangeError = (() => {
     if (!date || !startTime || !endTime) return "日付と時刻を入力してください。";
-    return endTime <= startTime ? "終了時刻が開始時刻より後になるようにしてください。" : null;
+    return join(endDate, endTime) <= join(date, startTime)
+      ? "終了日時が開始日時より後になるようにしてください。"
+      : null;
   })();
 
   const isTask = taskAvailable && kind === "task";
@@ -245,7 +234,7 @@ export function QuickEventSheet({
         title,
         allDay: false,
         start: localInputToIso(`${date}T${startTime}`, timeZone),
-        end: localInputToIso(`${date}T${endTime}`, timeZone),
+        end: localInputToIso(`${endDate}T${endTime}`, timeZone),
       };
 
       const response = await fetch("/api/events", {
@@ -299,7 +288,7 @@ export function QuickEventSheet({
         onOpenDetail({
           allDay: false,
           start: join(date, startTime),
-          end: join(date, endTime),
+          end: join(endDate, endTime),
           title,
           calendarId,
           fromQuick: true,
@@ -381,25 +370,20 @@ export function QuickEventSheet({
               className={cn("col-start-1 row-start-1 flex min-w-0 flex-col gap-3", isTask && "invisible")}
               inert={isTask}
             >
-              {/* 簡易入力は同じ日の中で作る。どちらの欄で日付を選んでもその日全体が動く
-                  （開始と終了で日をまたがせない。日をまたぐ予定は通常の入力で作る）。 */}
+              {/* 開始・終了のどちらを押しても同じ1枚の「日時を設定」画面が開き、日をまたぐ予定も作れる
+                  （issue #1551。旧: 同じ日の中だけ）。 */}
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <DateTimeInput
-                  id="quick-event-start"
-                  label="開始"
-                  value={join(date, startTime)}
-                  onChange={(next) => {
-                    setDate(next.slice(0, 10));
-                    changeStartTime(next.slice(11, 16));
-                  }}
-                />
-                <DateTimeInput
-                  id="quick-event-end"
-                  label="終了"
-                  value={join(date, endTime)}
-                  onChange={(next) => {
-                    setDate(next.slice(0, 10));
-                    setEndTime(next.slice(11, 16));
+                <DateRangePickerFields
+                  idPrefix="quick-event"
+                  start={join(date, startTime)}
+                  end={join(endDate, endTime)}
+                  allDay={false}
+                  follow={!activityCalendarIds?.has(calendarId)}
+                  onChange={(nextStart, nextEnd) => {
+                    setDate(nextStart.slice(0, 10));
+                    setStartTime(nextStart.slice(11, 16));
+                    setEndDate(nextEnd.slice(0, 10));
+                    setEndTime(nextEnd.slice(11, 16));
                   }}
                 />
               </div>
@@ -419,7 +403,7 @@ export function QuickEventSheet({
                   onOpen={() => {
                     setOpen(false);
                     setTimeout(
-                      () => onOpenTravel({ start: join(date, startTime), end: join(date, endTime) }),
+                      () => onOpenTravel({ start: join(date, startTime), end: join(endDate, endTime) }),
                       150,
                     );
                   }}
@@ -459,7 +443,10 @@ export function QuickEventSheet({
                   value={taskTime ? join(date, taskTime) : date}
                   allowNoTime
                   onChange={(next) => {
-                    setDate(next.slice(0, 10));
+                    const nextDate = next.slice(0, 10);
+                    // 予定側の開始日も共有しているため、終了日も同じだけずらして長さを保つ。
+                    setEndDate((current) => followEnd(date, nextDate, current, true));
+                    setDate(nextDate);
                     setTaskTime(next.slice(11, 16));
                   }}
                 />
@@ -502,12 +489,6 @@ export function QuickEventSheet({
 
 function formatMinutes(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-}
-
-/** HH:mm を0:00からの分数へ。入力途中で読み取れない場合は null。 */
-function toMinutes(value: string): number | null {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 }
 
 /** 日付と時刻を datetime-local と同じ形式へ。片方が空の間は結合できない。 */

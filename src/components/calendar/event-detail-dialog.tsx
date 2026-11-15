@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  ArrowLeft,
   ArrowRight,
   Bell,
   CalendarClock,
@@ -94,13 +95,30 @@ export function EventDetailDialog({
   onTravelLinkChanged,
   onActivityLinksChanged,
   onOpenEventById,
+  renderEdit,
+  onEditSaved,
 }: {
   event: CalendarEventItem;
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
   onClose: () => void;
+  /** 編集フォームを出せないとき（renderEdit が無いとき）の従来の編集入口。 */
   onEdit: () => void;
+  /**
+   * 編集フォームを同じハーフモーダルの中に出す（issue #1553）。渡すと鉛筆は閉じ直さず、
+   * 中身だけを編集フォームへ入れ替える。
+   */
+  renderEdit?: (props: {
+    title: string;
+    onTitleChange: (value: string) => void;
+    onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
+  }) => ReactNode;
+  /**
+   * 編集の保存後の処理。詳細へ戻してよいとき true、閉じるべきとき false を返す
+   * （移動追随の確認を開いた・予定のIDが変わったときは閉じる）。
+   */
+  onEditSaved?: (touched: TouchedRange[] | null, change: OptimisticEventChange) => boolean;
   onDuplicate: () => void;
   /** この予定への移動を作る（docs/spec.md §29）。終日予定では出さない。 */
   onAddTravel: () => void;
@@ -176,9 +194,33 @@ export function EventDetailDialog({
     if (!next) close();
   };
 
+  // 編集は閉じずに同じモーダルの中身を入れ替える（issue #1553）。
+  const [editMode, setEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState(event.title);
+
   const edit = () => {
+    if (renderEdit) {
+      setEditTitle(event.title);
+      setEditMode(true);
+      return;
+    }
     setOpen(false);
     setTimeout(onEdit, 150);
+  };
+
+  const editSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
+    if (change?.type === "upsert" && onEditSaved) {
+      if (onEditSaved(touched, change)) {
+        setEditMode(false);
+        return;
+      }
+      setOpen(false);
+      setTimeout(onClose, 150);
+      return;
+    }
+    // 削除や、反映する予定が決まらない保存（繰り返しの新規など）は従来どおり閉じる。
+    setOpen(false);
+    setTimeout(() => onDeleted(touched, change), 150);
   };
 
   const duplicate = () => {
@@ -289,7 +331,20 @@ export function EventDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
+        {editMode && renderEdit && (
+          <>
+            <DialogHeader className="flex-row items-center gap-1">
+              <Button variant="ghost" size="icon-sm" aria-label="詳細へ戻る" onClick={() => setEditMode(false)}>
+                <ArrowLeft className="size-4" />
+              </Button>
+              <DialogTitle>予定を編集</DialogTitle>
+            </DialogHeader>
+            {renderEdit({ title: editTitle, onTitleChange: setEditTitle, onSaved: editSaved })}
+          </>
+        )}
+        {!editMode && (
+          <>
         {confirmingDelete && (
           <DeleteItemDialog
             item={{ kind: "event", event, linkedTasks: linkedTasks?.map((task) => task.title) }}
@@ -678,6 +733,8 @@ export function EventDetailDialog({
             閉じる
           </Button>
         </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
