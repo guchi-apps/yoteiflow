@@ -21,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -363,6 +364,16 @@ export function EventDetailDialog({
                 <span className="font-bold">仮の予定です</span>
                 {confirmError && <span className="text-destructive">{confirmError}</span>}
               </div>
+              {/* 主操作のためアコーディオンに入れない。確認は挟まない（編集でいつでも仮へ戻せる）。 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto shrink-0 bg-surface-container-lowest"
+                disabled={readOnly || confirmBusy}
+                onClick={confirmTentative}
+              >
+                確定する
+              </Button>
             </div>
           )}
 
@@ -377,6 +388,18 @@ export function EventDetailDialog({
                 <span className="font-bold">{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}</span>
                 {outcome.note && <LinkifiedText as="span" className="opacity-90" text={outcome.note} />}
               </div>
+              {/* 記録の修正は奥へ入れず、帯の中から1タップで開く。 */}
+              {!isActivity && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto shrink-0 bg-surface-container-lowest"
+                  disabled={readOnly}
+                  onClick={() => setEditingOutcome(true)}
+                >
+                  記録を直す
+                </Button>
+              )}
             </div>
           )}
 
@@ -582,86 +605,72 @@ export function EventDetailDialog({
           )}
 
           {/*
-            この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
-            押してみるまで分からないため、名前を添えたボタンとして並べる。
+            この予定から作れるものへの導線。バッジ状のボタンを並べず、既定で閉じたアコーディオンの
+            中に「アイコン＋名前＋説明」のカードとして置く（issue #1544）。確定・記録を直すは
+            主操作・修正の入口として、それぞれの帯の中に出している。
           */}
-          <div className="flex flex-wrap gap-2">
-            {/*
-              仮の予定を確定する（issue #688）。確認は挟まない。編集フォームでいつでも
-              「仮の予定」を選び直せるため、削除のような戻せない操作ではない。
-            */}
-            {event.tentative && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="bg-tertiary-container text-on-tertiary-container"
-                disabled={readOnly || confirmBusy}
-                onClick={confirmTentative}
-              >
-                <CircleDashed className="size-4" />
-                仮の予定を確定する
-              </Button>
-            )}
-
-            {canAddTravel && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="bg-travel-container text-on-travel-container"
-                disabled={readOnly}
-                onClick={addTravel}
-              >
-                <ArrowRight className="size-4" />
-                移動を足す
-              </Button>
-            )}
-
-            {/* 作った後でも、既存の移動を結べる（issue #1105）。 */}
-            {canAddTravel && (
-              <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkTravel}>
-                <Link2 className="size-4" />
-                既存の移動を紐づける
-              </Button>
-            )}
-
-            {/*
-              タスクを登録する入口（docs/spec.md §31）。終日予定でも出す。移動と違い、
-              出発時刻を逆算する起点が要らず、その日のうちにやる、で置き場所が決まるため。
-              使用がオフのカレンダーでも出す。紐づけはGoogleへ書き込まないため。
-              以前は「タスクを紐づける」「タスクを作成」の2つに分かれていたが、後者の入口が
-              あっても紐づけ画面（`TaskLinkDialog`）の中で新しく作れるため、1つに統合した
-              （issue #835）。
-            */}
-            {!isActivity && (
-              <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-secondary-container text-on-secondary-container"
-              disabled={readOnly}
-              onClick={linkTask}
+          {(canAddTravel || !isActivity) && (
+            <Accordion
+              title="予定の操作"
+              description={canAddTravel ? "移動・タスク・中止" : "タスク・中止"}
+              className="bg-surface-container-lowest"
             >
-              <TaskStageMark stage="AFTER_END" className="h-4 w-5 text-on-secondary-container" />
-              タスクを登録
-            </Button>
+              {canAddTravel && (
+                <div className="grid grid-cols-2 gap-2">
+                  <ActionCard
+                    icon={<ArrowRight className="size-4" />}
+                    iconClassName="bg-travel-container text-on-travel-container"
+                    title="移動を足す"
+                    description="この予定への移動を作る"
+                    disabled={readOnly}
+                    onClick={addTravel}
+                  />
+                  {/* 作った後でも、既存の移動を結べる（issue #1105）。 */}
+                  <ActionCard
+                    icon={<Link2 className="size-4" />}
+                    iconClassName="bg-surface-container-high text-primary"
+                    title="既存の移動を紐づける"
+                    description="作成済みの移動と結ぶ"
+                    disabled={readOnly}
+                    onClick={startLinkTravel}
+                  />
+                </div>
+              )}
 
-            {/*
-              中止・不参加の記録（docs/spec.md §37）。記録はGoogleへ書き込まないため、
-              「使用」がオフのカレンダーの予定にも付けられる（タスクの紐づけと同じ扱い）。
-            */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-error-container text-on-error-container"
-              disabled={readOnly}
-              onClick={() => setEditingOutcome(true)}
-            >
-              <EventOutcomeMark className="size-4" />
-              {outcome ? "記録を直す" : "中止・不参加にする"}
-            </Button>
-              </>
-            )}
-          </div>
+              {/*
+                タスクを登録する入口（docs/spec.md §31）。終日予定でも出す。使用がオフの
+                カレンダーでも出す（紐づけはGoogleへ書き込まないため）。
+              */}
+              {!isActivity && (
+                <ActionCard
+                  wide
+                  icon={<TaskStageMark stage="AFTER_END" className="h-4 w-5" />}
+                  iconClassName="bg-secondary-container text-on-secondary-container"
+                  title="タスクを登録"
+                  description="この予定に合わせてやることを置く"
+                  disabled={readOnly}
+                  onClick={linkTask}
+                />
+              )}
+
+              {/*
+                中止・不参加の記録（docs/spec.md §37）。記録はGoogleへ書き込まないため、
+                「使用」がオフのカレンダーの予定にも付けられる。記録済みのときは帯の
+                「記録を直す」から開くため、ここには出さない。
+              */}
+              {!isActivity && !outcome && (
+                <ActionCard
+                  wide
+                  icon={<EventOutcomeMark className="size-4" />}
+                  iconClassName="bg-error-container text-on-error-container"
+                  title="中止・不参加にする"
+                  description="予定は消さず、起こらなかったと記録"
+                  disabled={readOnly}
+                  onClick={() => setEditingOutcome(true)}
+                />
+              )}
+            </Accordion>
+          )}
         </div>
 
         <DialogFooter>
@@ -671,6 +680,46 @@ export function EventDetailDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 操作のカード。アイコン・太字の名前・説明の3段（アセットマネージャーの「詳細な設定」と同じ形）。 */
+function ActionCard({
+  icon,
+  iconClassName,
+  title,
+  description,
+  onClick,
+  disabled,
+  wide = false,
+}: {
+  icon: ReactNode;
+  iconClassName: string;
+  title: string;
+  description: string;
+  onClick: () => void;
+  disabled?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "relative rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
+        wide ? "flex items-center gap-3" : "flex flex-col gap-1.5",
+      )}
+    >
+      <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-bold">{title}</span>
+        <span className="type-body-small text-on-surface-variant">{description}</span>
+      </span>
+      {wide && <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />}
+    </button>
   );
 }
 

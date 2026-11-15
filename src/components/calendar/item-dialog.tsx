@@ -121,7 +121,19 @@ export function ItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
+      <DialogContent
+        position="bottom"
+        className="max-h-[85dvh] gap-3 overflow-y-auto"
+        // 移動には項目名の欄が無く、Radixの既定で最初の入力欄（出発地）へフォーカスが移りキーボードが開く。
+        // 編集では値が埋まっており開いてすぐ打つとは限らないため、移動の編集だけ自動フォーカスを止める（issue #1543）。
+        onOpenAutoFocus={
+          kind === "travel" && editing
+            ? (event) => {
+                event.preventDefault();
+              }
+            : undefined
+        }
+      >
         <DialogHeader>
           <DialogTitle>{editing ? `${label}を編集` : `${label}を追加`}</DialogTitle>
         </DialogHeader>
