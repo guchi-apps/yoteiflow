@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2 } from "lucide-react";
 
 import { Accordion } from "@/components/ui/accordion";
 
@@ -36,7 +36,7 @@ import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelChangeSheet } from "./travel-change-sheet";
 import { TravelNote } from "./travel-note";
-import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
+import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
 import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import { TaskLinkDialog } from "./task-link-dialog";
@@ -97,7 +97,6 @@ export function TravelDetailDialog({
 }) {
   // 既存の予定を後から結ぶ・外す（issue #1105）。
   const [linkingEvent, setLinkingEvent] = useState(false);
-  const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -124,17 +123,6 @@ export function TravelDetailDialog({
   const startLinkEvent = () => {
     setOpen(false);
     setTimeout(() => setLinkingEvent(true), 150);
-  };
-
-  const unlink = async () => {
-    setUnlinkError(null);
-    const message = await unlinkTravel(travel.id);
-    if (message) {
-      setUnlinkError(message);
-      return;
-    }
-    setOpen(false);
-    setTimeout(() => onLinked?.([{ start: travel.start, end: travel.end }]), 150);
   };
 
   const openTask = (task: TaskItem) => {
@@ -172,6 +160,12 @@ export function TravelDetailDialog({
         weekStartsOn={weekStartsOn}
         onCancel={onClose}
         onLinked={(touched) => onLinked?.(touched)}
+        onUnlinked={() =>
+          onLinked?.([
+            { start: travel.start, end: travel.end },
+            ...(linkedEventRange ? [{ start: linkedEventRange.start, end: linkedEventRange.end }] : []),
+          ])
+        }
       />
     );
   }
@@ -299,16 +293,6 @@ export function TravelDetailDialog({
                   </span>
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="予定との紐づけを外す"
-                className="self-center"
-                disabled={readOnly}
-                onClick={unlink}
-              >
-                <Unlink className="size-4" />
-              </Button>
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-md border border-dashed border-outline-variant py-2 pr-2 pl-3">
@@ -319,7 +303,6 @@ export function TravelDetailDialog({
               </Button>
             </div>
           )}
-          {unlinkError && <p className="text-xs text-destructive">{unlinkError}</p>}
 
           {/* この移動に紐づいているタスク（issue #914）。出発前に確かめるものなど。 */}
           {linkedTasks.length > 0 && (
@@ -364,29 +347,26 @@ export function TravelDetailDialog({
             description={travel.linkedEventId ? "変更・付け替え・タスク" : "変更・紐づけ・タスク"}
             flat
           >
-            <div className="grid grid-cols-2 gap-2">
-              <ActionCard
-                icon={<Route className="size-4" />}
-                iconClassName="bg-travel-container text-on-travel-container"
-                title="移動方法・時間"
-                description="手段や所要時間を直す"
-                disabled={readOnly}
-                onClick={() => {
-                  setOpen(false);
-                  setTimeout(() => setChanging(true), 150);
-                }}
-              />
-              <ActionCard
-                icon={<Link2 className="size-4" />}
-                iconClassName="bg-surface-container-high text-primary"
-                title={travel.linkedEventId ? "予定を付け替える" : "予定と紐づける"}
-                description="別の予定と結ぶ"
-                disabled={readOnly}
-                onClick={startLinkEvent}
-              />
-            </div>
             <ActionCard
-              wide
+              icon={<Route className="size-4" />}
+              iconClassName="bg-travel-container text-on-travel-container"
+              title="移動方法・時間を変更"
+              description="手段や所要時間を直す"
+              disabled={readOnly}
+              onClick={() => {
+                setOpen(false);
+                setTimeout(() => setChanging(true), 150);
+              }}
+            />
+            <ActionCard
+              icon={<Link2 className="size-4" />}
+              iconClassName="bg-surface-container-high text-primary"
+              title={travel.linkedEventId ? "予定を付け替える" : "予定と紐づける"}
+              description={travel.linkedEventId ? "別の予定と結ぶ・紐づけを外す" : "予定と結ぶ"}
+              disabled={readOnly}
+              onClick={startLinkEvent}
+            />
+            <ActionCard
               icon={<TaskStageMark stage="BEFORE_START" className="h-4 w-5" />}
               iconClassName="bg-secondary-container text-on-secondary-container"
               title="タスクを登録"
@@ -431,7 +411,7 @@ function PlaceLink({ text, places, readOnly }: { text: string; places: PlaceItem
   );
 }
 
-/** 操作のカード。アイコン・太字の名前・説明の3段（予定の表示画面と同じ形）。 */
+/** 操作のカード。枠付きで、アイコン・太字の名前・説明の3段。押すと別の画面が開く（予定の表示画面と同じ形・issue #1597）。 */
 function ActionCard({
   icon,
   iconClassName,
@@ -439,7 +419,6 @@ function ActionCard({
   description,
   onClick,
   disabled,
-  wide = false,
 }: {
   icon: ReactNode;
   iconClassName: string;
@@ -447,17 +426,13 @@ function ActionCard({
   description: string;
   onClick: () => void;
   disabled?: boolean;
-  wide?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "relative flex items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
-        !wide && "min-w-0",
-      )}
+      className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38"
     >
       <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
         {icon}
@@ -466,7 +441,7 @@ function ActionCard({
         <span className="font-bold">{title}</span>
         <span className="type-body-small text-on-surface-variant">{description}</span>
       </span>
-      {wide && <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />}
+      <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
     </button>
   );
 }

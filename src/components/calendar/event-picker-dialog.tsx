@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Unlink } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -98,12 +98,18 @@ export function EventPickerDialog({
   onPick,
   onSelect,
   createNew,
+  removeLink,
 }: {
   /**
    * 一覧の先頭に置く「新しいものを作る」行（issue #1567。タスク登録の「新しいタスクを作る」と同じ形）。
    * 押すとこのダイアログを閉じ切ってから `onClick` を呼ぶ。
    */
   createNew?: { label: string; onClick: () => void };
+  /**
+   * 「紐づけを外す」行（issue #1597）。`onClick` は失敗メッセージ（成功なら null）を返し、
+   * 成功したらこのダイアログを閉じ切ってから `onDone` を呼ぶ。
+   */
+  removeLink?: { label: string; description: string; onClick: () => Promise<string | null>; onDone: () => void };
   /** タスクの紐づけ先として選ぶときの行き先。`onSelect` を使うときは不要。 */
   target?: TaskLinkTarget;
   timeZone: string;
@@ -125,6 +131,8 @@ export function EventPickerDialog({
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
   const todayKey = useMemo(
@@ -380,6 +388,34 @@ export function EventPickerDialog({
                   <Plus className="size-4" />
                   {createNew.label}
                 </Button>
+              )}
+              {removeLink && (
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    disabled={removing}
+                    className="flex items-center gap-3 rounded-xl border border-dashed border-error px-3 py-2.5 text-left text-error disabled:opacity-38"
+                    onClick={async () => {
+                      setRemoving(true);
+                      setRemoveError(null);
+                      const message = await removeLink.onClick();
+                      setRemoving(false);
+                      if (message) {
+                        setRemoveError(message);
+                        return;
+                      }
+                      setOpen(false);
+                      setTimeout(removeLink.onDone, 150);
+                    }}
+                  >
+                    <Unlink className="size-4 shrink-0" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="font-bold">{removeLink.label}</span>
+                      <span className="type-body-small">{removeLink.description}</span>
+                    </span>
+                  </button>
+                  {removeError && <p className="text-xs text-destructive">{removeError}</p>}
+                </div>
               )}
               <div className="flex gap-1">
                 {(["day", "month", "list"] as const).map((value) => (
