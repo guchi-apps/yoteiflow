@@ -290,7 +290,8 @@ export function EventForm({
           （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
           中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
       <div className="flex min-w-0 flex-col">
-        {/* タイトルは枠も面も持たない文字（Googleカレンダー風・issue #1563）。大きさは他の欄・詳細画面と同じ（issue #1568）。 */}
+        {/* タイトルは枠も面も持たない文字（Googleカレンダー風・issue #1563）。大きさは他の欄・詳細画面と同じ（issue #1568）。
+            ただしスマホ幅では globals.css が16pxへ上げる（16px未満だとフォーカス時にiOSが画面を拡大する・issue #1585）。 */}
         <input
           id="event-title"
           aria-label="タイトル"
