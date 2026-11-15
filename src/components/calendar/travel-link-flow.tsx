@@ -51,6 +51,7 @@ export function TravelLinkFlow({
   weekStartsOn = 0,
   onCancel,
   onLinked,
+  onUnlinked,
   onCreateNew,
 }: {
   /** 渡すと選ぶ画面の先頭に「新しい移動を作る」を出す（issue #1567。予定側のみ）。 */
@@ -60,6 +61,8 @@ export function TravelLinkFlow({
   weekStartsOn?: number;
   onCancel: () => void;
   onLinked: (touched: TouchedRange[] | null) => void;
+  /** 移動側から開いたとき、選択画面の「紐づけを外す」で外し終えたあとに呼ぶ（issue #1597）。 */
+  onUnlinked?: () => void;
 }) {
   const [picked, setPicked] = useState<PickedItem | null>(null);
   const [open, setOpen] = useState(true);
@@ -87,6 +90,11 @@ export function TravelLinkFlow({
             : "この移動に結ぶ予定を押してください。"
         }
         onCancel={onCancel}
+        removeLink={
+          side.kind === "travel" && side.travel.linkedEventId && onUnlinked
+            ? { label: "紐づけを外す", description: "いまの予定との紐づけを解除します", onClick: () => unlinkTravel(side.travel.id), onDone: onUnlinked }
+            : undefined
+        }
         onSelect={(item) => {
           setPicked(item);
         }}

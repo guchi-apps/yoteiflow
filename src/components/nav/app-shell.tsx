@@ -43,9 +43,9 @@ export function useNavState(): NavState {
 
 /**
  * 現在地を決める。5画面の本文ルート（配下を含む）だけが対象。
- * `/activity/sleep`・`/work/leave` は前方一致で「記録」「勤務」になってしまうため、明示的に除く。
+ * `/activity/sleep`・`/work/leave`・`/work/places` は前方一致で「記録」「勤務」になってしまうため、明示的に除く。
  */
-const NON_NAV_PATHS = ["/activity/sleep", "/work/leave"];
+const NON_NAV_PATHS = ["/activity/sleep", "/work/leave", "/work/places"];
 
 export function navKeyOf(pathname: string): NavKey | null {
   if (NON_NAV_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {

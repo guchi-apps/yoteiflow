@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { parseCoordinates } from "@/lib/coordinates";
+import { readStationsBody } from "@/lib/station-name";
 import { getNotionPlaceConnection } from "@/services/calendar/write-context";
 import { createPlace } from "@/services/notion/places";
 
@@ -21,11 +22,15 @@ export async function POST(request: Request) {
     coordinates?: string | null;
     /** 最寄り駅。Yahoo!乗換案内をこの駅名で開く（docs/spec.md §29）。 */
     station?: string | null;
+    /** 最寄り駅の一覧（issue #1607）。`{ name, minutes }` の配列。あれば station / stationMinutes より優先。 */
+    stations?: unknown;
     /** 最寄り駅までの徒歩（分）。 */
     stationMinutes?: number | null;
   };
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+  const stations = "stations" in body ? readStationsBody(body.stations) : undefined;
+  if (stations === null) return NextResponse.json({ error: "stations must be an array" }, { status: 400 });
 
   try {
     const place = await createPlace(connection, {
@@ -34,6 +39,7 @@ export async function POST(request: Request) {
       coordinates: parseCoordinates(body.coordinates),
       station: body.station?.trim() || null,
       stationMinutes: typeof body.stationMinutes === "number" ? body.stationMinutes : null,
+      ...(stations ? { stations } : {}),
     });
     return NextResponse.json(place);
   } catch (error) {

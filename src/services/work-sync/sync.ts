@@ -529,7 +529,7 @@ export async function validateOverrideForRecord(
     const routes = plan.missingRoutes.map((route) =>
       route.origin === null ? "移動の出発地（設定の「移動」）" : `${route.origin} → ${route.destination}`,
     );
-    return `${routes.join("・")} の既定の移動時間が未設定です。設定の「勤務」で入れるか、往路・復路の反映をオフにしてください。`;
+    return `${routes.join("・")} の既定の移動時間が未設定です。勤務画面の「勤務先の登録」で入れるか、往路・復路の反映をオフにしてください。`;
   }
   const parts: string[] = [];
   for (const route of plan.missingRoutes) {

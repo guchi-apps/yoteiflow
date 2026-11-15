@@ -18,7 +18,7 @@ import type { PlaceItem } from "@/services/notion/places";
 
 import type { LatLng } from "@/lib/coordinates";
 import { matchPlaceByText, splitNameAndAddress } from "@/lib/place-text";
-import { yahooSearchStationName } from "@/lib/station-name";
+import { chooseStation, placeStations, yahooSearchStationName, type StationChoice } from "@/lib/station-name";
 
 const SEARCH = "https://transit.yahoo.co.jp/search/result";
 
@@ -44,10 +44,17 @@ export type YahooTransitPlace = {
  * 住所だけ・駅名だけなら引ける。
  *
  * 見る順は 場所DB（最寄り駅 → 座標 → 住所）→ 分けた住所 → 丸ごと。
+ * 最寄り駅が複数あるときは `station` で選んだ駅（省略時は先頭＝優先の駅）を使い、`null` なら
+ * 駅を使わず座標・住所で探す（issue #1607）。選ぶ画面の無い経路（移動メモの再検索・アプリの条件）は
+ * 省略して従来どおり先頭の駅になる。
  * 座標は画面が持っている場所DBから引く（サーバー側で引き直すと、押すたびにNotionの
  * 全件取得が増える）。
  */
-export function resolveYahooPlace(text: string, places: PlaceItem[]): YahooTransitPlace | null {
+export function resolveYahooPlace(
+  text: string,
+  places: PlaceItem[],
+  station?: StationChoice,
+): YahooTransitPlace | null {
   const value = text.trim();
   if (!value) return null;
 
@@ -57,9 +64,10 @@ export function resolveYahooPlace(text: string, places: PlaceItem[]): YahooTrans
     // 最寄り駅があるときは座標を添えない。座標があるとYahoo!はそちらで探索し、
     // 駅名は表示名にしかならないため、入れた駅から探せなくなる。
     // 保存は「梅田駅」の形だが、Yahoo!には「駅」を外して渡す（issue #1356）。
-    if (place.station) {
-      const station = yahooSearchStationName(place.station);
-      return { name: station, query: station, coordinates: null };
+    const chosen = chooseStation(placeStations(place), station);
+    if (chosen) {
+      const name = yahooSearchStationName(chosen.name);
+      return { name, query: name, coordinates: null };
     }
     return { name: place.name, query: place.address ?? place.name, coordinates: place.coordinates };
   }

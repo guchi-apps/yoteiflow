@@ -3,7 +3,13 @@ import type { NotionConnection } from "@prisma/client";
 
 import { formatCoordinates, parseCoordinates, type LatLng } from "@/lib/coordinates";
 import { disallowedPlaceTags } from "@/lib/place-tags";
-import { ensureStationSuffix } from "@/lib/station-name";
+import {
+  formatStations,
+  normalizeStations,
+  parseStations,
+  placeStations,
+  type PlaceStation,
+} from "@/lib/station-name";
 
 import { createNotionClient } from "./client";
 import type { PlacePropertyMap } from "./place-database";
@@ -28,6 +34,11 @@ export type PlaceItem = {
   station: string | null;
   /** 最寄り駅までの徒歩（分）。最寄り駅があるときだけ移動の検索時刻に足す（docs/spec.md §29）。 */
   stationMinutes?: number | null;
+  /**
+   * 最寄り駅の一覧（issue #1607）。先頭が優先で、`station` / `stationMinutes` は先頭の写し。
+   * Notionの「最寄り駅」欄に1行1駅（「高槻駅 20分」）で持つ。古い応答には無いので `placeStations()` で読む。
+   */
+  stations?: PlaceStation[];
 };
 
 type PropertyValue = {
@@ -41,11 +52,38 @@ type Page = { id: string; properties?: Record<string, PropertyValue> };
 const text = (items?: Array<{ plain_text?: string }>) =>
   items?.map((item) => item.plain_text ?? "").join("").trim() || "";
 
-/** 0〜180の整数だけを徒歩分として扱う。範囲外・小数は読まない。 */
-export function normalizeMinutes(value: number | null | undefined): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  const rounded = Math.round(value);
-  return rounded >= 0 && rounded <= 180 ? rounded : null;
+/** 駅の一覧から `station` / `stationMinutes`（先頭の写し）と `stations` をまとめて作る。 */
+function stationFields(stations: PlaceStation[]): Pick<PlaceItem, "station" | "stationMinutes" | "stations"> {
+  return { station: stations[0]?.name ?? null, stationMinutes: stations[0]?.minutes ?? null, stations };
+}
+
+/**
+ * 駅の一覧をNotionへ書くプロパティ。「最寄り駅」欄が正（1行1駅）で、「最寄り駅までの時間」の
+ * 数値の列は先頭駅の写し（docs/spec.md §29・issue #1607）。
+ */
+function stationProperties(map: PlacePropertyMap, stations: PlaceStation[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const text = formatStations(stations);
+  if (map.station) properties[map.station] = text ? richText(text) : { rich_text: [] };
+  if (map.station && map.stationMinutes) properties[map.stationMinutes] = { number: stations[0]?.minutes ?? null };
+  return properties;
+}
+
+/**
+ * 書き込みで受けた駅の指定を一覧へ直す。`stations` が正で、無ければ従来の `station` / `stationMinutes`
+ * （古い画面）を**先頭の駅の置き換え**として扱い、2駅目以降は残す（古い画面で保存しただけで消さない）。
+ * どちらも渡されていなければ undefined（触らない）。
+ */
+function resolveStationsInput(
+  input: { stations?: PlaceStation[] | null; station?: string | null; stationMinutes?: number | null },
+  before: PlaceStation[],
+): PlaceStation[] | undefined {
+  if ("stations" in input) return normalizeStations(input.stations ?? []);
+  if (!("station" in input) && !("stationMinutes" in input)) return undefined;
+  const first = before[0];
+  const name = "station" in input ? input.station : (first?.name ?? null);
+  const minutes = "stationMinutes" in input ? (input.stationMinutes ?? null) : (first?.minutes ?? null);
+  return normalizeStations([{ name: name ?? "", minutes }, ...before.slice(1)]);
 }
 
 function normalize(page: Page, map: PlacePropertyMap): PlaceItem | null {
@@ -59,8 +97,7 @@ function normalize(page: Page, map: PlacePropertyMap): PlaceItem | null {
     address: text(get("address")?.rich_text) || null,
     tags: get("tags")?.multi_select?.map((option) => option.name ?? "").filter(Boolean) ?? [],
     coordinates: parseCoordinates(text(get("coordinates")?.rich_text)),
-    station: text(get("station")?.rich_text) || null,
-    stationMinutes: normalizeMinutes(get("stationMinutes")?.number),
+    ...stationFields(parseStations(text(get("station")?.rich_text), get("stationMinutes")?.number)),
   };
 }
 
@@ -140,6 +177,7 @@ export async function createPlace(
     coordinates?: LatLng | null;
     station?: string | null;
     stationMinutes?: number | null;
+    stations?: PlaceStation[] | null;
   },
 ): Promise<PlaceItem> {
   if (!connection.placeDataSourceId) throw new Error("Place data source is not configured");
@@ -148,7 +186,7 @@ export async function createPlace(
 
   const notion = createNotionClient(connection);
   const existing = (await listPlaces(connection)).find((place) => place.name === input.name);
-  input = { ...input, station: ensureStationSuffix(input.station) };
+  const stations = resolveStationsInput(input, []) ?? [];
 
   if (existing) {
     const filled: Record<string, unknown> = {};
@@ -158,12 +196,9 @@ export async function createPlace(
     if (map.coordinates && input.coordinates && !existing.coordinates) {
       filled[map.coordinates] = richText(formatCoordinates(input.coordinates));
     }
-    if (map.station && input.station && !existing.station) {
-      filled[map.station] = richText(input.station);
-    }
-    if (map.stationMinutes && input.stationMinutes != null && existing.stationMinutes == null) {
-      filled[map.stationMinutes] = { number: input.stationMinutes };
-    }
+    // 駅は既存の場所に1駅も無いときだけ埋める（住所・座標と同じく、入っている値は上書きしない）
+    const fillStations = Boolean(map.station) && stations.length > 0 && placeStations(existing).length === 0;
+    if (fillStations) Object.assign(filled, stationProperties(map, stations));
     if (Object.keys(filled).length === 0) return existing;
 
     await notion.pages.update({ page_id: existing.id, properties: filled as never });
@@ -171,8 +206,7 @@ export async function createPlace(
       ...existing,
       address: existing.address ?? input.address ?? null,
       coordinates: existing.coordinates ?? input.coordinates ?? null,
-      station: existing.station ?? input.station ?? null,
-      stationMinutes: existing.stationMinutes ?? input.stationMinutes ?? null,
+      ...stationFields(fillStations ? stations : placeStations(existing)),
     };
   }
 
@@ -183,10 +217,7 @@ export async function createPlace(
   if (map.coordinates && input.coordinates) {
     properties[map.coordinates] = richText(formatCoordinates(input.coordinates));
   }
-  if (map.station && input.station) properties[map.station] = richText(input.station);
-  if (map.stationMinutes && input.stationMinutes != null) {
-    properties[map.stationMinutes] = { number: input.stationMinutes };
-  }
+  if (stations.length > 0) Object.assign(properties, stationProperties(map, stations));
 
   const page = await notion.pages.create({
     parent: { type: "data_source_id", data_source_id: connection.placeDataSourceId },
@@ -199,8 +230,7 @@ export async function createPlace(
     address: input.address ?? null,
     tags: [],
     coordinates: input.coordinates ?? null,
-    station: input.station ?? null,
-    stationMinutes: input.stationMinutes ?? null,
+    ...stationFields(map.station ? stations : []),
   };
 }
 
@@ -278,7 +308,12 @@ export type PlaceWriteInput = {
   address?: string | null;
   /** null は「地点を消す」、項目ごと渡さないのは「触らない」。 */
   coordinates?: LatLng | null;
-  /** 空文字・null は「最寄り駅を消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
+  /**
+   * 最寄り駅の一覧（issue #1607）。渡した配列でそのまま置き換え、空配列は「全部外す」。
+   * 項目ごと渡さないのは「触らない」。
+   */
+  stations?: PlaceStation[] | null;
+  /** 古い画面の1駅だけの指定。先頭の駅の置き換えとして扱う（`stations` があればそちらが正）。 */
   station?: string | null;
   /** null は「消す」、項目ごと渡さないのは「触らない」。 */
   stationMinutes?: number | null;
@@ -331,17 +366,14 @@ export async function updatePlace(
   };
   // 空にしたときは rich_text を空配列で送る。省くと Notion 側の値がそのまま残る。
   const address = input.address?.trim() || null;
-  const station = ensureStationSuffix(input.station);
+  const beforePlace = places.find((place) => sameId(place.id, placeId));
+  const stations = map.station ? resolveStationsInput(input, beforePlace ? placeStations(beforePlace) : []) : undefined;
   const writeAddress = Boolean(map.address) && "address" in input;
   const writeCoordinates = Boolean(map.coordinates) && "coordinates" in input;
-  const writeStation = Boolean(map.station) && "station" in input;
-  const writeStationMinutes = Boolean(map.stationMinutes) && "stationMinutes" in input;
-  const stationMinutes = normalizeMinutes(input.stationMinutes);
   const writeTags = Boolean(map.tags) && "tags" in input;
   const tags = input.tags ?? [];
   if (writeAddress) properties[map.address!] = address ? richText(address) : { rich_text: [] };
-  if (writeStation) properties[map.station!] = station ? richText(station) : { rich_text: [] };
-  if (writeStationMinutes) properties[map.stationMinutes!] = { number: stationMinutes };
+  if (stations) Object.assign(properties, stationProperties(map, stations));
   if (writeCoordinates) {
     properties[map.coordinates!] = input.coordinates
       ? richText(formatCoordinates(input.coordinates))
@@ -360,8 +392,7 @@ export async function updatePlace(
     address: writeAddress ? address : (before?.address ?? null),
     tags: writeTags ? tags : (before?.tags ?? []),
     coordinates: writeCoordinates ? (input.coordinates ?? null) : (before?.coordinates ?? null),
-    station: writeStation ? station : (before?.station ?? null),
-    stationMinutes: writeStationMinutes ? stationMinutes : (before?.stationMinutes ?? null),
+    ...stationFields(stations ?? (before ? placeStations(before) : [])),
   };
 }
 

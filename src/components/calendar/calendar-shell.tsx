@@ -51,7 +51,7 @@ import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
-import { applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
+import { applyGoogleShare, applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
 import { retargetYahooWalk } from "@/lib/yahoo-transit-import";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
@@ -396,6 +396,27 @@ export function CalendarShell({
         },
       });
       return;
+    }
+    if (!handoff.link && handoff.resolve && handoff.url && handoff.session) {
+      // 移動の入力から「Googleマップで経路を開く」して戻ってきた共有は、その下書き（予定との紐づけ込み）へ反映する（issue #1604）。
+      const session = takeTransitSession(handoff.session, Date.now(), "google");
+      if (session) {
+        setItemDialog({
+          initialKind: "travel",
+          drafts: {
+            travel: applyGoogleShare(session, {
+              origin: handoff.origin,
+              destination: handoff.destination,
+              via: handoff.via,
+              mode: handoff.mode,
+              url: handoff.url,
+              route: handoff.route,
+            }),
+          },
+        });
+        return;
+      }
+      window.alert("検索したときの入力が見つかりませんでした（30分を過ぎた・別の端末で検索したなど）。新しい移動の入力として開きます。");
     }
     if (handoff.link) {
       // 移動の入力から「Yahoo!乗換案内で検索」して戻ってきた共有は、予定を選ばせずにその下書きへ反映する（issue #1330）。
@@ -796,6 +817,15 @@ export function CalendarShell({
   const openTravelFromEvent = (travel: TravelItem) => {
     setViewingEvent(null);
     setViewingTravel(travel);
+  };
+
+  /**
+   * 移動の表示画面から、紐づく予定の表示画面へ移る（issue #1595）。
+   * 予定の表示画面から移動へ移る `openTravelFromEvent` の逆向き。
+   */
+  const openEventFromTravel = (event: CalendarEventItem) => {
+    setViewingTravel(null);
+    setViewingEvent(event);
   };
 
   /**
@@ -1425,6 +1455,7 @@ export function CalendarShell({
         onOpenReminder={openReminder}
         onOpenTravel={openTravel}
         onOpenTravelForEvent={openTravelFromEvent}
+        onOpenEventForTravel={openEventFromTravel}
         onOpenTaskForEvent={openTaskFromEvent}
         onEditEvent={editEvent}
         onDuplicateEvent={duplicateEvent}
@@ -1525,6 +1556,7 @@ function CalendarBody({
   onOpenReminder,
   onOpenTravel,
   onOpenTravelForEvent,
+  onOpenEventForTravel,
   onOpenTaskForEvent,
   onEditEvent,
   onDuplicateEvent,
@@ -1607,6 +1639,7 @@ function CalendarBody({
   onOpenTravel: (travel: TravelItem) => void;
   /** 予定の表示画面から、その予定に紐づく移動を開く（issue #327）。 */
   onOpenTravelForEvent: (travel: TravelItem) => void;
+  onOpenEventForTravel: (event: CalendarEventItem) => void;
   /** 予定の表示画面から、その予定に紐づくタスクを開く（issue #835）。 */
   onOpenTaskForEvent: (task: TaskItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
@@ -2371,6 +2404,7 @@ function CalendarBody({
           linkedEventTitle={linkedEventOfTravel?.title ?? null}
           linkedEventRange={linkedEventOfTravel ?? null}
           linkedEventColor={linkedEventOfTravel?.color ?? null}
+          onOpenLinkedEvent={linkedEventOfTravel ? () => onOpenEventForTravel(linkedEventOfTravel) : undefined}
           onCreateTask={(stage, target) => onCreateTaskForTravel(viewingTravel, stage, target)}
         />
       )}

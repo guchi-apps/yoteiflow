@@ -15,10 +15,12 @@ import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types
 import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
-import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
+import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, rememberInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { stationWalkMinutes } from "@/lib/station-walk";
+import type { StationChoice } from "@/lib/station-name";
+import { TransitStationPicker, useTransitStations } from "@/components/calendar/transit-station-picker";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import {
   suggestTransitSearch,
@@ -39,6 +41,7 @@ import {
   type TravelSearchPurpose,
 } from "@/types/calendar";
 
+import { DateRangePickerFields } from "./date-range-picker";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventNotificationEditor } from "./event-notification-editor";
@@ -189,11 +192,13 @@ export function TravelForm({
   // Yahoo!乗換案内アプリで検索する条件（公共交通のときだけ・issue #1330）。必須は発着地と基準側の日時だけ
   const nativeTransit = useSyncExternalStore(() => () => {}, hasNativeTransit, () => false);
   const [transitStatus, setTransitStatus] = useState<NativeTransitOpened | null>(null);
+  // 発着地に最寄り駅が複数あるときの乗る駅・降りる駅（issue #1607）
+  const transitStations = useTransitStations(origin, destination, placeCatalog.places);
   const transitCondition =
     mode === "PUBLIC_TRANSIT" && !offline
       ? transitSearchCondition({
-          origin: resolveYahooPlace(origin, placeCatalog.places),
-          destination: resolveYahooPlace(destination, placeCatalog.places),
+          origin: resolveYahooPlace(origin, placeCatalog.places, transitStations.originChoice),
+          destination: resolveYahooPlace(destination, placeCatalog.places, transitStations.destinationChoice),
           departAt,
           arriveAt,
           basis,
@@ -299,11 +304,20 @@ export function TravelForm({
   const [transitContext, setTransitContext] = useState<TransitContext | "loading" | "error" | null>(null);
   const formatClock = (iso: string) => isoToLocalInput(iso, timeZone).slice(11, 16).replace(/^0/, "");
   // 予定の場所の最寄り駅からの徒歩。余裕分には含めず、提案のたびに場所DBから引く（issue #1370）
-  const walkMinutes = stationWalkMinutes(suggestTarget?.location, placeCatalog.places);
+  // 予定の場所に最寄り駅が複数あるときは、乗る駅・降りる駅で選んだ駅の徒歩（issue #1607）
+  const walkMinutes =
+    mode === "PUBLIC_TRANSIT"
+      ? stationWalkMinutes(
+          suggestTarget?.location,
+          placeCatalog.places,
+          transitStations.walkChoiceFor(suggestTarget?.location),
+        )
+      : 0;
   const buildSuggestion = (
     nextPurpose: TravelSearchPurpose,
     nextMargin: number,
     context: TransitContext | null,
+    walk: number = walkMinutes,
   ): TransitSuggestion | null =>
     suggestTarget
       ? suggestTransitSearch({
@@ -314,13 +328,13 @@ export function TravelForm({
           travels: context?.travels ?? [],
           home: draft.home ?? null,
           excludeTravelId: editing?.id ?? null,
-          walkMinutes,
+          walkMinutes: walk,
           formatTime: formatClock,
         })
       : null;
   const loadedContext = typeof transitContext === "object" ? transitContext : null;
   const suggestion =
-    mode === "PUBLIC_TRANSIT" && purpose && marginMinutes !== null
+    purpose && marginMinutes !== null
       ? buildSuggestion(purpose, marginMinutes, loadedContext)
       : null;
 
@@ -380,9 +394,9 @@ export function TravelForm({
       });
   };
   useEffect(() => {
-    if (mode === "PUBLIC_TRANSIT") loadTransitContext(purpose);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 開いたとき（と公共交通へ切り替えたとき）に1回だけ取る
-  }, [mode]);
+    loadTransitContext(purpose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 開いたとき（交通手段によらず）に1回だけ取る
+  }, []);
 
   /** 予定前／予定後を選び直す。余裕分はその向きの既定へ戻し、基準の日時を求め直す */
   const choosePurpose = (next: TravelSearchPurpose) => {
@@ -396,6 +410,13 @@ export function TravelForm({
     const value = Number(text);
     if (!purpose || text.trim() === "" || !Number.isInteger(value) || value < 0 || value > MAX_TRAVEL_SEARCH_MARGIN_MINUTES) return;
     applySuggestion(buildSuggestion(purpose, value, loadedContext), { force: true });
+  };
+  /** 予定の場所の側で乗る駅・降りる駅を選び直したら、徒歩を合わせて提案の時刻を求め直す（時刻を触っていなければ） */
+  const chooseTransitStation = (side: "origin" | "destination", choice: StationChoice) => {
+    if (!purpose || marginMinutes === null || !suggestTarget) return;
+    if (transitStations.walkSideFor(suggestTarget.location) !== side) return;
+    const walk = stationWalkMinutes(suggestTarget.location, placeCatalog.places, choice);
+    applySuggestion(buildSuggestion(purpose, marginMinutes, loadedContext, walk));
   };
   const chooseCandidate = (text: string) => {
     if (purpose === "BEFORE_EVENT") editOrigin(text);
@@ -445,6 +466,37 @@ export function TravelForm({
     );
   };
 
+  /**
+   * 「Googleマップで経路を開く」を押したとき、いまの入力を覚えて共有拡張へ伝える（issue #1604）。
+   * 共有で戻った経路を、新しい移動ではなくこの入力（予定との紐づけ込み）へ反映するため。
+   * `<a>` は止めない（iOSがGoogleマップのアプリを開けるよう素のまま・#1225）ので印の送信は待たない。
+   */
+  const rememberGoogleSearch = () => {
+    if (!hasNativeTransit()) return;
+    const session = rememberTransitSession(
+      `${placeDisplayName(origin)}→${placeDisplayName(destination)}`,
+      {
+        travel: editing,
+        origin,
+        destination,
+        via,
+        mode,
+        departAt,
+        arriveAt,
+        note,
+        linkedEvent: draft.linkedEvent ?? null,
+        notification,
+        searchPurpose: purpose,
+        searchMarginMinutes: marginMinutes,
+        defaultArriveMargin: draft.defaultArriveMargin,
+        home: draft.home,
+      },
+      Date.now(),
+      "google",
+    );
+    rememberInNativeApp({ id: session.id, label: session.label, expiresAt: session.expiresAt, kind: "google" });
+  };
+
   // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
   const [lengthMinutes, setLengthMinutes] = useState<number | null>(null);
   const knownMinutes = routeMinutes ?? lengthMinutes;
@@ -477,18 +529,21 @@ export function TravelForm({
    * 候補を押したときは applyEstimate が直接 setDepartAt / setArriveAt を呼ぶため、
    * この経路は通らない（出どころが押した候補のまま残る）。
    */
-  const editTime = (side: TimeBasis, value: string) => {
+  /** 出発・到着をまとめて直す（範囲ピッカー用）。個別欄からの1側の変更も同じ経路を通し、前処理を1回だけ行う */
+  const editRange = (nextDepart: string, nextArrive: string) => {
     touch("times");
     // 直す前に両側が入っていれば、その長さを覚える（計算ボタンで使う）。反対側は自動では動かさない（手入力の所要時間を妨げない）
     if (routeMinutes === null && departAt && arriveAt) {
       const gap = (new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime()) / 60_000;
       if (Number.isFinite(gap) && gap > 0) setLengthMinutes(gap);
     }
-    if (side === "depart") setDepartAt(value);
-    else setArriveAt(value);
+    setDepartAt(nextDepart);
+    setArriveAt(nextArrive);
     // 手で直した時刻はGoogle由来の所要時間と混同しない。計算ボタンで求め直すと戻る
     setEstimateSource("MANUAL");
   };
+  const editTime = (side: TimeBasis, value: string) =>
+    side === "depart" ? editRange(value, arriveAt) : editRange(departAt, value);
   /** 「出発日時から計算」「到着日時から計算」。押した側を固定し、反対側を所要時間から求める */
   const calculateFrom = (side: TimeBasis) => {
     touch("times");
@@ -899,17 +954,17 @@ export function TravelForm({
           </FormRow>
         )}
 
-        {/* 行の間隔を増やさないよう、上下の行へ食い込ませて右端に置く。 */}
-        <div className="relative z-10 -my-4 flex justify-end pr-2">
+        {/* 入れ替えは頻度が低いため小さくし、右端の✕・地図ボタンと重ならない左のアイコン列の境目の線上に置く。 */}
+        <div className="relative z-10 -my-3 flex h-6 justify-start">
           <button
             type="button"
-            className="flex size-11 items-center justify-center rounded-md border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-sm disabled:opacity-38"
+            className="flex size-6 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-on-surface-variant active:bg-surface-container-highest disabled:opacity-38"
             aria-label="出発地と目的地を入れ替える"
             title="出発地と目的地を入れ替える"
             disabled={!origin.trim() && !destination.trim()}
             onClick={swapEnds}
           >
-            <ArrowUpDown className="size-5" aria-hidden="true" />
+            <ArrowUpDown className="size-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -936,77 +991,9 @@ export function TravelForm({
           </div>
         </FormRow>
 
-        <FormRow icon={<Clock />}>
-          <div className="flex flex-col gap-1">
-            <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
-            <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!departAt || knownMinutes === null}
-                onClick={() => calculateFrom("depart")}
-              >
-                出発日時から計算
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!arriveAt || knownMinutes === null}
-                onClick={() => calculateFrom("arrive")}
-              >
-                到着日時から計算
-              </Button>
-            </div>
-            <p className="type-label-small text-on-surface-variant">
-              {knownMinutes !== null
-                ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
-                : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
-            </p>
-          </div>
-        </FormRow>
-
-        {/* 通知は予定と同じ位置（日時の下・issue #1582）。出発時刻を基準に知らせる（issue #1112・#1569）。 */}
-        <EventNotificationEditor
-          value={notification}
-          onChange={setNotification}
-          hint="出発時刻を基準に知らせます"
-        />
-
-        {/* 素の <a> にするのは、iOSがGoogleマップのアプリを開けるようにするため（issue #1225）。
-            出発地・目的地・交通手段は入力欄の現在値から組み立てる。 */}
-        {mapsLink && (
-          <FormRow icon={<ExternalLink />}>
-            <a
-              href={mapsLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
-            >
-              Googleマップで経路を開く
-            </a>
-          </FormRow>
-        )}
-
-        <FormRow icon={<AlignLeft />}>
-          <Textarea
-            id="travel-note"
-            label="メモ"
-            variant="flat"
-            rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onClear={() => setNote("")}
-          />
-        </FormRow>
-
-        {/* 公共交通は、入れた発着地と基準側の日時でYahoo!乗換案内を開き、選んだ経路を共有で戻す（issue #1330）。
-            実際の列車・発着時刻はYahoo!で選んだ結果を採る。ここで決めるのは検索の条件だけ。 */}
         {/* 予定の前後の移動として、周辺の予定の場所と余裕分から検索条件を提案する（issue #1331）。
             地点は候補から選ぶか欄で直す。提案は検索の基準で、実際の便はYahoo!で選んだものを採る。 */}
-        {suggestTarget && mode === "PUBLIC_TRANSIT" && (
+        {suggestTarget && (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
             <span className="type-label-small text-on-surface-variant">「{suggestTarget.title}」の</span>
             <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="予定の前後どちらの移動か">
@@ -1104,8 +1091,102 @@ export function TravelForm({
           </div>
         )}
 
+        <FormRow icon={<Clock />}>
+          <div className="flex flex-col gap-1">
+            {departAt && arriveAt ? (
+              // 両方入っているときは、予定と同じ1枚の「日時を設定」画面で選ぶ（issue #1605）。
+              // 出発を直しても到着は自動で動かさない（#1203）ので follow は切る。
+              <DateRangePickerFields
+                idPrefix="travel"
+                flat
+                start={departAt}
+                end={arriveAt}
+                allDay={false}
+                follow={false}
+                startLabel="出発"
+                endLabel="到着"
+                onChange={editRange}
+              />
+            ) : (
+              // 片側だけのあいだは従来の個別欄のまま（所要時間から反対側を求める流れ・#1209）
+              <>
+                <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
+                <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+              </>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!departAt || knownMinutes === null}
+                onClick={() => calculateFrom("depart")}
+              >
+                出発日時から計算
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!arriveAt || knownMinutes === null}
+                onClick={() => calculateFrom("arrive")}
+              >
+                到着日時から計算
+              </Button>
+            </div>
+            <p className="type-label-small text-on-surface-variant">
+              {knownMinutes !== null
+                ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
+                : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
+            </p>
+          </div>
+        </FormRow>
+
+        {/* 通知は予定と同じ位置（日時の下・issue #1582）。出発時刻を基準に知らせる（issue #1112・#1569）。 */}
+        <EventNotificationEditor
+          value={notification}
+          onChange={setNotification}
+          hint="出発時刻を基準に知らせます"
+        />
+
+        {/* 素の <a> にするのは、iOSがGoogleマップのアプリを開けるようにするため（issue #1225）。
+            出発地・目的地・交通手段は入力欄の現在値から組み立てる。 */}
+        {mapsLink && (
+          <FormRow icon={<ExternalLink />}>
+            <a
+              href={mapsLink}
+              onClick={rememberGoogleSearch}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
+            >
+              Googleマップで経路を開く
+            </a>
+          </FormRow>
+        )}
+
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            id="travel-note"
+            label="メモ"
+            variant="flat"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onClear={() => setNote("")}
+          />
+        </FormRow>
+
+        {/* 公共交通は、入れた発着地と基準側の日時でYahoo!乗換案内を開き、選んだ経路を共有で戻す（issue #1330）。
+            実際の列車・発着時刻はYahoo!で選んだ結果を採る。ここで決めるのは検索の条件だけ。 */}
         {transitCondition && (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            <TransitStationPicker
+              origin={origin}
+              destination={destination}
+              state={transitStations}
+              onChange={chooseTransitStation}
+            />
             <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Yahoo!乗換案内で探す基準">
               {(["depart", "arrive"] as const).map((side) => (
                 <Button

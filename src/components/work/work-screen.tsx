@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleAlert,
   ClipboardCheck,
+  MapPinned,
 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
@@ -287,6 +288,13 @@ function WorkMonthScreen({
 
         {/* 年休の残り日数。押すと取得状況を開く（issue #1484）。年休の列が無いDBでは出ない。 */}
         {capabilities.annualLeave && <AnnualLeaveChip reloadKey={leaveReloadKey} />}
+
+        {/* 勤務先ごとの往復経路・所要時間の登録（issue #1611）。移動はここで登録した区間だけ自動で作る。 */}
+        <Button variant="ghost" size="icon" className="size-10 md:size-9" aria-label="勤務先の登録" asChild>
+          <Link href="/work/places">
+            <MapPinned className="size-5" />
+          </Link>
+        </Button>
 
         {/* 対応が必要な出張・年休（issue #1271）。件数はバッジで常に見え、押すとシートで開く。
             読み上げでは件数まで含めて名前にする（バッジは装飾として隠す）。 */}

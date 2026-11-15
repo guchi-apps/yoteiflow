@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2 } from "lucide-react";
 
 import { Accordion } from "@/components/ui/accordion";
 
@@ -36,7 +36,7 @@ import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelChangeSheet } from "./travel-change-sheet";
 import { TravelNote } from "./travel-note";
-import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
+import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
 import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import { TaskLinkDialog } from "./task-link-dialog";
@@ -65,6 +65,7 @@ export function TravelDetailDialog({
   linkedEventTitle,
   linkedEventRange,
   linkedEventColor = null,
+  onOpenLinkedEvent,
   weekStartsOn = 0,
   places = [],
 }: {
@@ -91,13 +92,14 @@ export function TravelDetailDialog({
   linkedEventRange?: { start: string; end: string; allDay: boolean } | null;
   /** 紐づく予定のカレンダー色。色帯に使う。取れないときは null。 */
   linkedEventColor?: string | null;
+  /** 紐づく予定の表示画面へ移る（issue #1595）。予定が手元に無いとき（表示範囲外）は渡さず、行は押せない。 */
+  onOpenLinkedEvent?: () => void;
   weekStartsOn?: number;
   /** 場所DB。座標を持つ地点は座標でGoogleマップを開く。 */
   places?: PlaceItem[];
 }) {
   // 既存の予定を後から結ぶ・外す（issue #1105）。
   const [linkingEvent, setLinkingEvent] = useState(false);
-  const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -126,16 +128,7 @@ export function TravelDetailDialog({
     setTimeout(() => setLinkingEvent(true), 150);
   };
 
-  const unlink = async () => {
-    setUnlinkError(null);
-    const message = await unlinkTravel(travel.id);
-    if (message) {
-      setUnlinkError(message);
-      return;
-    }
-    setOpen(false);
-    setTimeout(() => onLinked?.([{ start: travel.start, end: travel.end }]), 150);
-  };
+  const RowEl = onOpenLinkedEvent ? "button" : "div";
 
   const openTask = (task: TaskItem) => {
     setOpen(false);
@@ -157,7 +150,11 @@ export function TravelDetailDialog({
       <TravelChangeSheet
         travel={travel}
         timeZone={timeZone}
-        onCancel={onClose}
+        // ×・閉じるは全体を閉じず、移動の詳細へ戻す（issue #1598）
+        onCancel={() => {
+          setChanging(false);
+          setOpen(true);
+        }}
         onSaved={(touched) => onLinked?.(touched)}
         onSearch={(mode) => onEditWithMode?.(mode)}
       />
@@ -172,6 +169,12 @@ export function TravelDetailDialog({
         weekStartsOn={weekStartsOn}
         onCancel={onClose}
         onLinked={(touched) => onLinked?.(touched)}
+        onUnlinked={() =>
+          onLinked?.([
+            { start: travel.start, end: travel.end },
+            ...(linkedEventRange ? [{ start: linkedEventRange.start, end: linkedEventRange.end }] : []),
+          ])
+        }
       />
     );
   }
@@ -281,14 +284,15 @@ export function TravelDetailDialog({
 
           {/*
             紐づく予定（issue #1105・#1573）。予定の表示画面の「紐づく移動」と同じ色帯の行にし、
-            予定名・日時・前後の区分を省略せず2段で見せる。付け替えは操作アコーディオンへ、
-            外すは右端のアイコンにする。
+            予定名・日時・前後の区分を省略せず2段で見せる。付け替え・外すは操作アコーディオンの
+            「予定を付け替える」へ置く（#1597）。
           */}
           {travel.linkedEventId ? (
             <div className="flex items-stretch gap-1">
-              <div
-                className="flex min-w-0 flex-1 items-center gap-3 border-l-[3px] py-2 pr-2 pl-3"
+              <RowEl
+                className="flex min-w-0 flex-1 text-left items-center gap-3 border-l-[3px] py-2 pr-2 pl-3"
                 style={{ borderLeftColor: tintedEventColors(linkedEventColor).accent }}
+                {...(onOpenLinkedEvent ? { type: "button" as const, onClick: onOpenLinkedEvent } : {})}
               >
                 <Link2 className="size-4 shrink-0 text-on-surface-variant" />
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -298,17 +302,8 @@ export function TravelDetailDialog({
                     {linkedEventRange && ` ・ ${formatTravelTime({ ...travel, start: linkedEventRange.start, end: linkedEventRange.end }, timeZone, linkedEventRange.allDay)}`}
                   </span>
                 </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="予定との紐づけを外す"
-                className="self-center"
-                disabled={readOnly}
-                onClick={unlink}
-              >
-                <Unlink className="size-4" />
-              </Button>
+                {onOpenLinkedEvent && <ChevronRight className="size-4 shrink-0 opacity-70" />}
+              </RowEl>
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-md border border-dashed border-outline-variant py-2 pr-2 pl-3">
@@ -319,7 +314,6 @@ export function TravelDetailDialog({
               </Button>
             </div>
           )}
-          {unlinkError && <p className="text-xs text-destructive">{unlinkError}</p>}
 
           {/* この移動に紐づいているタスク（issue #914）。出発前に確かめるものなど。 */}
           {linkedTasks.length > 0 && (
@@ -364,29 +358,26 @@ export function TravelDetailDialog({
             description={travel.linkedEventId ? "変更・付け替え・タスク" : "変更・紐づけ・タスク"}
             flat
           >
-            <div className="grid grid-cols-2 gap-2">
-              <ActionCard
-                icon={<Route className="size-4" />}
-                iconClassName="bg-travel-container text-on-travel-container"
-                title="移動方法・時間"
-                description="手段や所要時間を直す"
-                disabled={readOnly}
-                onClick={() => {
-                  setOpen(false);
-                  setTimeout(() => setChanging(true), 150);
-                }}
-              />
-              <ActionCard
-                icon={<Link2 className="size-4" />}
-                iconClassName="bg-surface-container-high text-primary"
-                title={travel.linkedEventId ? "予定を付け替える" : "予定と紐づける"}
-                description="別の予定と結ぶ"
-                disabled={readOnly}
-                onClick={startLinkEvent}
-              />
-            </div>
             <ActionCard
-              wide
+              icon={<Route className="size-4" />}
+              iconClassName="bg-travel-container text-on-travel-container"
+              title="移動方法・時間を変更"
+              description="手段や所要時間を直す"
+              disabled={readOnly}
+              onClick={() => {
+                setOpen(false);
+                setTimeout(() => setChanging(true), 150);
+              }}
+            />
+            <ActionCard
+              icon={<Link2 className="size-4" />}
+              iconClassName="bg-surface-container-high text-primary"
+              title={travel.linkedEventId ? "予定を付け替える" : "予定と紐づける"}
+              description={travel.linkedEventId ? "別の予定と結ぶ・紐づけを外す" : "予定と結ぶ"}
+              disabled={readOnly}
+              onClick={startLinkEvent}
+            />
+            <ActionCard
               icon={<TaskStageMark stage="BEFORE_START" className="h-4 w-5" />}
               iconClassName="bg-secondary-container text-on-secondary-container"
               title="タスクを登録"
@@ -431,7 +422,7 @@ function PlaceLink({ text, places, readOnly }: { text: string; places: PlaceItem
   );
 }
 
-/** 操作のカード。アイコン・太字の名前・説明の3段（予定の表示画面と同じ形）。 */
+/** 操作のカード。枠付きで、アイコン・太字の名前・説明の3段。押すと別の画面が開く（予定の表示画面と同じ形・issue #1597）。 */
 function ActionCard({
   icon,
   iconClassName,
@@ -439,7 +430,6 @@ function ActionCard({
   description,
   onClick,
   disabled,
-  wide = false,
 }: {
   icon: ReactNode;
   iconClassName: string;
@@ -447,17 +437,13 @@ function ActionCard({
   description: string;
   onClick: () => void;
   disabled?: boolean;
-  wide?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "relative flex items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
-        !wide && "min-w-0",
-      )}
+      className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38"
     >
       <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
         {icon}
@@ -466,7 +452,7 @@ function ActionCard({
         <span className="font-bold">{title}</span>
         <span className="type-body-small text-on-surface-variant">{description}</span>
       </span>
-      {wide && <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />}
+      <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
     </button>
   );
 }

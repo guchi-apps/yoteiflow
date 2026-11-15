@@ -23,3 +23,22 @@ describe("stationWalkMinutes", () => {
     assert.equal(stationWalkMinutes(null, [place({})]), 0);
   });
 });
+
+describe("stationWalkMinutes（複数駅・issue #1607）", () => {
+  const multi = place({
+    station: "高槻駅",
+    stationMinutes: 20,
+    stations: [
+      { name: "高槻駅", minutes: 20 },
+      { name: "高槻市駅", minutes: 15 },
+    ],
+  });
+  it("省略時は先頭の駅、指定した駅はその駅の徒歩", () => {
+    assert.equal(stationWalkMinutes("本社", [multi]), 20);
+    assert.equal(stationWalkMinutes("本社", [multi], "高槻市駅"), 15);
+  });
+  it("地点で探す（null）は0、登録に無い駅名は先頭", () => {
+    assert.equal(stationWalkMinutes("本社", [multi], null), 0);
+    assert.equal(stationWalkMinutes("本社", [multi], "茨木駅"), 20);
+  });
+});
