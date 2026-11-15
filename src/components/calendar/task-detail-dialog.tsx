@@ -2,7 +2,19 @@
 
 import { useState, type ReactNode } from "react";
 
-import { AlertTriangle, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CalendarDays,
+  ExternalLink,
+  Flag,
+  Link2,
+  NotebookText,
+  Pencil,
+  Repeat,
+  Tag,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -230,7 +242,7 @@ export function TaskDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-x-hidden overflow-y-auto sm:max-w-md">
+      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-x-hidden overflow-y-auto">
         {confirmingDelete && (
           <DeleteItemDialog
             item={{ kind: "task", task }}
@@ -239,36 +251,36 @@ export function TaskDetailDialog({
           />
         )}
 
-        <div className="absolute top-2 right-10 flex items-center">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="削除"
-            disabled={readOnly}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="削除"
+          className="absolute top-2 right-18"
+          disabled={readOnly}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="編集"
-            disabled={readOnly && !offlineEditable}
-            onClick={edit}
-          >
-            <Pencil className="size-4" />
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="編集"
+          className="absolute top-2 right-10"
+          disabled={readOnly && !offlineEditable}
+          onClick={edit}
+        >
+          <Pencil className="size-4" />
+        </Button>
 
         <DialogHeader>
-          <DialogTitle className={cn("pr-30", done && "text-on-surface-variant line-through")}>
+          <DialogTitle className={cn("pr-22", done && "text-on-surface-variant line-through")}>
             {task.title}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-w-0 flex-col gap-4 text-sm">
-          <div className="-my-1 flex flex-wrap items-center gap-x-6 gap-y-1 px-4 text-base select-none md:text-sm">
+        <div className="flex min-w-0 flex-col gap-3 text-sm">
+          <div className="-my-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-base select-none md:text-sm">
             <label className="flex min-h-11 items-center gap-3">
               <Checkbox
                 checked={done && !skipped}
@@ -291,11 +303,11 @@ export function TaskDetailDialog({
             )}
           </div>
 
-          {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
+          {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 
           {/* 完了・対応しないでは進捗の意味が無いため、切り替えを出さない（Notionの値は残る）。 */}
           {(task.canProgress || progressOptions !== null) && !done && (
-            <div className="px-4">
+            <div>
               <TagPicker
                 label="進捗"
                 options={progressOptions ?? []}
@@ -312,21 +324,21 @@ export function TaskDetailDialog({
 
           {task.due && (
             <DetailField
-              label="期限"
+              icon={<CalendarClock className="size-4" />}
               value={
                 dueLink
-                  ? `${formatTaskDate(task.due, task.hasTime, timeZone)}（予定に合わせて入る）`
-                  : formatTaskDate(task.due, task.hasTime, timeZone)
+                  ? `期限: ${formatTaskDate(task.due, task.hasTime, timeZone)}（予定に合わせて入る）`
+                  : `期限: ${formatTaskDate(task.due, task.hasTime, timeZone)}`
               }
             />
           )}
           {task.planned && (
             <DetailField
-              label="予定日"
+              icon={<CalendarDays className="size-4" />}
               value={
                 plannedLink
-                  ? `${formatTaskDate(task.planned, task.plannedHasTime, timeZone)}（予定に合わせて入る）`
-                  : formatTaskDate(task.planned, task.plannedHasTime, timeZone)
+                  ? `予定日: ${formatTaskDate(task.planned, task.plannedHasTime, timeZone)}（予定に合わせて入る）`
+                  : `予定日: ${formatTaskDate(task.planned, task.plannedHasTime, timeZone)}`
               }
             />
           )}
@@ -338,7 +350,7 @@ export function TaskDetailDialog({
           {/* 持ち物タスク（issue #1080）。対象の予定と、期限の基準の移動を示す。 */}
           {task.bring && (
             <DetailField
-              label="持ち物"
+              icon={<Link2 className="size-4" />}
               value={`「${task.bring.eventTitle}」の持ち物${
                 dueLink?.travelId ? `（期限の基準: ${dueLink.eventTitle} の出発）` : "（移動未設定）"
               }`}
@@ -346,7 +358,10 @@ export function TaskDetailDialog({
           )}
 
           {links.map((link) => (
-            <div key={link.id} className="flex min-w-0 flex-col gap-2 px-4">
+            <div
+              key={link.id}
+              className="flex min-w-0 flex-col gap-2 border-l-[3px] border-secondary-container py-1 pl-3"
+            >
               <span className="text-xs text-muted-foreground">
                 {taskLinkTargetLabel(link)}を予定に合わせる
               </span>
@@ -400,18 +415,18 @@ export function TaskDetailDialog({
             </div>
           ))}
 
-          {task.priority && <DetailField label="優先度" value={task.priority} />}
+          {task.priority && <DetailField icon={<Flag className="size-4" />} value={`優先度: ${task.priority}`} />}
           {task.recurrence && task.recurrence !== "なし" && (
-            <DetailField label="繰り返し" value={task.recurrence} />
+            <DetailField icon={<Repeat className="size-4" />} value={`繰り返し: ${task.recurrence}`} />
           )}
           {task.tags.length > 0 && (
-            <DetailField label="タグ">
+            <DetailField icon={<Tag className="size-4" />}>
               <TagChipList names={task.tags} options={tagOptions} />
             </DetailField>
           )}
           {/* 外部リンク（Morrowのメール詳細など。issue #1508）。素の <a> にして、Universal Linkに対応するアプリが入っていればアプリで開かせる。 */}
           {(task.externalLinks?.length ?? 0) > 0 && (
-            <DetailField label="リンク">
+            <DetailField icon={<ExternalLink className="size-4" />}>
               <ul className="flex flex-col gap-1">
                 {task.externalLinks?.map((link, index) => (
                   <li key={`${index}:${link.url}`} className="min-w-0">
@@ -432,7 +447,7 @@ export function TaskDetailDialog({
           {/* モーダル全体を1画面に収めるため、メモは高さを固定して中だけスクロールさせる（issue #1494）。 */}
           {task.memo && (
             <DetailField
-              label="メモ"
+              icon={<NotebookText className="size-4" />}
               value={task.memo}
               valueClassName="max-h-60 overflow-x-hidden overflow-y-auto"
             />
@@ -463,30 +478,34 @@ export function TaskDetailDialog({
   );
 }
 
-/** 見出しと中身の組。文字だけの項目は value、チップのように形のある項目は children で渡す。 */
+/** アイコン付きの行。予定・移動の詳細と同じ形（issue #1583）。文字だけの項目は value、形のある項目は children で渡す。 */
 function DetailField({
-  label,
+  icon,
   value,
   children,
   valueClassName,
 }: {
-  label: string;
+  icon: ReactNode;
   value?: string;
   children?: ReactNode;
   valueClassName?: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 px-4">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children ??
-        (value !== undefined &&
-          (valueClassName ? (
-            <div className={valueClassName}>
+    <div className="flex min-w-0 items-start gap-2">
+      <span className="mt-0.5 text-muted-foreground" aria-hidden>
+        {icon}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+                {children ??
+          (value !== undefined &&
+            (valueClassName ? (
+              <div className={valueClassName}>
+                <LinkifiedText as="span" text={value} />
+              </div>
+            ) : (
               <LinkifiedText as="span" text={value} />
-            </div>
-          ) : (
-            <LinkifiedText as="span" text={value} />
-          )))}
+            )))}
+      </div>
     </div>
   );
 }
