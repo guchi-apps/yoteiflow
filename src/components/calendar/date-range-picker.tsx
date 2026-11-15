@@ -52,8 +52,13 @@ export function DateRangePickerFields({
   allDay,
   follow = true,
   flat = false,
+  startLabel = "開始",
+  endLabel = "終了",
   onChange,
 }: {
+  /** 行・ダイアログに出す呼び名。移動は「出発」「到着」（issue #1605）。 */
+  startLabel?: string;
+  endLabel?: string;
   /** Googleカレンダー風の行（issue #1563）。枠・面を持たず「日付　時刻」を1行に出す。 */
   flat?: boolean;
   idPrefix: string;
@@ -94,12 +99,14 @@ export function DateRangePickerFields({
 
   return (
     <>
-      {field(`${idPrefix}-start`, "開始", start)}
-      {field(`${idPrefix}-end`, "終了", end)}
+      {field(`${idPrefix}-start`, startLabel, start)}
+      {field(`${idPrefix}-end`, endLabel, end)}
       {open && (
         <RangeDialog
           initial={initRange(start || deviceToday(allDay), end || start || deviceToday(allDay), allDay)}
           follow={follow}
+          startLabel={startLabel}
+          endLabel={endLabel}
           onCancel={() => setOpen(false)}
           onDone={(next) => {
             setOpen(false);
@@ -127,11 +134,15 @@ function shortDate(key: string): string {
 function RangeDialog({
   initial,
   follow,
+  startLabel,
+  endLabel,
   onCancel,
   onDone,
 }: {
   initial: RangeState;
   follow: boolean;
+  startLabel: string;
+  endLabel: string;
   onCancel: () => void;
   onDone: (value: RangeState) => void;
 }) {
@@ -176,9 +187,9 @@ function RangeDialog({
   // 帯を引くのは開始・終了が決まっていて日が違うときだけ（終了日を待っている間は開始日だけ塗る）。
   const banded = !state.pending && endDate > startDate;
   const hint = state.pending
-    ? "終了日を選んでください"
+    ? `${endLabel}日を選んでください`
     : state.rangeMode && startDate === endDate
-      ? "開始日を選んでください"
+      ? `${startLabel}日を選んでください`
       : null;
 
   const badge = endDayBadge(state.start, state.end);
@@ -235,7 +246,7 @@ function RangeDialog({
           )}
         >
           {multi ? <Check className="size-4" /> : <ArrowLeftRight className="size-4" />}
-          別の日を終了日にする
+          別の日を{endLabel}日にする
         </button>
         {hint && <p className="-mt-1 text-center text-xs font-bold text-primary">{hint}</p>}
 
@@ -316,7 +327,7 @@ function RangeDialog({
           ) : (
             <>
               <TimeRow
-                label="開始"
+                label={startLabel}
                 date={startDate}
                 time={timePart(state.start)}
                 active={activeRow === "start"}
@@ -324,7 +335,7 @@ function RangeDialog({
                 onTime={(time) => setState((s) => setStartTime(s, time, follow))}
               />
               <TimeRow
-                label="終了"
+                label={endLabel}
                 date={endDate}
                 badge={state.pending ? null : badge}
                 pending={state.pending}

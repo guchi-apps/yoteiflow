@@ -15,7 +15,7 @@ import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types
 import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
-import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
+import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, rememberInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { stationWalkMinutes } from "@/lib/station-walk";
@@ -41,6 +41,7 @@ import {
   type TravelSearchPurpose,
 } from "@/types/calendar";
 
+import { DateRangePickerFields } from "./date-range-picker";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventNotificationEditor } from "./event-notification-editor";
@@ -462,6 +463,37 @@ export function TravelForm({
     );
   };
 
+  /**
+   * 「Googleマップで経路を開く」を押したとき、いまの入力を覚えて共有拡張へ伝える（issue #1604）。
+   * 共有で戻った経路を、新しい移動ではなくこの入力（予定との紐づけ込み）へ反映するため。
+   * `<a>` は止めない（iOSがGoogleマップのアプリを開けるよう素のまま・#1225）ので印の送信は待たない。
+   */
+  const rememberGoogleSearch = () => {
+    if (!hasNativeTransit()) return;
+    const session = rememberTransitSession(
+      `${placeDisplayName(origin)}→${placeDisplayName(destination)}`,
+      {
+        travel: editing,
+        origin,
+        destination,
+        via,
+        mode,
+        departAt,
+        arriveAt,
+        note,
+        linkedEvent: draft.linkedEvent ?? null,
+        notification,
+        searchPurpose: purpose,
+        searchMarginMinutes: marginMinutes,
+        defaultArriveMargin: draft.defaultArriveMargin,
+        home: draft.home,
+      },
+      Date.now(),
+      "google",
+    );
+    rememberInNativeApp({ id: session.id, label: session.label, expiresAt: session.expiresAt, kind: "google" });
+  };
+
   // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
   const [lengthMinutes, setLengthMinutes] = useState<number | null>(null);
   const knownMinutes = routeMinutes ?? lengthMinutes;
@@ -494,18 +526,21 @@ export function TravelForm({
    * 候補を押したときは applyEstimate が直接 setDepartAt / setArriveAt を呼ぶため、
    * この経路は通らない（出どころが押した候補のまま残る）。
    */
-  const editTime = (side: TimeBasis, value: string) => {
+  /** 出発・到着をまとめて直す（範囲ピッカー用）。個別欄からの1側の変更も同じ経路を通し、前処理を1回だけ行う */
+  const editRange = (nextDepart: string, nextArrive: string) => {
     touch("times");
     // 直す前に両側が入っていれば、その長さを覚える（計算ボタンで使う）。反対側は自動では動かさない（手入力の所要時間を妨げない）
     if (routeMinutes === null && departAt && arriveAt) {
       const gap = (new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime()) / 60_000;
       if (Number.isFinite(gap) && gap > 0) setLengthMinutes(gap);
     }
-    if (side === "depart") setDepartAt(value);
-    else setArriveAt(value);
+    setDepartAt(nextDepart);
+    setArriveAt(nextArrive);
     // 手で直した時刻はGoogle由来の所要時間と混同しない。計算ボタンで求め直すと戻る
     setEstimateSource("MANUAL");
   };
+  const editTime = (side: TimeBasis, value: string) =>
+    side === "depart" ? editRange(value, arriveAt) : editRange(departAt, value);
   /** 「出発日時から計算」「到着日時から計算」。押した側を固定し、反対側を所要時間から求める */
   const calculateFrom = (side: TimeBasis) => {
     touch("times");
@@ -916,17 +951,17 @@ export function TravelForm({
           </FormRow>
         )}
 
-        {/* 行の間隔を増やさないよう、上下の行へ食い込ませて右端に置く。 */}
-        <div className="relative z-10 -my-4 flex justify-end pr-2">
+        {/* 入れ替えは頻度が低いため小さくし、右端の✕・地図ボタンと重ならない左のアイコン列の境目の線上に置く。 */}
+        <div className="relative z-10 -my-3 flex h-6 justify-start">
           <button
             type="button"
-            className="flex size-11 items-center justify-center rounded-md border border-outline-variant bg-surface-container-high text-on-surface-variant transition-[border-radius] active:rounded-sm disabled:opacity-38"
+            className="flex size-6 items-center justify-center rounded-full border border-outline-variant bg-surface-container-high text-on-surface-variant active:bg-surface-container-highest disabled:opacity-38"
             aria-label="出発地と目的地を入れ替える"
             title="出発地と目的地を入れ替える"
             disabled={!origin.trim() && !destination.trim()}
             onClick={swapEnds}
           >
-            <ArrowUpDown className="size-5" aria-hidden="true" />
+            <ArrowUpDown className="size-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -955,8 +990,27 @@ export function TravelForm({
 
         <FormRow icon={<Clock />}>
           <div className="flex flex-col gap-1">
-            <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
-            <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+            {departAt && arriveAt ? (
+              // 両方入っているときは、予定と同じ1枚の「日時を設定」画面で選ぶ（issue #1605）。
+              // 出発を直しても到着は自動で動かさない（#1203）ので follow は切る。
+              <DateRangePickerFields
+                idPrefix="travel"
+                flat
+                start={departAt}
+                end={arriveAt}
+                allDay={false}
+                follow={false}
+                startLabel="出発"
+                endLabel="到着"
+                onChange={editRange}
+              />
+            ) : (
+              // 片側だけのあいだは従来の個別欄のまま（所要時間から反対側を求める流れ・#1209）
+              <>
+                <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
+                <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+              </>
+            )}
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 type="button"
@@ -998,6 +1052,7 @@ export function TravelForm({
           <FormRow icon={<ExternalLink />}>
             <a
               href={mapsLink}
+              onClick={rememberGoogleSearch}
               target="_blank"
               rel="noopener noreferrer"
               className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
