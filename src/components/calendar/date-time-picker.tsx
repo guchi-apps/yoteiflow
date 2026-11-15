@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fieldLabel, fieldShell } from "@/components/ui/field";
 import {
+  formatPickerDateLabel,
   formatPickerLabel,
   joinPickerValue,
   joinTime,
@@ -40,6 +41,7 @@ export function DateTimePickerField({
   onChange,
   allowNoTime = false,
   defaultTime = "09:00",
+  dateOnly = false,
 }: {
   id: string;
   label: string;
@@ -47,6 +49,8 @@ export function DateTimePickerField({
   onChange: (value: string) => void;
   allowNoTime?: boolean;
   defaultTime?: string;
+  /** 終日の欄用。日付だけを選び、`YYYY-MM-DD` を返す（時刻の行・表示を出さない）。 */
+  dateOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const parsed = parsePickerValue(value);
@@ -60,7 +64,7 @@ export function DateTimePickerField({
         className={cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")}
       >
         <span className={fieldLabel}>{label}</span>
-        <span className="truncate text-base text-foreground md:text-sm">{formatPickerLabel(parsed)}</span>
+        <span className="truncate text-base text-foreground md:text-sm">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
       </button>
       {open && (
         <PickerDialog
@@ -68,10 +72,11 @@ export function DateTimePickerField({
           initial={parsed}
           allowNoTime={allowNoTime}
           defaultTime={defaultTime}
+          dateOnly={dateOnly}
           onCancel={() => setOpen(false)}
           onDone={(next) => {
             setOpen(false);
-            onChange(joinPickerValue(next, { allowNoTime, defaultTime }));
+            onChange(dateOnly ? next.date : joinPickerValue(next, { allowNoTime, defaultTime }));
           }}
         />
       )}
@@ -84,6 +89,7 @@ function PickerDialog({
   initial,
   allowNoTime,
   defaultTime,
+  dateOnly,
   onCancel,
   onDone,
 }: {
@@ -91,6 +97,7 @@ function PickerDialog({
   initial: PickerValue;
   allowNoTime: boolean;
   defaultTime: string;
+  dateOnly: boolean;
   onCancel: () => void;
   onDone: (value: PickerValue) => void;
 }) {
@@ -128,7 +135,7 @@ function PickerDialog({
     <Dialog open onOpenChange={(next) => !next && onCancel()}>
       <DialogContent className="max-w-[calc(100%-2rem)] gap-3 p-4 sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{panel === "time" ? `${title}の時刻` : `${title}の日時`}</DialogTitle>
+          <DialogTitle>{panel === "time" ? `${title}の時刻` : dateOnly ? `${title}の日付` : `${title}の日時`}</DialogTitle>
         </DialogHeader>
 
         {panel === "calendar" ? (
@@ -204,6 +211,7 @@ function PickerDialog({
               })}
             </div>
 
+            {!dateOnly && (
             <button
               type="button"
               onClick={openTime}
@@ -215,6 +223,7 @@ function PickerDialog({
                 <ChevronRight className="size-4" />
               </span>
             </button>
+            )}
 
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  formatPickerDateLabel,
   formatPickerLabel,
   joinPickerValue,
   monthGrid,
@@ -61,4 +62,10 @@ test("splitTime と wrapIndex は時0〜23・分0〜59の循環に使える", ()
 test("formatPickerLabel は時刻なしを ー:ー と出す", () => {
   assert.equal(formatPickerLabel({ date: "2026-11-15", time: "09:00" }), "2026年11月15日（日） 09:00");
   assert.equal(formatPickerLabel({ date: "2026-11-15", time: null }), "2026年11月15日（日） ー:ー");
+});
+
+test("formatPickerDateLabel は時刻を添えない", () => {
+  assert.equal(formatPickerDateLabel({ date: "2026-11-15", time: null }), "2026年11月15日（日）");
+  assert.equal(formatPickerDateLabel({ date: "2026-11-15", time: "09:00" }), "2026年11月15日（日）");
+  assert.equal(formatPickerDateLabel({ date: "", time: null }), "未選択");
 });
