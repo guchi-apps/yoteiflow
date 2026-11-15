@@ -97,6 +97,7 @@ export async function POST(request: Request) {
       start,
       end,
       location: body.location?.trim() || null,
+      description: body.description?.trim() || null,
       timeZone,
       tentative: body.tentative ?? false,
     });

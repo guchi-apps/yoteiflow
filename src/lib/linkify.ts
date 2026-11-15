@@ -12,9 +12,30 @@
  * 境目がそこで決まる。
  */
 
-export type TextSegment = { type: "text"; value: string } | { type: "link"; url: string };
+/** `label` は表示用の文字列（省略時は `url` をそのまま見せる）。 */
+export type TextSegment = { type: "text"; value: string } | { type: "link"; url: string; label?: string };
 
-const URL_PATTERN = /(?<![\w])https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
+type LinkSegment = Extract<TextSegment, { type: "link" }>;
+
+/** リンクの飛び先。表示用の `label` ではなく常に `url`（Morrowの相対パスは補った絶対URL）を使う（issue #1538）。 */
+export function linkHref(segment: LinkSegment): string {
+  return segment.url;
+}
+
+/** リンクの表示テキスト。 */
+export function linkText(segment: LinkSegment): string {
+  return segment.label ?? segment.url;
+}
+
+/**
+ * Morrow（メール連携）がタスク・予定のメモへ書く「Morrowで開く: /mail/<メールID>」は、サイトのパスだけで
+ * ホストを持たないためそのままではリンクにならない（issue #1524）。直前の「Morrowで開く:」を手掛かりに
+ * このパスだけをMorrowの本番URLへ補ってリンクにする（任意の相対パスはリンク化しない）。
+ */
+export const MORROW_BASE_URL = "https://aide-bot.gucchii.com";
+
+const URL_PATTERN =
+  /(?<=Morrowで開く[:：][ \t]*)\/mail\/[\w\-.~%]+|(?<![\w])https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
 
 /**
  * URLの直後に地続きで来たASCIIの句読点・括弧類のうち、URL本体ではないものだけを切り離す。
@@ -65,6 +86,12 @@ export function splitTextWithLinks(text: string): TextSegment[] {
   for (const match of text.matchAll(URL_PATTERN)) {
     const start = match.index ?? 0;
     const raw = match[0];
+    if (raw.startsWith("/")) {
+      if (start > lastIndex) segments.push({ type: "text", value: text.slice(lastIndex, start) });
+      segments.push({ type: "link", url: `${MORROW_BASE_URL}${raw}`, label: raw });
+      lastIndex = start + raw.length;
+      continue;
+    }
     const url = trimTrailingPunctuation(raw);
     // 記号だけの断片（プロトコルの後に実質何も残らない）はURL扱いにしない。
     if (!url || !/^https?:\/\/./i.test(url)) continue;

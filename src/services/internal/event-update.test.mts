@@ -107,3 +107,15 @@ test("allDayとendDateの同時指定は400（issue #813）", () => {
   const r = mergeInternalEventUpdate(timed, { allDay: true, endDate: "2026-09-08" }, "Asia/Tokyo");
   assert.ok(!r.ok && r.status === 400 && r.error === "endDate cannot be combined with allDay");
 });
+
+test("descriptionは省略で触らず、文字列で書き、空文字で消す（issue #1530）", () => {
+  const keep = mergeInternalEventUpdate(timed, { title: "x" }, "Asia/Tokyo");
+  assert.ok(keep.ok);
+  assert.equal(keep.input.description, undefined);
+  const set = mergeInternalEventUpdate(timed, { description: " 持ち物: 保険証 " }, "Asia/Tokyo");
+  assert.ok(set.ok);
+  assert.equal(set.input.description, "持ち物: 保険証");
+  const clear = mergeInternalEventUpdate(timed, { description: "" }, "Asia/Tokyo");
+  assert.ok(clear.ok);
+  assert.equal(clear.input.description, "");
+});

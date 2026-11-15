@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { ExternalLink } from "lucide-react";
 
-import { splitTextWithLinks } from "@/lib/linkify";
+import { linkHref, linkText, splitTextWithLinks } from "@/lib/linkify";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,12 +28,12 @@ export function LinkifiedText({
         segment.type === "link" ? (
           <a
             key={index}
-            href={segment.url}
+            href={linkHref(segment)}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-xs text-primary underline decoration-primary/40 underline-offset-3 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2"
           >
-            {segment.url}
+            {linkText(segment)}
             <ExternalLink className="ml-1 inline size-3 shrink-0 align-[-1px]" />
           </a>
         ) : (

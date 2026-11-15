@@ -367,15 +367,13 @@ export function EventForm({
             <>
               <DateTimeInput
                 id="event-start"
-                dateLabel="開始日"
-                timeLabel="開始時刻"
+                label="開始"
                 value={start}
                 onChange={changeStart}
               />
               <DateTimeInput
                 id="event-end"
-                dateLabel="終了日"
-                timeLabel="終了時刻"
+                label="終了"
                 value={end}
                 onChange={setEnd}
               />

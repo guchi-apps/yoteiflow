@@ -956,15 +956,13 @@ export function TravelForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
           <DateTimeInput
             id="travel-depart"
-            dateLabel="出発日"
-            timeLabel="出発時刻"
+            label="出発"
             value={departAt}
             onChange={editDepartAt}
           />
           <DateTimeInput
             id="travel-arrive"
-            dateLabel="到着日"
-            timeLabel="到着時刻"
+            label="到着"
             value={arriveAt}
             onChange={editArriveAt}
           />

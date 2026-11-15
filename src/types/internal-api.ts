@@ -189,6 +189,8 @@ export type InternalCreateEventRequest = {
   startTime?: string | null;
   endTime?: string | null;
   location?: string | null;
+  /** メモ（Googleの予定の説明）。省略時は説明なし */
+  description?: string | null;
   /** 省略時は予定新規作成の既定の保存先（CalendarSetting.isCreateDefault） */
   calendarId?: string | null;
   /**
@@ -228,5 +230,7 @@ export type InternalUpdateEventRequest = {
   allDay?: boolean;
   /** 空文字で消す */
   location?: string | null;
+  /** メモ（Googleの予定の説明）。空文字で消す。省略で触らない */
+  description?: string | null;
   tentative?: boolean;
 };
