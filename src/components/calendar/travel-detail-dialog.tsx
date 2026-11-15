@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 import { Bell, CalendarClock, ChevronRight, CloudOff, ExternalLink, Link2, MapPin, Pencil, Route, Trash2, Unlink } from "lucide-react";
 
+import { Accordion } from "@/components/ui/accordion";
+
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { eventLeadLabel } from "@/lib/event-notification";
 import { mapLink } from "@/lib/map-link";
@@ -29,6 +31,7 @@ import {
   type TravelMode,
 } from "@/types/calendar";
 
+import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelChangeSheet } from "./travel-change-sheet";
@@ -59,6 +62,7 @@ export function TravelDetailDialog({
   onCreateTask,
   linkedEventTitle,
   linkedEventRange,
+  linkedEventColor = null,
   weekStartsOn = 0,
   places = [],
 }: {
@@ -83,6 +87,8 @@ export function TravelDetailDialog({
   linkedEventTitle?: string | null;
   /** 紐づく予定の日時。取れないとき（表示範囲外など）は前後を断定しない（issue #1137）。 */
   linkedEventRange?: { start: string; end: string; allDay: boolean } | null;
+  /** 紐づく予定のカレンダー色。色帯に使う。取れないときは null。 */
+  linkedEventColor?: string | null;
   weekStartsOn?: number;
   /** 場所DB。座標を持つ地点は座標でGoogleマップを開く。 */
   places?: PlaceItem[];
@@ -182,7 +188,7 @@ export function TravelDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
         {confirmingDelete && (
           <DeleteItemDialog
             item={{ kind: "travel", travel }}
@@ -268,25 +274,46 @@ export function TravelDetailDialog({
             </DetailRow>
           )}
 
-          {/* 紐づく予定（issue #1105）。後からでも結べ、付け替え・外すこともできる。 */}
-          <DetailRow icon={<Link2 className="size-4" />}>
-            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">
-                {travel.linkedEventId
-                  ? `${TRAVEL_RELATION_LABELS[travelRelation(travel, linkedEventRange)]}: ${linkedEventTitle ?? "予定（表示範囲外）"}`
-                  : "予定とは紐づいていません"}
-              </span>
-              <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkEvent}>
-                {travel.linkedEventId ? "付け替える" : "予定と紐づける"}
+          {/*
+            紐づく予定（issue #1105・#1573）。予定の表示画面の「紐づく移動」と同じ色帯の行にし、
+            予定名・日時・前後の区分を省略せず2段で見せる。付け替えは操作アコーディオンへ、
+            外すは右端のアイコンにする。
+          */}
+          {travel.linkedEventId ? (
+            <div className="flex items-stretch gap-1">
+              <div
+                className="flex min-w-0 flex-1 items-center gap-3 border-l-[3px] py-2 pr-2 pl-3"
+                style={{ borderLeftColor: tintedEventColors(linkedEventColor).accent }}
+              >
+                <Link2 className="size-4 shrink-0 text-on-surface-variant" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-bold break-words">{linkedEventTitle ?? "予定（表示範囲外）"}</span>
+                  <span className="type-body-small text-on-surface-variant">
+                    {TRAVEL_RELATION_LABELS[travelRelation(travel, linkedEventRange)]}
+                    {linkedEventRange && ` ・ ${formatTravelTime({ ...travel, start: linkedEventRange.start, end: linkedEventRange.end }, timeZone, linkedEventRange.allDay)}`}
+                  </span>
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="予定との紐づけを外す"
+                className="self-center"
+                disabled={readOnly}
+                onClick={unlink}
+              >
+                <Unlink className="size-4" />
               </Button>
-              {travel.linkedEventId && (
-                <Button variant="ghost" size="sm" disabled={readOnly} onClick={unlink}>
-                  <Unlink className="size-4" />
-                  外す
-                </Button>
-              )}
-            </span>
-          </DetailRow>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-md border border-dashed border-outline-variant py-2 pr-2 pl-3">
+              <Link2 className="size-4 shrink-0 text-on-surface-variant" />
+              <span className="min-w-0 flex-1 text-on-surface-variant">予定とは紐づいていません</span>
+              <Button variant="outline" size="sm" disabled={readOnly} onClick={startLinkEvent}>
+                予定と紐づける
+              </Button>
+            </div>
+          )}
           {unlinkError && <p className="text-xs text-destructive">{unlinkError}</p>}
 
           {/* この移動に紐づいているタスク（issue #914）。出発前に確かめるものなど。 */}
@@ -301,8 +328,7 @@ export function TravelDetailDialog({
                     key={task.id}
                     type="button"
                     onClick={() => openTask(task)}
-                    className="flex items-center gap-2 rounded-md border border-secondary-container bg-secondary-container/40 py-1.5 pr-2.5 text-left text-xs text-on-surface"
-                    style={{ borderLeftWidth: "3px", paddingLeft: "8px" }}
+                    className="flex items-center gap-3 border-l-[3px] border-secondary-container py-2 pr-2 pl-3 text-left text-sm text-on-surface"
                   >
                     <TaskStageMark
                       stage={links[0].stage}
@@ -327,30 +353,43 @@ export function TravelDetailDialog({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={readOnly}
-              onClick={() => {
-                setOpen(false);
-                setTimeout(() => setChanging(true), 150);
-              }}
-            >
-              <Route className="size-4" />
-              移動方法・時間を変更
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-secondary-container text-on-secondary-container"
+          {/* 操作は既定で閉じたアコーディオンの中にカードで置く（予定の表示画面と同じ・issue #1573）。 */}
+          <Accordion
+            title="移動の操作"
+            description={travel.linkedEventId ? "変更・付け替え・タスク" : "変更・紐づけ・タスク"}
+            flat
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <ActionCard
+                icon={<Route className="size-4" />}
+                iconClassName="bg-travel-container text-on-travel-container"
+                title="移動方法・時間"
+                description="手段や所要時間を直す"
+                disabled={readOnly}
+                onClick={() => {
+                  setOpen(false);
+                  setTimeout(() => setChanging(true), 150);
+                }}
+              />
+              <ActionCard
+                icon={<Link2 className="size-4" />}
+                iconClassName="bg-surface-container-high text-primary"
+                title={travel.linkedEventId ? "予定を付け替える" : "予定と紐づける"}
+                description="別の予定と結ぶ"
+                disabled={readOnly}
+                onClick={startLinkEvent}
+              />
+            </div>
+            <ActionCard
+              wide
+              icon={<TaskStageMark stage="BEFORE_START" className="h-4 w-5" />}
+              iconClassName="bg-secondary-container text-on-secondary-container"
+              title="タスクを登録"
+              description="出発・到着に合わせてやることを置く"
               disabled={readOnly}
               onClick={linkTask}
-            >
-              <TaskStageMark stage="BEFORE_START" className="h-4 w-5 text-on-secondary-container" />
-              タスクを登録
-            </Button>
-          </div>
+            />
+          </Accordion>
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
         </div>
@@ -387,6 +426,46 @@ function PlaceLink({ text, places, readOnly }: { text: string; places: PlaceItem
   );
 }
 
+/** 操作のカード。アイコン・太字の名前・説明の3段（予定の表示画面と同じ形）。 */
+function ActionCard({
+  icon,
+  iconClassName,
+  title,
+  description,
+  onClick,
+  disabled,
+  wide = false,
+}: {
+  icon: ReactNode;
+  iconClassName: string;
+  title: string;
+  description: string;
+  onClick: () => void;
+  disabled?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "relative flex items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
+        !wide && "min-w-0",
+      )}
+    >
+      <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-bold">{title}</span>
+        <span className="type-body-small text-on-surface-variant">{description}</span>
+      </span>
+      {wide && <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />}
+    </button>
+  );
+}
+
 function DetailRow({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-start gap-2">
@@ -397,7 +476,7 @@ function DetailRow({ icon, children }: { icon: ReactNode; children: ReactNode })
 }
 
 /** 「2026年8月15日 8:20 – 9:00」。日をまたぐ移動は到着側にも日付を添える。 */
-export function formatTravelTime(travel: TravelItem, timeZone: string): string {
+export function formatTravelTime(travel: TravelItem, timeZone: string, allDay = false): string {
   const date = (iso: string) =>
     new Intl.DateTimeFormat("ja-JP", {
       timeZone,
@@ -416,6 +495,8 @@ export function formatTravelTime(travel: TravelItem, timeZone: string): string {
 
   const startDate = date(travel.start);
   const endDate = date(travel.end);
+
+  if (allDay) return startDate === endDate ? `${startDate}（終日）` : `${startDate} – ${endDate}`;
 
   return startDate === endDate
     ? `${startDate} ${time(travel.start)} – ${time(travel.end)}`

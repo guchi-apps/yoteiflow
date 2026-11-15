@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -163,8 +164,28 @@ export function BringItemsSection({
   if (tasks === null || (tasks.length === 0 && readOnly)) return null;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {tasks.length > 0 && <span className="text-xs text-muted-foreground">持ち物</span>}
+    <Accordion
+      flat
+      defaultOpen
+      forceOpen={adding}
+      title="持ち物"
+      description={tasks.length > 0 ? `${tasks.length}件` : undefined}
+      action={
+        !readOnly ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="持ち物を追加"
+            onClick={() => setAdding(true)}
+          >
+            <Plus className="size-4" />
+          </Button>
+        ) : undefined
+      }
+    >
+      {tasks.length === 0 && !adding && (
+        <p className="text-xs text-on-surface-variant">持ち物はまだありません。右上の＋で追加できます。</p>
+      )}
 
       {tasks.map((task) => {
         const departure = task.links.find((link) => link.target === "DUE" && link.travelId);
@@ -231,38 +252,38 @@ export function BringItemsSection({
         </div>
       )}
 
-      {!readOnly &&
-        (adding ? (
-          <div className="flex items-center gap-2">
-            <Input
-              value={name}
-              autoFocus
-              placeholder="持ち物の名前"
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void add();
-                }
-              }}
-            />
-            <Button size="sm" disabled={busy || !name.trim()} onClick={add}>
-              追加
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-fit"
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="size-4" />
-            持ち物を追加
+      {!readOnly && adding && (
+        <div className="flex items-center gap-2">
+          <Input
+            value={name}
+            autoFocus
+            placeholder="持ち物の名前"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void add();
+              }
+            }}
+          />
+          <Button size="sm" disabled={busy || !name.trim()} onClick={add}>
+            追加
           </Button>
-        ))}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setAdding(false);
+              setName("");
+            }}
+          >
+            やめる
+          </Button>
+        </div>
+      )}
 
       {error && <p className="text-xs text-error">{error}</p>}
-    </div>
+    </Accordion>
   );
 }

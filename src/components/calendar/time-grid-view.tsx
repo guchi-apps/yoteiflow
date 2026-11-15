@@ -2064,9 +2064,7 @@ function NowLine({
   const todayKey = utils.todayKey();
   const todayIndex = days.indexOf(todayKey);
 
-  // 表示中の期間に今日が含まれないときは、線を引く意味がない。
-  if (todayIndex < 0) return null;
-
+  // 今日が表示範囲に無くても、現在の時刻帯は読めるよう線だけ引く（丸は今日の列があるときだけ）。
   const minutes = utils.minutesFromMidnight(iso);
   const top = (minutes / MINUTES_PER_DAY) * gridHeight;
 
@@ -2078,10 +2076,12 @@ function NowLine({
 
       <span className="absolute right-0 left-12 block h-px bg-primary" />
 
-      <span
-        className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
-        style={{ left: `calc(3rem + (100% - 3rem) * ${(todayIndex + 0.5) / days.length})` }}
-      />
+      {todayIndex >= 0 && (
+        <span
+          className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
+          style={{ left: `calc(3rem + (100% - 3rem) * ${(todayIndex + 0.5) / days.length})` }}
+        />
+      )}
     </div>
   );
 }

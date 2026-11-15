@@ -3,14 +3,13 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { AlignLeft, Bell, BellOff, CalendarDays, Clock, MapPin, Repeat } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
-import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -19,7 +18,7 @@ import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { FormRow } from "./event-form-row";
-import { EventNotificationDialog } from "./event-notification-dialog";
+import { EventNotificationEditor } from "./event-notification-editor";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { TravelEntryHint } from "./travel-entry-hint";
@@ -112,7 +111,6 @@ export function EventForm({
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
     editing?.notification ?? draft.notification ?? null,
   );
-  const [editingNotification, setEditingNotification] = useState(false);
   // 保存先に移動カレンダーを利用者が選び直したか（issue #895）。値で判定すると、複製の
   // 引き継ぎや既定の保存先が移動カレンダーのときも入口が出てしまうため、選んだ操作で立てる。
   const [pickedTravel, setPickedTravel] = useState(draft.pickedTravel ?? false);
@@ -292,7 +290,7 @@ export function EventForm({
           （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
           中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
       <div className="flex min-w-0 flex-col">
-        {/* タイトルは枠も面も持たない大きな文字（Googleカレンダー風・issue #1563）。 */}
+        {/* タイトルは枠も面も持たない文字（Googleカレンダー風・issue #1563）。大きさは他の欄・詳細画面と同じ（issue #1568）。 */}
         <input
           id="event-title"
           aria-label="タイトル"
@@ -300,35 +298,22 @@ export function EventForm({
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           autoFocus={autoFocusTitle}
-          className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-2xl text-foreground outline-none placeholder:text-muted-foreground"
+          className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
-
-        {editingNotification && (
-          <EventNotificationDialog
-            title={title || "この予定"}
-            initial={notification}
-            onCancel={() => setEditingNotification(false)}
-            onSaved={(next) => {
-              setEditingNotification(false);
-              setNotification(next);
-            }}
-          />
-        )}
 
         <FormRow icon={<Clock />}>
           {/*
-            終日・仮の予定（issue #688・#739）。仮の予定はGoogle Calendarの status をそのまま使う
+            終日・仮予定（issue #688・#739・#1568）。仮予定はGoogle Calendar の status をそのまま使う
             （DaySpan独自のDBは持たない）。まだ本決まりでない予定を削除せず区別して置くため。
+            チェックボックスではなく、押すと色が変わるカード型のトグルにする。
           */}
-          <div className="flex flex-wrap items-center gap-x-6">
-            <label className="flex min-h-11 items-center gap-3 text-base select-none md:text-sm">
-              <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
+          <div className="mb-1 flex flex-wrap items-center gap-2 py-1">
+            <ToggleCard pressed={allDay} onToggle={() => toggleAllDay(!allDay)}>
               終日
-            </label>
-            <label className="flex min-h-11 items-center gap-3 text-base select-none md:text-sm">
-              <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
-              仮の予定
-            </label>
+            </ToggleCard>
+            <ToggleCard pressed={tentative} onToggle={() => setTentative(!tentative)}>
+              仮予定
+            </ToggleCard>
           </div>
           {/* 開始・終了のどちらを押しても、同じ1枚の「日時を設定」画面が開く（issue #1551）。 */}
           <DateRangePickerFields
@@ -347,7 +332,7 @@ export function EventForm({
           />
         </FormRow>
 
-        <FormRow icon={<CalendarDays />}>
+        <FormRow icon={<CalendarDays />} className="items-center">
           <CalendarChipSelect
             flat
             label="保存先カレンダー"
@@ -374,32 +359,18 @@ export function EventForm({
         {/*
           予定ごとの通知設定（issue #708）。新規作成・既存の編集どちらもこのフォームから選ぶ
           （表示画面には状態だけを出す・issue #834）。簡易入力から移ってきたときは出さない
-          （issue #739）。終日は通知の対象外（event-detail-dialog.tsxと同じ判断）。
+          （issue #739）。終日も設定できる（issue #1568。当日9:00を基準に「◯分前」を数える）。
           新規作成で繰り返しを選んでいる間は保存後のeventIdが「シリーズ親ID」になり、
           展開後の1回分のIDとは異なるため設定できない（編集時はRecurrenceFieldsを出さず
           recurrenceが動かないため、このガードは常にfalseで副作用なく共存する）。
         */}
-        {!allDay && !draft.fromQuick && (
-          <FormRow icon={notification?.enabled ? <Bell /> : <BellOff />}>
-            <div className="flex min-h-11 flex-wrap items-center gap-x-3">
-              <button
-                type="button"
-                disabled={recurrence.frequency !== "none"}
-                onClick={() => setEditingNotification(true)}
-                className={cn(
-                  "text-left text-base md:text-sm disabled:opacity-38",
-                  notification?.enabled ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {eventNotificationSummary(notification)}
-              </button>
-              {recurrence.frequency !== "none" && (
-                <span className="type-label-small text-on-surface-variant">
-                  繰り返し予定は保存してから設定できます
-                </span>
-              )}
-            </div>
-          </FormRow>
+        {!draft.fromQuick && (
+          <EventNotificationEditor
+            value={notification}
+            onChange={setNotification}
+            disabled={recurrence.frequency !== "none"}
+            hint={recurrence.frequency !== "none" ? "繰り返し予定は保存してから設定できます" : undefined}
+          />
         )}
 
         {!editing && (
@@ -478,4 +449,32 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     tentative: event.tentative,
     notification: event.notification ?? null,
   };
+}
+
+/** 終日・仮予定の選択カード（issue #1568）。押すと色が変わり、選択中だと分かる。 */
+function ToggleCard({
+  pressed,
+  onToggle,
+  children,
+}: {
+  pressed: boolean;
+  onToggle: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onToggle}
+      className={cn(
+        "min-h-10 rounded-lg border px-4 text-sm transition-colors select-none",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        pressed
+          ? "border-primary-container bg-primary-container font-bold text-on-primary-container"
+          : "border-outline text-foreground hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
+  );
 }

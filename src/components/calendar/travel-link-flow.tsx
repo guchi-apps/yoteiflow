@@ -51,7 +51,10 @@ export function TravelLinkFlow({
   weekStartsOn = 0,
   onCancel,
   onLinked,
+  onCreateNew,
 }: {
+  /** 渡すと選ぶ画面の先頭に「新しい移動を作る」を出す（issue #1567。予定側のみ）。 */
+  onCreateNew?: () => void;
   side: TravelLinkSide;
   timeZone: string;
   weekStartsOn?: number;
@@ -70,10 +73,17 @@ export function TravelLinkFlow({
         weekStartsOn={weekStartsOn}
         initialDate={dateKeyOf(side.kind === "event" ? side.event.start : side.travel.start, timeZone)}
         kinds={side.kind === "event" ? "travel" : "event"}
-        title={side.kind === "event" ? "紐づける移動を選ぶ" : "紐づける予定を選ぶ"}
+        title={side.kind === "event" ? (onCreateNew ? "移動を登録" : "紐づける移動を選ぶ") : "紐づける予定を選ぶ"}
+        createNew={
+          side.kind === "event" && onCreateNew
+            ? { label: "新しい移動を作る", onClick: onCreateNew }
+            : undefined
+        }
         description={
           side.kind === "event"
-            ? "この予定に結ぶ移動を押してください。"
+            ? onCreateNew
+              ? "新しく作るか、この予定に結ぶ既存の移動を押してください。"
+              : "この予定に結ぶ移動を押してください。"
             : "この移動に結ぶ予定を押してください。"
         }
         onCancel={onCancel}
