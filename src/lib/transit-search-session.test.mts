@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 
 import { applySharedRoute, isTransitSessionId, matchTransitSession, type TransitSearchSession } from "@/lib/transit-search-session";
 import type { TravelItem } from "@/types/calendar";
@@ -81,4 +81,15 @@ describe("applySharedRoute", () => {
     const draft = applySharedRoute(session, { ...route, departAt: "2026-11-03T13:20", arriveAt: "2026-11-03T13:38" });
     assert.match(draft.notice, /日付を確かめて/);
   });
+});
+
+test("kind が違う印は取り出さない・旧い保存値は yahoo 扱い（issue #1604）", () => {
+  const draft = { origin: "A", destination: "B", mode: "CAR", departAt: "2026-10-06T09:00", arriveAt: "2026-10-06T09:30" };
+  const id = "0b8f3c2e-1111-4222-8333-944445555666";
+  const google = JSON.stringify({ id, kind: "google", label: "A→B", draft, expiresAt: 2_000 });
+  assert.equal(matchTransitSession(google, id, 1_000, "yahoo"), null);
+  assert.ok(matchTransitSession(google, id, 1_000, "google"));
+  const legacy = JSON.stringify({ id, label: "A→B", draft, expiresAt: 2_000 });
+  assert.ok(matchTransitSession(legacy, id, 1_000));
+  assert.equal(matchTransitSession(legacy, id, 1_000, "google"), null);
 });

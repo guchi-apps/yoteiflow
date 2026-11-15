@@ -120,8 +120,10 @@ final class ShareImportViewModel: ObservableObject {
 
     /// Yahoo!の経路（日時あり）を、待っている下書きへ反映できるか（#1330）。反映は本体で確かめてから保存する
     var canApplyToSession: Bool {
-        guard let item, transitSession != nil else { return false }
-        return item.source == "yahoo_transit" && item.isRoute && effectiveRegistrable
+        guard let item, let session = transitSession else { return false }
+        // 共有元と印の種類が一致するときだけ（無関係な共有を、待っている下書きへ巻き込まない・issue #1604）
+        if item.source == "google_maps" { return session.kind == "google" && item.isRoute && canProceed }
+        return item.source == "yahoo_transit" && session.kind == "yahoo" && item.isRoute && effectiveRegistrable
     }
 
     /// 主ボタンの文言。下書きが待っていれば「『…』に反映」、直接登録できるものは「登録」、それ以外は本体アプリで続ける

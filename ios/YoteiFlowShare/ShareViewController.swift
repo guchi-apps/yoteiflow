@@ -96,7 +96,8 @@ final class ShareViewController: UIViewController {
         if model.hasCandidateChoice && model.selectedCandidate == nil { return }
         // 移動の入力から検索して戻ってきた経路は、その下書きへ反映する（本体で確かめてから保存・#1330）
         if model.canApplyToSession, let session = model.transitSession {
-            handOffToApp(item, link: true, session: session.id)
+            // Googleマップは日時が無いため link にせず、session だけ付けて本体で再取得する（issue #1604）
+            handOffToApp(item, link: item.source != "google_maps", session: session.id)
             return
         }
         if model.effectiveRegistrable {
@@ -158,6 +159,8 @@ final class ShareViewController: UIViewController {
             query["url"] = item.sourceUrl
             // Googleマップの経路は、本体で日時・予測所要時間を再取得し、候補が複数なら選ばせる（issue #1160）
             query["resolve"] = item.source == "google_maps" && !link ? "1" : nil
+            // Googleマップの経路を待っていた下書きへ反映するときの印（Yahoo!は下の link の中で付ける）
+            if item.source == "google_maps", !link { query["session"] = session }
             // 既存の予定に紐づけて追加（issue #1128）。本体で予定を選び、日付は予定の日へ合わせる
             if link, let startAt = model.selectedCandidate?.startAt ?? item.startAt, let endAt = model.selectedCandidate?.endAt ?? item.endAt {
                 query["link"] = "1"

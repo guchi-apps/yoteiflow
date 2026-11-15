@@ -15,7 +15,7 @@ import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types
 import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
-import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
+import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, rememberInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { stationWalkMinutes } from "@/lib/station-walk";
@@ -443,6 +443,37 @@ export function TravelForm({
         session: { id: session.id, label: session.label, expiresAt: session.expiresAt },
       }),
     );
+  };
+
+  /**
+   * 「Googleマップで経路を開く」を押したとき、いまの入力を覚えて共有拡張へ伝える（issue #1604）。
+   * 共有で戻った経路を、新しい移動ではなくこの入力（予定との紐づけ込み）へ反映するため。
+   * `<a>` は止めない（iOSがGoogleマップのアプリを開けるよう素のまま・#1225）ので印の送信は待たない。
+   */
+  const rememberGoogleSearch = () => {
+    if (!hasNativeTransit()) return;
+    const session = rememberTransitSession(
+      `${placeDisplayName(origin)}→${placeDisplayName(destination)}`,
+      {
+        travel: editing,
+        origin,
+        destination,
+        via,
+        mode,
+        departAt,
+        arriveAt,
+        note,
+        linkedEvent: draft.linkedEvent ?? null,
+        notification,
+        searchPurpose: purpose,
+        searchMarginMinutes: marginMinutes,
+        defaultArriveMargin: draft.defaultArriveMargin,
+        home: draft.home,
+      },
+      Date.now(),
+      "google",
+    );
+    rememberInNativeApp({ id: session.id, label: session.label, expiresAt: session.expiresAt, kind: "google" });
   };
 
   // 所要時間（分）。取得済みの代表時間、無ければ両側を入れていたときの長さ。計算ボタンと保存時の補完に使う（issue #1209）
@@ -981,6 +1012,7 @@ export function TravelForm({
           <FormRow icon={<ExternalLink />}>
             <a
               href={mapsLink}
+              onClick={rememberGoogleSearch}
               target="_blank"
               rel="noopener noreferrer"
               className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
