@@ -16,6 +16,25 @@ export type PlaceSummary = {
   badges: string[];
   /** 勤務時間・往路復路の要約。 */
   details: string[];
+  /**
+   * 移動のカレンダー反映の状態（issue #1611）。自動生成は所要時間が登録された区間だけ移動を作る
+   * （未登録の区間は作らない）。在宅の場所は移動を持たないため null。
+   */
+  travel: TravelStatus | null;
+};
+
+export type TravelStatus = "registered" | "partial" | "unregistered";
+
+/** 移動の登録状況。往路・復路の所要時間がそろっていれば registered、片方だけなら partial。 */
+export function travelStatusOf(outMinutes: number | null, backMinutes: number | null): TravelStatus {
+  const count = (outMinutes !== null ? 1 : 0) + (backMinutes !== null ? 1 : 0);
+  return count === 2 ? "registered" : count === 1 ? "partial" : "unregistered";
+}
+
+export const TRAVEL_STATUS_LABELS: Record<TravelStatus, string> = {
+  registered: "移動を反映する",
+  partial: "片道だけ反映する",
+  unregistered: "移動は反映しない（未登録）",
 };
 
 /**
@@ -41,5 +60,7 @@ export function summarizePlace(input: PlaceSummaryInput): PlaceSummary {
     details.push(`往路 ${minutes(input.outMinutes)} / 復路 ${minutes(input.backMinutes)}`);
   }
 
-  return { badges, details };
+  const travel = input.remote ? null : travelStatusOf(input.outMinutes, input.backMinutes);
+
+  return { badges, details, travel };
 }

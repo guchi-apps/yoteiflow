@@ -14,7 +14,7 @@ const base = {
 };
 
 test("既定値が無い場所は共通の勤務時間だけを出す", () => {
-  assert.deepEqual(summarizePlace(base), { badges: [], details: ["勤務 共通の時間"] });
+  assert.deepEqual(summarizePlace(base), { badges: [], details: ["勤務 共通の時間"], travel: "unregistered" });
 });
 
 test("勤務時間と往路復路を出す", () => {
@@ -29,10 +29,16 @@ test("片方だけの所要時間は未設定と添える", () => {
 
 test("在宅は往路復路を出さず、印を付ける", () => {
   const summary = summarizePlace({ ...base, remote: true, outMinutes: 40, backMinutes: 40 });
-  assert.deepEqual(summary, { badges: ["在宅扱い"], details: ["勤務 共通の時間"] });
+  assert.deepEqual(summary, { badges: ["在宅扱い"], details: ["勤務 共通の時間"], travel: null });
 });
 
 test("出張扱いの印と、勤務を反映しない場所", () => {
   const summary = summarizePlace({ ...base, isTrip: true, workEnabled: false });
-  assert.deepEqual(summary, { badges: ["出張扱い"], details: ["勤務時間は反映しない"] });
+  assert.deepEqual(summary, { badges: ["出張扱い"], details: ["勤務時間は反映しない"], travel: "unregistered" });
+});
+
+test("移動の登録状況は往路・復路の登録数で決まる", () => {
+  assert.equal(summarizePlace({ ...base, outMinutes: 40, backMinutes: 50 }).travel, "registered");
+  assert.equal(summarizePlace({ ...base, outMinutes: 75 }).travel, "partial");
+  assert.equal(summarizePlace(base).travel, "unregistered");
 });

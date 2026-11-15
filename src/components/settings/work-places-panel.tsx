@@ -20,7 +20,7 @@ import type { LinkablePlace } from "@/components/settings/work-place-link-fields
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import { pickDefaultRoute } from "@/lib/work-sync/route-modes";
-import { summarizePlace } from "@/lib/work-place-summary";
+import { summarizePlace, TRAVEL_STATUS_LABELS } from "@/lib/work-place-summary";
 import { isSingleCharacter } from "@/lib/work-short-label";
 import type { TagColor, TagOption } from "@/services/notion/tag-options";
 
@@ -99,10 +99,10 @@ function ConfirmField({
   );
 }
 
-const placeUrl = (selection: PlaceSelection | null) =>
+const placeUrl = (basePath: string, selection: PlaceSelection | null) =>
   selection
-    ? `/settings/work?place=${encodeURIComponent(selection.key)}${selection.extra ? "&extra=1" : ""}`
-    : "/settings/work";
+    ? `${basePath}?place=${encodeURIComponent(selection.key)}${selection.extra ? "&extra=1" : ""}`
+    : basePath;
 
 /**
  * 設定 ▸ 勤務の「勤務場所」（issue #1405）。
@@ -113,6 +113,7 @@ const placeUrl = (selection: PlaceSelection | null) =>
  * 場所を行き来しても失わない。URLは `history` で合わせ、サーバーの再取得（Notion）は走らせない。
  */
 export function WorkPlacesPanel({
+  basePath = "/settings/work",
   initialSelection,
   options: initialOptions,
   missingMessage,
@@ -130,6 +131,8 @@ export function WorkPlacesPanel({
   links: initialLinks,
   linkablePlaces,
 }: {
+  /** URLの同期先（issue #1611）。設定 ▸ 勤務と、勤務画面から開く `/work/places` の両方で使う。 */
+  basePath?: string;
   initialSelection: PlaceSelection | null;
   options: TagOption[] | null;
   missingMessage: string;
@@ -178,7 +181,7 @@ export function WorkPlacesPanel({
   const select = (next: PlaceSelection | null, mode: "push" | "replace" = "push") => {
     setSelected(next);
     setError(null);
-    window.history[mode === "push" ? "pushState" : "replaceState"](null, "", placeUrl(next));
+    window.history[mode === "push" ? "pushState" : "replaceState"](null, "", placeUrl(basePath, next));
     if (mode === "push") window.scrollTo(0, 0);
   };
 
@@ -415,6 +418,17 @@ export function WorkPlacesPanel({
                 {badge}
               </span>
             ))}
+            {summary.travel && (
+              <span
+                className={`type-label-small rounded-md px-2 py-0.5 ${
+                  summary.travel === "registered"
+                    ? "bg-secondary-container text-on-secondary-container"
+                    : "bg-error-container text-on-error-container"
+                }`}
+              >
+                {TRAVEL_STATUS_LABELS[summary.travel]}
+              </span>
+            )}
             {summary.details.map((detail) => (
               <span
                 key={detail}

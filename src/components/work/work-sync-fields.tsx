@@ -306,7 +306,7 @@ export function useWorkSyncFields({
           </div>
           {enabled && mode !== "" && !useTrain && !registered.some((row) => row.mode === mode) && (
             <p className="type-body-small pl-11 text-on-surface-variant">
-              {TRAVEL_MODE_LABELS[mode]}は未登録です。所要時間を入力するか、設定の「勤務」で登録してください。
+              {TRAVEL_MODE_LABELS[mode]}は未登録です。所要時間を入力するか、勤務画面の「勤務先の登録」で登録してください。
             </p>
           )}
           {useTrain && (
@@ -352,7 +352,7 @@ export function useWorkSyncFields({
           )}
           {!useTrain && enabled && trains.length === 0 && (
             <p className="type-body-small text-on-surface-variant">
-              設定の「勤務」で電車を登録すると、時刻を指定して作れます。
+              勤務画面の「勤務先の登録」で電車を登録すると、時刻を指定して作れます。
             </p>
           )}
         </div>
@@ -381,7 +381,7 @@ export function useWorkSyncFields({
           {toggle("back", "復路（自宅へ）", "backEnabled")}
           <p className="type-body-small text-on-surface-variant">
             時間帯を分けている間は、区切りごとに勤務予定を作り、場所が変わるたびに移動を作ります。
-            時刻は区切りから決まり、所要時間は設定の「勤務」の既定の移動時間を使います。
+            時刻は区切りから決まり、所要時間は「勤務先の登録」の既定の移動時間を使います。
             電車の時刻を指定するには、時間帯の内訳を使わない記録にしてください。
           </p>
         </div>
