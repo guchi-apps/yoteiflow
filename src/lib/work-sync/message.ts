@@ -21,7 +21,7 @@ export function describeSync(sync: SyncSummary): string | null {
   ];
   if (places.length > 0) {
     parts.push(
-      `${places.join("・")}への既定の移動時間が未設定のため、移動は作っていません。設定の「勤務」で設定できます。`,
+      `${places.join("・")}への既定の移動時間が未設定のため、移動は作っていません。勤務画面の「勤務先の登録」で登録できます。`,
     );
   }
   if (sync.missingTrains && sync.missingTrains > 0) {
