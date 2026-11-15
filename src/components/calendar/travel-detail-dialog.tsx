@@ -37,6 +37,8 @@ import { placeCoordinates } from "./location-input";
 import { TravelChangeSheet } from "./travel-change-sheet";
 import { TravelNote } from "./travel-note";
 import { TravelLinkFlow, unlinkTravel } from "./travel-link-flow";
+import { CollapsibleNote } from "@/components/ui/collapsible-note";
+import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
@@ -255,14 +257,17 @@ export function TravelDetailDialog({
           </DetailRow>
 
           {travel.note && (
-            <TravelNote
-              note={travel.note}
-              startIso={travel.start}
-              timeZone={timeZone}
-              destination={travel.destination}
-              places={places}
-              readOnly={readOnly}
-            />
+            // 途中駅が読める経路メモは「ここから再検索」の導線を保つため既定で開く（issue #1581・#1515）
+            <CollapsibleNote defaultOpen={readYahooRouteStops(travel.note).length > 0}>
+              <TravelNote
+                note={travel.note}
+                startIso={travel.start}
+                timeZone={timeZone}
+                destination={travel.destination}
+                places={places}
+                readOnly={readOnly}
+              />
+            </CollapsibleNote>
           )}
 
           {/* 書き出せていない移動はDaySpanの中だけに見える。他の端末で探しても出てこないため伝える。 */}

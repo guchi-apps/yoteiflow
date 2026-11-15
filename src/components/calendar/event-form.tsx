@@ -9,7 +9,6 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { sameNotificationOverride } from "@/lib/event-notification";
-import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -17,7 +16,7 @@ import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
-import { FormRow } from "./event-form-row";
+import { FormRow, ToggleCard } from "./event-form-row";
 import { EventNotificationEditor } from "./event-notification-editor";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
@@ -290,7 +289,8 @@ export function EventForm({
           （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
           中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
       <div className="flex min-w-0 flex-col">
-        {/* タイトルは枠も面も持たない文字（Googleカレンダー風・issue #1563）。大きさは他の欄・詳細画面と同じ（issue #1568）。 */}
+        {/* タイトルは枠も面も持たない文字（Googleカレンダー風・issue #1563）。大きさは他の欄・詳細画面と同じ（issue #1568）。
+            ただしスマホ幅では globals.css が16pxへ上げる（16px未満だとフォーカス時にiOSが画面を拡大する・issue #1585）。 */}
         <input
           id="event-title"
           aria-label="タイトル"
@@ -298,7 +298,7 @@ export function EventForm({
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           autoFocus={autoFocusTitle}
-          className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
 
         <FormRow icon={<Clock />}>
@@ -307,7 +307,7 @@ export function EventForm({
             （DaySpan独自のDBは持たない）。まだ本決まりでない予定を削除せず区別して置くため。
             チェックボックスではなく、押すと色が変わるカード型のトグルにする。
           */}
-          <div className="mb-1 flex flex-wrap items-center gap-2 py-1">
+          <div className="flex flex-wrap items-center gap-2">
             <ToggleCard pressed={allDay} onToggle={() => toggleAllDay(!allDay)}>
               終日
             </ToggleCard>
@@ -449,32 +449,4 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     tentative: event.tentative,
     notification: event.notification ?? null,
   };
-}
-
-/** 終日・仮予定の選択カード（issue #1568）。押すと色が変わり、選択中だと分かる。 */
-function ToggleCard({
-  pressed,
-  onToggle,
-  children,
-}: {
-  pressed: boolean;
-  onToggle: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onToggle}
-      className={cn(
-        "min-h-10 rounded-lg border px-4 text-sm transition-colors select-none",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-        pressed
-          ? "border-primary-container bg-primary-container font-bold text-on-primary-container"
-          : "border-outline text-foreground hover:bg-muted",
-      )}
-    >
-      {children}
-    </button>
-  );
 }

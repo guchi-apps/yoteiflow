@@ -69,7 +69,7 @@ function Input({
 
   if (onClear === undefined) {
     return (
-      <div data-slot="field" className={fieldShell(variant, "h-14")}>
+      <div data-slot="field" className={fieldShell(variant, variant === "flat" ? "h-10" : "h-14")}>
         <label htmlFor={inputId} className={fieldLabel}>
           {label}
         </label>
@@ -84,7 +84,7 @@ function Input({
   const showClear = String(props.value ?? "") !== ""
 
   return (
-    <div data-slot="field" className={fieldShell(variant, "h-14 items-center", "row")}>
+    <div data-slot="field" className={fieldShell(variant, variant === "flat" ? "h-10 items-center" : "h-14 items-center", "row")}>
       <div className={fieldStack}>
         <label htmlFor={inputId} className={fieldLabel}>
           {label}

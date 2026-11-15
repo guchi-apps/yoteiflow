@@ -15,6 +15,7 @@ export function DateTimeInput({
   allowNoTime,
   defaultTime,
   dateOnly,
+  flat,
 }: {
   id: string;
   label: string;
@@ -26,6 +27,7 @@ export function DateTimeInput({
   defaultTime?: string;
   /** 終日の欄用。日付だけを選び `YYYY-MM-DD` を返す。 */
   dateOnly?: boolean;
+  flat?: boolean;
 }) {
   return (
     <DateTimePickerField
@@ -36,6 +38,7 @@ export function DateTimeInput({
       allowNoTime={allowNoTime}
       defaultTime={defaultTime}
       dateOnly={dateOnly}
+      flat={flat}
     />
   );
 }

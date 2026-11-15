@@ -42,11 +42,14 @@ export function DateTimePickerField({
   allowNoTime = false,
   defaultTime = "09:00",
   dateOnly = false,
+  flat = false,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** Googleカレンダー風の行（issue #1582）。枠・面を持たず「ラベル　日時」を1行に出す。 */
+  flat?: boolean;
   allowNoTime?: boolean;
   defaultTime?: string;
   /** 終日の欄用。日付だけを選び、`YYYY-MM-DD` を返す（時刻の行・表示を出さない）。 */
@@ -61,10 +64,23 @@ export function DateTimePickerField({
         id={id}
         type="button"
         onClick={() => setOpen(true)}
-        className={cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")}
+        className={
+          flat
+            ? "flex min-h-10 w-full items-center gap-2 text-left text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            : cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")
+        }
       >
-        <span className={fieldLabel}>{label}</span>
-        <span className="truncate text-base text-foreground md:text-sm">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+        {flat ? (
+          <>
+            <span className="shrink-0 text-on-surface-variant">{label}</span>
+            <span className="truncate">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+          </>
+        ) : (
+          <>
+            <span className={fieldLabel}>{label}</span>
+            <span className="truncate text-base text-foreground md:text-sm">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+          </>
+        )}
       </button>
       {open && (
         <PickerDialog
@@ -274,10 +290,13 @@ export function TimeWheels({
   time,
   onChange,
   rows = VISIBLE_ROWS,
+  units = false,
 }: {
   time: string;
   onChange: (time: string) => void;
   rows?: number;
+  /** 時刻ではなく「期間」を選ぶホイール用。コロンの代わりに各ホイールの右へ「時間」「分」を出す（issue #1580）。 */
+  units?: boolean;
 }) {
   const { hour, minute } = splitTime(time);
   const pad = (rows - 1) / 2;
@@ -287,9 +306,10 @@ export function TimeWheels({
         className="pointer-events-none absolute inset-x-2 rounded-lg bg-primary-container"
         style={{ top: ROW_HEIGHT * pad, height: ROW_HEIGHT }}
       />
-      <Wheel label="時" size={24} pad={pad} value={hour} onChange={(next) => onChange(joinTime(next, minute))} />
-      <span className="relative text-xl font-bold">:</span>
-      <Wheel label="分" size={60} pad={pad} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
+      <Wheel units={units} label="時" size={24} pad={pad} value={hour} onChange={(next) => onChange(joinTime(next, minute))} />
+      {units ? <span className="relative mr-3 text-sm font-bold">時間</span> : <span className="relative text-xl font-bold">:</span>}
+      <Wheel units={units} label="分" size={60} pad={pad} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
+      {units && <span className="relative text-sm font-bold">分</span>}
     </div>
   );
 }
@@ -304,7 +324,9 @@ function Wheel({
   pad,
   value,
   onChange,
+  units = false,
 }: {
+  units?: boolean;
   label: string;
   size: number;
   /** 選択行の上下に空ける行数 */
@@ -351,7 +373,7 @@ function Wheel({
       ref={ref}
       role="listbox"
       aria-label={label}
-      className="relative h-full w-24 snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className={cn("relative h-full snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", units ? "w-16" : "w-24")}
       style={{ overscrollBehavior: "contain" }}
       onScroll={() => {
         if (timer.current) clearTimeout(timer.current);

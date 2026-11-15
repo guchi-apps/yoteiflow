@@ -493,3 +493,20 @@ html[data-app-ready] #app-launch * {
     visibility: hidden;
   }
 }
+
+/*
+  スマホ幅では文字入力欄・選択欄の文字を16pxにする（issue #1585）。
+  iOS（Safari・iOSアプリのWebView）は、文字の大きさが16px未満の入力欄にフォーカスすると
+  画面を自動で拡大する。予定の入力画面はタイトル欄が開いた瞬間にフォーカスされ、
+  14px（text-sm・variant="flat"）だったため、右下の＋で開くたびに拡大され幅が縮んで見えた。
+  レイヤーの外に置くのは、@layer utilities の text-sm・type-body-medium より必ず優先させるため
+  （今後足す入力欄で再発させない安全網）。768px以上（PC・iPad）は md:text-sm のまま変えない。
+  viewport の maximum-scale=1 で止める案は、利用者のピンチ拡大まで禁止しうるため採らない。
+*/
+@media (max-width: 767px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"], [type="hidden"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { CollapsibleNote } from "@/components/ui/collapsible-note";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { eventLeadLabel } from "@/lib/event-notification";
 import { locationIssue } from "@/lib/location-check";
@@ -587,7 +588,9 @@ export function EventDetailDialog({
           )}
 
           {event.description && (
-            <LinkifiedText className="text-on-surface-variant" text={event.description} />
+            <CollapsibleNote>
+              <LinkifiedText className="text-on-surface-variant" text={event.description} />
+            </CollapsibleNote>
           )}
 
           {event.readOnly && (

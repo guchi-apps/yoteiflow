@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { ArrowUpDown, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
+import { AlignLeft, ArrowUpDown, Car, CheckCircle2, CircleAlert, CircleDot, Clock, ExternalLink, LoaderCircle, MapPin, RefreshCw, Route } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
@@ -10,7 +10,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { sameNotificationOverride } from "@/lib/event-notification";
-import { cn } from "@/lib/utils";
 import { candidateFormTimes, deriveOtherSide, type TimeBasis } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
 import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
@@ -44,6 +43,7 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventNotificationEditor } from "./event-notification-editor";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { FormRow, ToggleCard } from "./event-form-row";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { readErrorMessage } from "./response-error";
@@ -859,41 +859,47 @@ export function TravelForm({
         />
       )}
 
-      <div className="flex min-w-0 flex-col gap-4">
-        <LocationInput
-          id="travel-origin"
-          label="出発地"
-          value={origin}
-          onChange={editOrigin}
-          places={placeCatalog.places}
-          eventTitle={destination}
-          placeDatabaseReady={placeCatalog.ready}
-        />
+      <div className="flex min-w-0 flex-col">
+        {/* 予定の入力画面と同じ、アイコン付きの行＋区切り線（issue #1582）。出発地・目的地は必須なので行として残す。 */}
+        <FormRow icon={<CircleDot />} divider={false}>
+          <LocationInput
+            id="travel-origin"
+            label="出発地"
+            variant="flat"
+            value={origin}
+            onChange={editOrigin}
+            places={placeCatalog.places}
+            eventTitle={destination}
+            placeDatabaseReady={placeCatalog.ready}
+          />
+        </FormRow>
 
         {via.length > 0 && (
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="type-label-small px-1 text-on-surface-variant">経由地</span>
-            <ul className="flex flex-wrap gap-2">
-              {via.map((item, index) => (
-                <li key={`${index}-${item}`}>
-                  <button
-                    type="button"
-                    className="type-label-medium max-w-full truncate rounded-md border border-outline-variant px-3 py-1 text-on-surface"
-                    aria-label={`経由地「${placeDisplayName(item)}」を外す`}
-                    onClick={() => {
-                      touch("via");
-                      setVia((current) => current.filter((_, i) => i !== index));
-                    }}
-                  >
-                    {placeDisplayName(item)} ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FormRow icon={<Route />}>
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="type-label-small px-1 text-on-surface-variant">経由地</span>
+              <ul className="flex flex-wrap gap-2">
+                {via.map((item, index) => (
+                  <li key={`${index}-${item}`}>
+                    <button
+                      type="button"
+                      className="type-label-medium max-w-full truncate rounded-md border border-outline-variant px-3 py-1 text-on-surface"
+                      aria-label={`経由地「${placeDisplayName(item)}」を外す`}
+                      onClick={() => {
+                        touch("via");
+                        setVia((current) => current.filter((_, i) => i !== index));
+                      }}
+                    >
+                      {placeDisplayName(item)} ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </FormRow>
         )}
 
-        {/* 欄の間隔を増やさないよう、上下の欄へ食い込ませて右端に置く。 */}
+        {/* 行の間隔を増やさないよう、上下の行へ食い込ませて右端に置く。 */}
         <div className="relative z-10 -my-4 flex justify-end pr-2">
           <button
             type="button"
@@ -907,91 +913,94 @@ export function TravelForm({
           </button>
         </div>
 
-        <LocationInput
-          id="travel-destination"
-          label="目的地"
-          value={destination}
-          onChange={editDestination}
-          places={placeCatalog.places}
-          eventTitle={destination}
-          placeDatabaseReady={placeCatalog.ready}
+        <FormRow icon={<MapPin />}>
+          <LocationInput
+            id="travel-destination"
+            label="目的地"
+            variant="flat"
+            value={destination}
+            onChange={editDestination}
+            places={placeCatalog.places}
+            eventTitle={destination}
+            placeDatabaseReady={placeCatalog.ready}
+          />
+        </FormRow>
+
+        <FormRow icon={<Car />}>
+          <div className="flex flex-wrap items-center gap-2 py-1" role="group" aria-label="交通手段">
+            {TRAVEL_MODES.map((option) => (
+              <ToggleCard key={option} pressed={option === mode} onToggle={() => editMode(option)}>
+                {TRAVEL_MODE_LABELS[option]}
+              </ToggleCard>
+            ))}
+          </div>
+        </FormRow>
+
+        <FormRow icon={<Clock />}>
+          <div className="flex flex-col gap-1">
+            <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
+            <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!departAt || knownMinutes === null}
+                onClick={() => calculateFrom("depart")}
+              >
+                出発日時から計算
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!arriveAt || knownMinutes === null}
+                onClick={() => calculateFrom("arrive")}
+              >
+                到着日時から計算
+              </Button>
+            </div>
+            <p className="type-label-small text-on-surface-variant">
+              {knownMinutes !== null
+                ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
+                : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
+            </p>
+          </div>
+        </FormRow>
+
+        {/* 通知は予定と同じ位置（日時の下・issue #1582）。出発時刻を基準に知らせる（issue #1112・#1569）。 */}
+        <EventNotificationEditor
+          value={notification}
+          onChange={setNotification}
+          hint="出発時刻を基準に知らせます"
         />
 
         {/* 素の <a> にするのは、iOSがGoogleマップのアプリを開けるようにするため（issue #1225）。
             出発地・目的地・交通手段は入力欄の現在値から組み立てる。 */}
         {mapsLink && (
-          <a
-            href={mapsLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="type-label-large inline-flex items-center gap-1.5 self-start rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
-          >
-            <ExternalLink className="size-4" aria-hidden />
-            Googleマップで経路を開く
-          </a>
+          <FormRow icon={<ExternalLink />}>
+            <a
+              href={mapsLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="type-label-large inline-flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
+            >
+              Googleマップで経路を開く
+            </a>
+          </FormRow>
         )}
 
-        <div className="flex flex-col gap-2">
-          <span className="type-label-small px-1 text-on-surface-variant">交通手段</span>
-          <div className="flex flex-wrap gap-2">
-            {TRAVEL_MODES.map((option) => (
-              <Button
-                key={option}
-                type="button"
-                variant={option === mode ? "secondary" : "outline"}
-                size="sm"
-                className={cn(
-                  option === mode && "bg-travel-container text-on-travel-container",
-                )}
-                onClick={() => editMode(option)}
-              >
-                {TRAVEL_MODE_LABELS[option]}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
-          <DateTimeInput
-            id="travel-depart"
-            label="出発"
-            value={departAt}
-            onChange={editDepartAt}
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            id="travel-note"
+            label="メモ"
+            variant="flat"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onClear={() => setNote("")}
           />
-          <DateTimeInput
-            id="travel-arrive"
-            label="到着"
-            value={arriveAt}
-            onChange={editArriveAt}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!departAt || knownMinutes === null}
-              onClick={() => calculateFrom("depart")}
-            >
-              出発日時から計算
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!arriveAt || knownMinutes === null}
-              onClick={() => calculateFrom("arrive")}
-            >
-              到着日時から計算
-            </Button>
-          </div>
-          <p className="type-label-small px-1 text-on-surface-variant">
-            {knownMinutes !== null
-              ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
-              : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
-          </p>
-        </div>
+        </FormRow>
 
         {/* 公共交通は、入れた発着地と基準側の日時でYahoo!乗換案内を開き、選んだ経路を共有で戻す（issue #1330）。
             実際の列車・発着時刻はYahoo!で選んだ結果を採る。ここで決めるのは検索の条件だけ。 */}
@@ -1302,22 +1311,6 @@ export function TravelForm({
             </Button>
           </div>
         )}
-
-        <Textarea
-          id="travel-note"
-          label="メモ"
-          rows={2}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onClear={() => setNote("")}
-        />
-
-        {/* 通知設定（issue #1112）。出発時刻の何分前に知らせるかを、行の中で選ぶ（issue #1569）。 */}
-        <EventNotificationEditor
-          value={notification}
-          onChange={setNotification}
-          hint="出発時刻を基準に知らせます"
-        />
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
