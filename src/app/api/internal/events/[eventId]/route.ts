@@ -18,6 +18,7 @@ const UPDATE_FIELDS = [
   "endTime",
   "allDay",
   "location",
+  "description",
   "tentative",
 ];
 

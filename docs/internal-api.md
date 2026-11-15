@@ -251,6 +251,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
   "startTime": "10:00",         // HH:MM。省略（endTimeも省略）で終日
   "endTime": "11:00",
   "location": "〇〇歯科",        // 任意
+  "description": "持ち物: 保険証", // 任意。メモ（Googleの予定の説明）
   "calendarId": "primary",      // 任意。省略で予定新規作成の既定の保存先（CalendarSetting.isCreateDefault）
   "tentative": false            // 任意。省略時 false（確定した予定）。true で仮の予定として作成する
 }
@@ -263,6 +264,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 | `endDate` | - | `YYYY-MM-DD`。`date` から `endDate`+`endTime` までの時刻予定として作る。実在しない日付・`date` より前は `400`。終日（時刻なし）との併用も `400`。省略または `date` と同じ日なら同日の予定（更新APIの `endDate` と同じ基準） |
 | `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、同日で `endTime <= startTime`（`endDate` が翌日以降なら `endTime` が前でもよい）、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
 | `location` | - | 省略可 |
+| `description` | - | メモ。Googleの予定の説明へ書く。省略・空文字（trim後）なら説明なし（従来どおり） |
 | `calendarId` | - | 省略時は書き込み可能な既定のカレンダーを解決する。書き込めるカレンダーが1つも無ければ `404`（`no_writable_calendar`） |
 | `tentative` | - | 省略時 `false`。`true` で仮の予定（Googleの `status: tentative`）として作成する（issue #688）。「多分この時間に」のような曖昧な発話のときだけ秘書側が付ける想定。後から確定へ変える・仮へ戻すのは下の `PATCH`（`tentative`）で行える |
 
@@ -328,6 +330,7 @@ curl -s -X POST -H "Authorization: Bearer $DAYSPAN_INTERNAL_EVENTS_API_KEY" \
   "endTime": "15:00",
   "allDay": false,              // true で終日へ（時刻・endDateと同時指定は400）。終日→時刻ありは時刻が要る
   "location": "〇〇歯科",       // 空文字で消す
+  "description": "持ち物: 保険証", // メモ（Googleの予定の説明）。空文字で消す。省略で触らない
   "tentative": false            // 仮の予定⇄確定
 }
 ```
