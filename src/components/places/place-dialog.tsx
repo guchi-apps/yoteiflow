@@ -16,6 +16,13 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { isStationPlace } from "@/lib/place-tags";
 import { formatCoordinates, type LatLng } from "@/lib/coordinates";
+import { placeStations } from "@/lib/station-name";
+import {
+  newStationRow,
+  PlaceStationsEditor,
+  rowsToStations,
+  type StationRow,
+} from "@/components/places/place-stations-editor";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
 
@@ -63,8 +70,11 @@ export function PlaceDialog({
 
   const [name, setName] = useState(place.name);
   const [address, setAddress] = useState(place.address ?? "");
-  const [station, setStation] = useState(place.station ?? "");
-  const [stationMinutes, setStationMinutes] = useState(place.stationMinutes == null ? "" : String(place.stationMinutes));
+  // 最寄り駅は複数持てる（issue #1607）。1駅も無ければ空の1行から始める（従来の1欄と同じ見え方）。
+  const [stationRows, setStationRows] = useState<StationRow[]>(() => {
+    const stations = placeStations(place);
+    return stations.length > 0 ? stations.map((station) => newStationRow(station)) : [newStationRow()];
+  });
   const [tags, setTags] = useState<string[]>(place.tags);
   // 場所そのものが駅のときは最寄り駅を持たない。欄を隠し、保存でも触らない（issue #1370）。
   const isStation = isStationPlace(tags);
@@ -83,7 +93,7 @@ export function PlaceDialog({
 
   // 最寄り駅の候補（issue #1356）。欄を開いたとき1回だけ、地点（無ければ住所）から取る。
   const [stationCandidates, setStationCandidates] = useState<{ name: string; distanceM: number }[]>([]);
-  const [stationFocused, setStationFocused] = useState(false);
+  const [focusedStationKey, setFocusedStationKey] = useState<number | null>(null);
   const stationLoaded = useRef(false);
   const loadStationCandidates = async () => {
     if (stationLoaded.current || offline) return;
@@ -106,10 +116,10 @@ export function PlaceDialog({
       // 候補は補助。取れなくても手入力は使える。
     }
   };
-  const typedStation = station.trim();
-  const visibleStations = stationCandidates.filter(
-    (candidate) => candidate.name !== typedStation && candidate.name.includes(typedStation.replace(/駅$/, "")),
-  );
+  const focusStationRow = (key: number | null) => {
+    setFocusedStationKey(key);
+    if (key !== null) void loadStationCandidates();
+  };
 
   const close = () => {
     setOpen(false);
@@ -150,9 +160,9 @@ export function PlaceDialog({
       return;
     }
 
-    const minutes = stationMinutes.trim() === "" ? null : Number(stationMinutes);
-    if (minutes !== null && (!Number.isInteger(minutes) || minutes < 0 || minutes > 180)) {
-      setError("駅までの徒歩は0〜180分の整数で入力してください。");
+    const stations = rowsToStations(stationRows);
+    if ("error" in stations) {
+      setError(stations.error);
       return;
     }
 
@@ -163,8 +173,8 @@ export function PlaceDialog({
         body: JSON.stringify({
           name: trimmed,
           ...(capabilities.address ? { address: address.trim() || null } : {}),
-          ...(capabilities.station && !isStation ? { station: station.trim() || null } : {}),
-          ...(capabilities.stationMinutes && !isStation ? { stationMinutes: minutes } : {}),
+          // 徒歩は駅ごとに「最寄り駅」欄の行へ入る（数値の列は先頭駅の写し）。issue #1607
+          ...(capabilities.station && !isStation ? { stations: stations.stations } : {}),
           ...(capabilities.tags ? { tags } : {}),
           ...(capabilities.coordinates && (coordinatesTouched || place.coordinates)
             ? { coordinates: coordinates ? formatCoordinates(coordinates) : null }
@@ -303,62 +313,16 @@ export function PlaceDialog({
             最寄り駅は住所・地点とは別の区画に置く。あの2つは常に組で置き換わるもので、
             駅名はそこへ混ぜると地図で選び直したときに一緒に入れ替わるように読める。
             実際には駅名だけが Yahoo!乗換案内 の発着地になり、地図とは関係が無い。
+            駅は複数持て、1行＝駅名＋徒歩（分）。上の駅ほど優先する（issue #1607）。
           */}
           {capabilities.station && !isStation && (
-            <div className="flex flex-col gap-1">
-              <Input
-                label="最寄り駅"
-                value={station}
-                onChange={(event) => setStation(event.target.value)}
-                onClear={() => setStation("")}
-                onFocus={() => {
-                  setStationFocused(true);
-                  void loadStationCandidates();
-                }}
-                onBlur={() => setStationFocused(false)}
-              />
-              {stationFocused && visibleStations.length > 0 && (
-                <ul className="overflow-hidden rounded-xl border border-outline-variant">
-                  {visibleStations.map((candidate) => (
-                    <li key={candidate.name} className="border-t border-outline-variant first:border-t-0">
-                      <button
-                        type="button"
-                        // blurより先に選択を確定させる（候補が消えて押せなくなるのを防ぐ）。
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => setStation(candidate.name)}
-                        className="type-body-medium flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-surface-container"
-                      >
-                        <span>{candidate.name}</span>
-                        <span className="type-body-small text-on-surface-variant">
-                          約{candidate.distanceM}m
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="type-body-small text-on-surface-variant">
-                「梅田」と入れると「梅田駅」で保存します。入れておくと、電車の移動でYahoo!乗換案内をこの駅から探します。空のときは地点（無ければ住所）で探します。
-              </p>
-            </div>
-          )}
-
-          {capabilities.station && capabilities.stationMinutes && !isStation && (
-            <div className="flex flex-col gap-1">
-              <Input
-                label="最寄り駅まで徒歩（分）"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={180}
-                value={stationMinutes}
-                onChange={(event) => setStationMinutes(event.target.value)}
-                onClear={() => setStationMinutes("")}
-              />
-              <p className="type-body-small text-on-surface-variant">
-                予定の移動を調べるとき、予定の場所が最寄り駅から離れているぶん、到着・出発の検索時刻をずらします。最寄り駅が空のときは使いません。
-              </p>
-            </div>
+            <PlaceStationsEditor
+              rows={stationRows}
+              onChange={setStationRows}
+              candidates={stationCandidates}
+              focusedKey={focusedStationKey}
+              onFocusRow={focusStationRow}
+            />
           )}
 
           {/*

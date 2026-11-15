@@ -19,6 +19,8 @@ import { placeDisplayName } from "@/lib/place-text";
 import { followSearchCondition, type TransitFollow } from "@/lib/transit-follow";
 import { rememberTransitSession } from "@/lib/transit-search-session";
 import { stationWalkMinutes } from "@/lib/station-walk";
+import type { StationChoice } from "@/lib/station-name";
+import { buildTransitStations, TransitStationPicker } from "@/components/calendar/transit-station-picker";
 import { suggestTransitSearch, type ContextEvent, type ContextTravel } from "@/lib/transit-suggest";
 import { shiftAmountLabel, type TravelShift } from "@/lib/travel-follow";
 import { cn } from "@/lib/utils";
@@ -238,6 +240,9 @@ function TransitFollowCard({
   const [context, setContext] = useState<TransitContext | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 発着地に最寄り駅が複数あるときの乗る駅・降りる駅（issue #1607）。予定前なら目的地、予定後なら出発地が予定の場所
+  const [originChoice, setOriginChoice] = useState<StationChoice>(undefined);
+  const [destinationChoice, setDestinationChoice] = useState<StationChoice>(undefined);
   const native = useSyncExternalStore(() => () => {}, hasNativeTransit, () => false);
   const proposable = follow.missing.length === 0 && purpose !== null && !event.allDay;
 
@@ -273,17 +278,29 @@ function TransitFollowCard({
           travels: context?.travels ?? [],
           home,
           excludeTravelId: travel.id,
-          walkMinutes: stationWalkMinutes(event.location, places),
+          walkMinutes: stationWalkMinutes(
+            event.location,
+            places,
+            purpose === "AFTER_EVENT" ? originChoice : destinationChoice,
+          ),
           formatTime: formatClock,
         })
       : null;
   const condition = suggestion ? followSearchCondition(travel, suggestion) : null;
+  const stations = condition
+    ? buildTransitStations(condition.origin, condition.destination, places, {
+        originChoice,
+        destinationChoice,
+        setOriginChoice,
+        setDestinationChoice,
+      })
+    : null;
   const departLocal = condition ? isoToLocalInput(condition.departAt, timeZone) : "";
   const arriveLocal = condition ? isoToLocalInput(condition.arriveAt, timeZone) : "";
   const search = condition
     ? transitSearchCondition({
-        origin: resolveYahooPlace(condition.origin, places),
-        destination: resolveYahooPlace(condition.destination, places),
+        origin: resolveYahooPlace(condition.origin, places, originChoice),
+        destination: resolveYahooPlace(condition.destination, places, destinationChoice),
         departAt: departLocal,
         arriveAt: arriveLocal,
         basis: condition.basis,
@@ -435,6 +452,9 @@ function TransitFollowCard({
             />
             分
           </label>
+          {condition && stations && (
+            <TransitStationPicker origin={condition.origin} destination={condition.destination} state={stations} />
+          )}
           {search?.ok ? (
             <span className="type-body-small">
               この条件で探す: {transitConditionSummary(search)}

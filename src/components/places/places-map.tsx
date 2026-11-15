@@ -9,6 +9,7 @@ import { useCurrentLocation } from "@/components/calendar/use-current-location";
 import { Button } from "@/components/ui/button";
 import { countInView, fitBounds, type LatLng } from "@/lib/coordinates";
 import { mapLink } from "@/lib/map-link";
+import { placeStations, stationsLabel } from "@/lib/station-name";
 import { cn } from "@/lib/utils";
 import type { PlaceItem } from "@/services/notion/places";
 
@@ -226,7 +227,9 @@ function PlaceSummary({
         </button>
       </div>
       <span className="type-body-small break-words text-on-surface-variant">
-        {place.station ? `${place.address ?? "住所なし"} ・ ${place.station}` : (place.address ?? "住所なし")}
+        {placeStations(place).length > 0
+          ? `${place.address ?? "住所なし"} ・ ${stationsLabel(placeStations(place))}`
+          : (place.address ?? "住所なし")}
       </span>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button size="sm" onClick={onEdit}>
