@@ -62,7 +62,7 @@ export function CollapsibleNote({
       )}
       <div
         ref={bodyRef}
-        className={cn("min-w-0", open ? "max-h-[30dvh] overflow-y-auto" : cn(CLOSED_MAX_HEIGHT, "overflow-hidden"))}
+        className={cn("min-w-0", open ? "max-h-[30dvh] overflow-y-auto pr-1" : cn(CLOSED_MAX_HEIGHT, "overflow-hidden"))}
       >
         {children}
       </div>
