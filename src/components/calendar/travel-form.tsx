@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { ArrowUpDown, Bell, BellOff, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
+import { ArrowUpDown, CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
@@ -9,14 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
+import { sameNotificationOverride } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
 import { candidateFormTimes, deriveOtherSide, type TimeBasis } from "@/lib/share-import/candidate-times";
 import type { ShareRouteCandidate, SharedImport } from "@/lib/share-import/types";
 import { googleMapsDirectionsLink } from "@/lib/google-maps-directions-link";
 import { placeDisplayName } from "@/lib/place-text";
 import { placeTextForCoordinates } from "@/lib/place-by-coordinates";
-import { travelTitle } from "@/lib/travel-title";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
@@ -43,7 +42,7 @@ import {
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
-import { EventNotificationDialog } from "./event-notification-dialog";
+import { EventNotificationEditor } from "./event-notification-editor";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
@@ -167,7 +166,6 @@ export function TravelForm({
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
     draft.notification !== undefined ? draft.notification : (editing?.notification ?? null),
   );
-  const [editingNotification, setEditingNotification] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 保存はできたが、Googleカレンダーへ書き出せなかったとき。黙って閉じると気付けない。
@@ -1314,32 +1312,12 @@ export function TravelForm({
           onClear={() => setNote("")}
         />
 
-        {/* 通知設定（issue #1112）。出発時刻の何分前に知らせるかを、予定と同じダイアログで選ぶ。 */}
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined}
-            onClick={() => setEditingNotification(true)}
-          >
-            {notification?.enabled ? <Bell className="size-4" /> : <BellOff className="size-4" />}
-            {eventNotificationSummary(notification)}
-          </Button>
-          <span className="type-label-small text-on-surface-variant">出発時刻を基準に知らせます</span>
-        </div>
-
-        {editingNotification && (
-          <EventNotificationDialog
-            title={origin && destination ? travelTitle({ origin, via, destination }) : "この移動"}
-            initial={notification}
-            onCancel={() => setEditingNotification(false)}
-            onSaved={(next) => {
-              setEditingNotification(false);
-              setNotification(next);
-            }}
-          />
-        )}
+        {/* 通知設定（issue #1112）。出発時刻の何分前に知らせるかを、行の中で選ぶ（issue #1569）。 */}
+        <EventNotificationEditor
+          value={notification}
+          onChange={setNotification}
+          hint="出発時刻を基準に知らせます"
+        />
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}

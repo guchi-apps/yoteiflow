@@ -5,6 +5,9 @@ import {
   eventLeadAnnouncement,
   eventLeadLabel,
   eventNotificationSummary,
+  leadMinutesToWheelTime,
+  nextLeadMinutesToAdd,
+  wheelTimeToLeadMinutes,
   isValidLeadMinutes,
   normalizeLeadMinutes,
   resolveEventLeadMinutes,
@@ -141,4 +144,18 @@ test("sameNotificationOverride: leadMinutesの集合が違えば違う", () => {
     ),
     false,
   );
+});
+
+test("nextLeadMinutesToAdd: 空なら10分、使用済みを避ける", () => {
+  assert.equal(nextLeadMinutesToAdd([]), 10);
+  assert.equal(nextLeadMinutesToAdd([10]), 5);
+  assert.equal(nextLeadMinutesToAdd([10, 5, 15, 30, 60, 0, 120, 180]), 1);
+});
+
+test("leadMinutesToWheelTime / wheelTimeToLeadMinutes: 往復できる。24時間は23:59へ丸める", () => {
+  assert.equal(leadMinutesToWheelTime(10), "00:10");
+  assert.equal(leadMinutesToWheelTime(90), "01:30");
+  assert.equal(leadMinutesToWheelTime(MAX_EVENT_LEAD_MINUTES), "23:59");
+  assert.equal(wheelTimeToLeadMinutes("01:30"), 90);
+  assert.equal(wheelTimeToLeadMinutes("bad"), 0);
 });
