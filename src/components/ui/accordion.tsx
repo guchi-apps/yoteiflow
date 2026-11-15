@@ -14,8 +14,11 @@ export function Accordion({
   description,
   children,
   forceOpen = false,
+  flat = false,
   className,
 }: {
+  /** 枠を持たず、上の区切り線だけの行にする（予定の表示画面・issue #1563）。 */
+  flat?: boolean;
   title: string;
   /** 見出しの右に添える一言。閉じていても何が入っているか分かるようにする。 */
   description?: string;
@@ -27,10 +30,18 @@ export function Accordion({
   const expanded = open || forceOpen;
 
   return (
-    <div className={cn("rounded-xl border border-outline-variant", className)}>
+    <div
+      className={cn(
+        flat ? "border-t border-outline-variant" : "rounded-xl border border-outline-variant",
+        className,
+      )}
+    >
       <button
         type="button"
-        className="type-label-large flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left"
+        className={cn(
+          "type-label-large flex min-h-11 w-full items-center justify-between gap-2 text-left",
+          flat ? "px-0" : "px-3"
+        )}
         aria-expanded={expanded}
         onClick={() => setOpen(!expanded)}
       >
@@ -42,7 +53,9 @@ export function Accordion({
         </span>
         <ChevronDown className={cn("size-4 shrink-0 transition-transform", expanded && "rotate-180")} />
       </button>
-      {expanded && <div className="flex flex-col gap-3 px-3 pb-3">{children}</div>}
+      {expanded && (
+        <div className={cn("flex flex-col gap-3 pb-3", flat ? "px-0" : "px-3")}>{children}</div>
+      )}
     </div>
   );
 }
