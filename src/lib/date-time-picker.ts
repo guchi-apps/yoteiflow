@@ -91,4 +91,10 @@ export function formatPickerLabel(value: PickerValue): string {
   return `${year}年${month}月${day}日（${weekday}） ${value.time ?? NO_TIME_LABEL}`;
 }
 
+/** 終日の欄に出す文字列。時刻は添えない。 */
+export function formatPickerDateLabel(value: PickerValue): string {
+  if (!value.date) return "未選択";
+  return formatPickerLabel({ date: value.date, time: null }).replace(` ${NO_TIME_LABEL}`, "");
+}
+
 export const NO_TIME_LABEL = "ー:ー";

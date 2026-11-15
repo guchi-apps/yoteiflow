@@ -14,6 +14,7 @@ export function DateTimeInput({
   onChange,
   allowNoTime,
   defaultTime,
+  dateOnly,
 }: {
   id: string;
   label: string;
@@ -23,6 +24,8 @@ export function DateTimeInput({
   allowNoTime?: boolean;
   /** 時刻が無いとき最初に提示する時刻（HH:mm）。 */
   defaultTime?: string;
+  /** 終日の欄用。日付だけを選び `YYYY-MM-DD` を返す。 */
+  dateOnly?: boolean;
 }) {
   return (
     <DateTimePickerField
@@ -32,6 +35,7 @@ export function DateTimeInput({
       onChange={onChange}
       allowNoTime={allowNoTime}
       defaultTime={defaultTime}
+      dateOnly={dateOnly}
     />
   );
 }

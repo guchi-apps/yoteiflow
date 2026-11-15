@@ -348,20 +348,8 @@ export function EventForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
           {allDay ? (
             <>
-              <Input
-                id="event-start"
-                label="開始"
-                type="date"
-                value={start}
-                onChange={(e) => changeStart(e.target.value)}
-              />
-              <Input
-                id="event-end"
-                label="終了"
-                type="date"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
+              <DateTimeInput id="event-start" label="開始" value={start} onChange={changeStart} dateOnly />
+              <DateTimeInput id="event-end" label="終了" value={end} onChange={setEnd} dateOnly />
             </>
           ) : (
             <>
