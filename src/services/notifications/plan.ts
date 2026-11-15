@@ -1,5 +1,6 @@
 import type { NotificationKind } from "@prisma/client";
 
+import { allDayNotifyBase } from "@/lib/all-day-notify";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { eventLeadAnnouncement, resolveEventLeadMinutes } from "@/lib/event-notification";
@@ -134,7 +135,7 @@ export async function planUserNotifications(userId: string, now: Date): Promise<
     const drafts: JobDraft[] = [];
 
     if (eventResult) {
-      drafts.push(...planEvents(eventResult.items, settings, now, windowEnd, utils));
+      drafts.push(...planEvents(eventResult.items, settings, now, windowEnd, utils, timeZone));
     }
 
     // 移動は予定と同じ親スイッチ（eventEnabled）に従う。DaySpanのDBだけを読む（issue #1112）。
@@ -200,8 +201,9 @@ async function loadTasks(userId: string): Promise<TaskItem[] | null> {
 /**
  * 予定の下書き。
  *
- * 終日予定は対象にしない。「10分前」に当たる時刻が無く、日付が変わった瞬間に知らせても
- * その日の行動には結び付かないため（まとめて知りたい場合はタスクのまとめ通知と同じ扱いになる）。
+ * 終日予定も対象にする（issue #1568）。「10分前」に当たる開始時刻が無いため、開始日の9:00
+ * （設定タイムゾーン）を基準にして「◯分前」を数える（`allDayNotifyBase`）。0:00基準だと前日夜の
+ * 通知になり、その日の行動に結び付かない。
  *
  * 予定ごとの上書き（issue #708）があれば、アカウント既定の代わりにそちらを使う。複数の
  * leadMinutesを指定していれば、その回数ぶんの下書きを作る（dedupeKeyにleadMinutesまで
@@ -213,11 +215,11 @@ function planEvents(
   now: Date,
   windowEnd: Date,
   utils: ReturnType<typeof createCalendarDateUtils>,
+  timeZone: string,
 ): JobDraft[] {
   const drafts: JobDraft[] = [];
 
   for (const event of events) {
-    if (event.allDay) continue;
     // 中止・不参加を記録した予定は知らせない（docs/spec.md §37）。起こらないと分かっている
     // 予定の10分前に鳴らしても、そこから先の行動は変わらない。
     if (event.outcome) continue;
@@ -228,11 +230,15 @@ function planEvents(
     );
     if (leadList.length === 0) continue;
 
-    const start = new Date(event.start);
+    const start = event.allDay
+      ? allDayNotifyBase(event.start.slice(0, 10), timeZone)
+      : new Date(event.start);
     if (Number.isNaN(start.getTime())) continue;
     if (start > windowEnd) continue;
 
-    const timeRange = `${utils.formatTime(event.start)}〜${utils.formatTime(event.end)}`;
+    const timeRange = event.allDay
+      ? "終日"
+      : `${utils.formatTime(event.start)}〜${utils.formatTime(event.end)}`;
 
     for (const leadMinutes of leadList) {
       const scheduledAt = new Date(start.getTime() - leadMinutes * 60_000);
@@ -249,7 +255,7 @@ function planEvents(
           leadMinutes === 0 ? event.title : `${eventLeadAnnouncement(leadMinutes)} ${event.title}`,
         ),
         body: event.location ? `${timeRange} ・ ${event.location}` : timeRange,
-        url: `/calendar?date=${utils.itemDateKey(event.start)}`,
+        url: `/calendar?date=${event.allDay ? event.start.slice(0, 10) : utils.itemDateKey(event.start)}`,
       });
     }
   }

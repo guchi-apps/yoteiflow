@@ -526,9 +526,9 @@ export function EventDetailDialog({
           {/*
             予定ごとの通知設定（issue #708）は編集画面でだけ変更できる。ここでは他の任意項目
             （場所・出席者・繰り返し）と同じ「設定されているときだけ行を出す」規則に合わせ、
-            状態だけを表示する（issue #834）。終日予定は通知の対象外なので出さない。
+            状態だけを表示する（issue #834）。終日予定も通知できる（issue #1568）。
           */}
-          {!event.allDay && event.notification?.enabled && (
+          {event.notification?.enabled && (
             <DetailRow icon={<Bell className="size-4" />}>
               通知：{event.notification.leadMinutes.map(eventLeadLabel).join("・")}
             </DetailRow>

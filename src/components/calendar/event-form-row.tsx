@@ -23,7 +23,7 @@ export function FormRow({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start gap-4 py-2",
+        "flex min-w-0 items-start gap-3 py-2",
         divider && "border-t border-outline-variant",
         className,
       )}

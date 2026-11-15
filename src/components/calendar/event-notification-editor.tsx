@@ -97,7 +97,7 @@ export function EventNotificationEditor({
           type="button"
           disabled={disabled}
           onClick={start}
-          className="flex min-h-11 w-full items-center text-left text-base text-muted-foreground disabled:opacity-38 md:text-sm"
+          className="flex min-h-11 w-full items-center text-left text-sm text-muted-foreground disabled:opacity-38"
         >
           通知
         </button>
@@ -111,7 +111,7 @@ export function EventNotificationEditor({
                   aria-expanded={openIndex === index}
                   onClick={() => toggleWheel(index)}
                   className={cn(
-                    "-ml-1 rounded-md px-1 py-1 text-left text-base text-foreground md:text-sm",
+                    "-ml-1 rounded-md px-1 py-1 text-left text-sm text-foreground",
                     openIndex === index && "bg-primary-container",
                   )}
                 >
@@ -141,7 +141,7 @@ export function EventNotificationEditor({
             type="button"
             disabled={disabled}
             onClick={add}
-            className="flex min-h-11 items-center gap-1.5 text-base text-primary disabled:opacity-38 md:text-sm"
+            className="flex min-h-11 items-center gap-1.5 text-sm text-primary disabled:opacity-38"
           >
             <Plus className="size-4" />
             通知を追加
