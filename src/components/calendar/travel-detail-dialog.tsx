@@ -157,7 +157,11 @@ export function TravelDetailDialog({
       <TravelChangeSheet
         travel={travel}
         timeZone={timeZone}
-        onCancel={onClose}
+        // ×・閉じるは全体を閉じず、移動の詳細へ戻す（issue #1598）
+        onCancel={() => {
+          setChanging(false);
+          setOpen(true);
+        }}
         onSaved={(touched) => onLinked?.(touched)}
         onSearch={(mode) => onEditWithMode?.(mode)}
       />
