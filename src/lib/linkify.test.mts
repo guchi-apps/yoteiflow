@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { splitTextWithLinks } from "@/lib/linkify";
+import { linkHref, linkText, splitTextWithLinks } from "@/lib/linkify";
 
 test("splitTextWithLinks: URLを含まない文字列はそのまま1つのtextセグメント", () => {
   const segments = splitTextWithLinks("ただのメモです");
@@ -143,4 +143,18 @@ test("splitTextWithLinks: 「Morrowで開く: /mail/…」はMorrowの本番URL�
 test("splitTextWithLinks: 「Morrowで開く」の手掛かりが無い相対パスはリンクにしない", () => {
   const segments = splitTextWithLinks("保存先は /mail/abc です");
   assert.deepEqual(segments, [{ type: "text", value: "保存先は /mail/abc です" }]);
+});
+
+test("linkHref: Morrowのセグメントのhrefは表示用のlabelではなく絶対URL（issue #1538）", () => {
+  const link = splitTextWithLinks("Morrowで開く: /mail/main~1a1da2527a796f53").find((s) => s.type === "link");
+  assert.ok(link && link.type === "link");
+  assert.equal(linkHref(link), "https://aide-bot.gucchii.com/mail/main~1a1da2527a796f53");
+  assert.equal(linkText(link), "/mail/main~1a1da2527a796f53");
+});
+
+test("linkHref: 通常のURLはそのまま", () => {
+  const link = splitTextWithLinks("https://example.com/a").find((s) => s.type === "link");
+  assert.ok(link && link.type === "link");
+  assert.equal(linkHref(link), "https://example.com/a");
+  assert.equal(linkText(link), "https://example.com/a");
 });
