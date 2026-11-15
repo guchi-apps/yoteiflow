@@ -137,6 +137,7 @@ export function mergeInternalEventUpdate(
       start,
       end,
       location: body.location !== undefined ? (body.location ?? "").trim() : undefined,
+      description: body.description !== undefined ? (body.description ?? "").trim() : undefined,
       timeZone,
       tentative: body.tentative,
     },
