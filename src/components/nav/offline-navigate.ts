@@ -19,6 +19,42 @@ export function isPlainClick(event: React.MouseEvent): boolean {
   );
 }
 
+/** 移動がこの時間終わらなければ、保存済みのページへ切り替える（issue #1545）。 */
+const SLOW_NAVIGATION_MS = 2000;
+
+/**
+ * 監視のタイマー。コンポーネントの寿命に結ばず、モジュールに1本だけ持つ。
+ * ドロワーは押した時点で閉じてフックの持ち主ごとアンマウントされるため、
+ * effect・refに結ぶと移動の監視が即座に消える。連打時は前の監視を捨てる。
+ */
+let slowNavigationTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * 遅い回線での画面移動（issue #1545）。
+ *
+ * ソフトナビゲーション（RSC要求）は保存されておらず、オフラインではなく遅いだけだと、
+ * 要求が終わるまで押した画面へ移れない。一定時間たっても移動先のパスへ着いていなければ、
+ * 保存済みのページがある画面に限りハードナビゲーションへ切り替える
+ * （Service Worker が3秒で保存済みへ倒す）。保存が無ければ従来どおり待つ。
+ * 着いたかはURLで見る（App Router は遷移のコミット時にURLを更新する）。
+ */
+function watchSlowNavigation(href: string): void {
+  clearTimeout(slowNavigationTimer);
+
+  const target = new URL(href, window.location.href);
+  if (target.pathname === window.location.pathname) return;
+
+  slowNavigationTimer = setTimeout(() => {
+    if (window.location.pathname === target.pathname) return;
+
+    void hasOfflinePage(target.pathname).then((cached) => {
+      if (cached && window.location.pathname !== target.pathname) {
+        window.location.assign(target.pathname);
+      }
+    });
+  }, SLOW_NAVIGATION_MS);
+}
+
 /**
  * オフライン中の画面移動（issue #321）。
  *
@@ -43,7 +79,12 @@ export function useOfflineNavigate() {
 
   return useCallback(
     (href: string) => {
-      if (!isOfflineNow(offline)) return false;
+      // オンラインでは従来どおり false（呼び出し側のソフトナビゲーションを妨げない）。
+      // 遅い回線で終わらないときだけ、保存済みへ切り替える監視を副作用として仕掛ける。
+      if (!isOfflineNow(offline)) {
+        watchSlowNavigation(href);
+        return false;
+      }
 
       void hasOfflinePage(href).then((cached) => {
         if (cached) window.location.assign(href);
