@@ -23,14 +23,14 @@ export function FormRow({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start gap-3 py-2",
+        "flex min-w-0 items-start gap-3 py-1",
         divider && "border-t border-outline-variant",
         className,
       )}
     >
       <span
         aria-hidden
-        className="flex h-11 w-6 shrink-0 items-center justify-center text-on-surface-variant [&_svg]:size-5"
+        className="flex h-10 w-6 shrink-0 items-center justify-center text-on-surface-variant [&_svg]:size-5"
       >
         {icon}
       </span>
