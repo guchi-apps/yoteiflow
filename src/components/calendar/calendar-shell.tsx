@@ -2313,8 +2313,8 @@ function CalendarBody({
             onOpenEvent(target);
             return true;
           }}
-          onConfirmed={() => {
-            onOpenEvent({ ...viewingEvent, tentative: false });
+          onConfirmed={(tentative) => {
+            onOpenEvent({ ...viewingEvent, tentative });
             handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
           }}
         />

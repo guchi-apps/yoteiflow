@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -97,7 +97,13 @@ export function EventPickerDialog({
   onCancel,
   onPick,
   onSelect,
+  createNew,
 }: {
+  /**
+   * 一覧の先頭に置く「新しいものを作る」行（issue #1567。タスク登録の「新しいタスクを作る」と同じ形）。
+   * 押すとこのダイアログを閉じ切ってから `onClick` を呼ぶ。
+   */
+  createNew?: { label: string; onClick: () => void };
   /** タスクの紐づけ先として選ぶときの行き先。`onSelect` を使うときは不要。 */
   target?: TaskLinkTarget;
   timeZone: string;
@@ -361,6 +367,20 @@ export function EventPickerDialog({
             </DialogHeader>
 
             <div className="flex min-w-0 flex-col gap-3">
+              {createNew && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start border-dashed text-primary"
+                  onClick={() => {
+                    setOpen(false);
+                    setTimeout(createNew.onClick, 150);
+                  }}
+                >
+                  <Plus className="size-4" />
+                  {createNew.label}
+                </Button>
+              )}
               <div className="flex gap-1">
                 {(["day", "month", "list"] as const).map((value) => (
                   <Button

@@ -14,7 +14,6 @@ import {
   Copy,
   ExternalLink,
   MapPin,
-  Link2,
   Pencil,
   RotateCw,
   Trash2,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { Accordion } from "@/components/ui/accordion";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,7 +39,10 @@ import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
 import { cn } from "@/lib/utils";
 import {
+  EVENT_OUTCOME_KINDS,
+  EVENT_OUTCOME_KIND_DESCRIPTIONS,
   EVENT_OUTCOME_KIND_LABELS,
+  type EventOutcomeKind,
   type ActivityLinkItem,
   TRAVEL_MODE_LABELS,
   type CalendarEventItem,
@@ -52,7 +55,6 @@ import { ActivityLinkSection } from "./activity-link-section";
 import { BringItemsSection } from "./bring-items-section";
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
-import { EventOutcomeDialog } from "./event-outcome-dialog";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import { placeCoordinates } from "./location-input";
 import { readErrorMessage } from "./response-error";
@@ -160,8 +162,11 @@ export function EventDetailDialog({
    * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
    */
   onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
-  /** 「仮の予定を確定する」が成功したときの処理（issue #688）。ダイアログは閉じない。 */
-  onConfirmed: () => void;
+  /**
+   * 仮の予定を確定した・仮の予定へ戻したときの処理（issue #688・#1567）。ダイアログは閉じない。
+   * `tentative` は切り替えたあとの状態。
+   */
+  onConfirmed: (tentative: boolean) => void;
   weekStartsOn?: number;
   /** 既存の移動を後から結んだ・外したあと（issue #1105）。変わった期間を渡して取り直す。 */
   onTravelLinkChanged?: (touched: TouchedRange[] | null) => void;
@@ -179,9 +184,15 @@ export function EventDetailDialog({
   const [open, setOpen] = useState(true);
   // 削除は取り消せない。押した直後には消さず、確認を挟む。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // 中止・不参加の記録（docs/spec.md §37）。表示画面を閉じずに重ねて開く。
-  const [editingOutcome, setEditingOutcome] = useState(false);
-  // 仮の予定の確定（issue #688）。確認は挟まない（編集フォームでいつでも仮へ戻せるため）。
+  // 状態カード（issue #1567）。中止・不参加は選んだときだけメモと「記録する」を出す。
+  // 記録済みならその種類・メモから始める（docs/spec.md §37）。
+  const [pickKind, setPickKind] = useState<EventOutcomeKind | null>(event.outcome?.kind ?? null);
+  const [outcomeNote, setOutcomeNote] = useState(event.outcome?.note ?? "");
+  const [outcomeBusy, setOutcomeBusy] = useState(false);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+  // 帯の「記録を直す」から予定の操作を開いたまま保つ。
+  const [forceOps, setForceOps] = useState(false);
+  // 仮の予定の確定・仮へ戻す（issue #688・#1567）。確認は挟まない（状態カードでいつでも切り替えられるため）。
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
@@ -267,24 +278,75 @@ export function EventDetailDialog({
     setTimeout(onLinkTask, 150);
   };
 
-  const confirmTentative = async () => {
+  // 帯の「確定する」と状態カードの「仮予定」が共有する。切り替えたあとの状態を返す。
+  const setTentative = async (next: boolean) => {
+    if (confirmBusy) return;
     setConfirmBusy(true);
     setConfirmError(null);
     try {
       const response = await fetch(`/api/events/${encodeURIComponent(event.id)}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ calendarId: event.calendarId }),
+        body: JSON.stringify({ calendarId: event.calendarId, tentative: next }),
       });
       if (!response.ok) {
-        setConfirmError(await readErrorMessage(response, "確定できませんでした。"));
+        setConfirmError(
+          await readErrorMessage(response, next ? "仮予定にできませんでした。" : "確定できませんでした。"),
+        );
         return;
       }
-      onConfirmed();
+      onConfirmed(next);
     } catch (cause) {
-      setConfirmError(cause instanceof Error ? cause.message : "確定に失敗しました。");
+      setConfirmError(
+        cause instanceof Error ? cause.message : next ? "仮予定への切り替えに失敗しました。" : "確定に失敗しました。",
+      );
     } finally {
       setConfirmBusy(false);
+    }
+  };
+
+  const outcomeUrl = `/api/events/${encodeURIComponent(event.id)}/outcome`;
+
+  const saveOutcome = async () => {
+    if (!pickKind || outcomeBusy) return;
+    setOutcomeBusy(true);
+    setOutcomeError(null);
+    try {
+      const note = outcomeNote.trim() || null;
+      const response = await fetch(outcomeUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarId: event.calendarId, kind: pickKind, note }),
+      });
+      if (!response.ok) {
+        setOutcomeError(await readErrorMessage(response, "記録できませんでした。"));
+        return;
+      }
+      onOutcomeChanged({ kind: pickKind, note });
+    } catch (cause) {
+      setOutcomeError(cause instanceof Error ? cause.message : "記録に失敗しました。");
+    } finally {
+      setOutcomeBusy(false);
+    }
+  };
+
+  const clearOutcome = async () => {
+    if (outcomeBusy) return;
+    setOutcomeBusy(true);
+    setOutcomeError(null);
+    try {
+      const response = await fetch(outcomeUrl, { method: "DELETE" });
+      if (!response.ok) {
+        setOutcomeError(await readErrorMessage(response, "記録を外せませんでした。"));
+        return;
+      }
+      setPickKind(null);
+      setOutcomeNote("");
+      onOutcomeChanged(null);
+    } catch (cause) {
+      setOutcomeError(cause instanceof Error ? cause.message : "記録を外せませんでした。");
+    } finally {
+      setOutcomeBusy(false);
     }
   };
 
@@ -321,6 +383,7 @@ export function EventDetailDialog({
     return (
       <TravelLinkFlow
         side={{ kind: "event", event }}
+        onCreateNew={addTravel}
         timeZone={timeZone}
         weekStartsOn={weekStartsOn}
         onCancel={onClose}
@@ -350,17 +413,6 @@ export function EventDetailDialog({
             item={{ kind: "event", event, linkedTasks: linkedTasks?.map((task) => task.title) }}
             onCancel={() => setConfirmingDelete(false)}
             onDeleted={deleted}
-          />
-        )}
-
-        {editingOutcome && (
-          <EventOutcomeDialog
-            event={event}
-            onCancel={() => setEditingOutcome(false)}
-            onSaved={(next) => {
-              setEditingOutcome(false);
-              onOutcomeChanged(next);
-            }}
           />
         )}
 
@@ -419,13 +471,13 @@ export function EventDetailDialog({
                 <span className="font-bold">仮の予定です</span>
                 {confirmError && <span className="text-destructive">{confirmError}</span>}
               </div>
-              {/* 主操作のためアコーディオンに入れない。確認は挟まない（編集でいつでも仮へ戻せる）。 */}
+              {/* 主操作のためアコーディオンに入れない。確認は挟まない（状態カードでいつでも仮へ戻せる）。 */}
               <Button
                 variant="outline"
                 size="sm"
                 className="ml-auto shrink-0 bg-surface-container-lowest"
                 disabled={readOnly || confirmBusy}
-                onClick={confirmTentative}
+                onClick={() => void setTentative(false)}
               >
                 確定する
               </Button>
@@ -450,7 +502,7 @@ export function EventDetailDialog({
                   size="sm"
                   className="ml-auto shrink-0 bg-surface-container-lowest"
                   disabled={readOnly}
-                  onClick={() => setEditingOutcome(true)}
+                  onClick={() => setForceOps(true)}
                 >
                   記録を直す
                 </Button>
@@ -660,29 +712,23 @@ export function EventDetailDialog({
           {(canAddTravel || !isActivity) && (
             <Accordion
               title="予定の操作"
-              description={canAddTravel ? "移動・タスク・中止" : "タスク・中止"}
+              description={canAddTravel ? "移動・タスク・状態" : "タスク・状態"}
               flat
+              forceOpen={forceOps}
             >
+              {/*
+                移動の入口は1つ（issue #1567）。押すと、先頭に「新しい移動を作る」・その下に既存の
+                移動の一覧が並ぶ画面が開く（タスク登録と同じ形）。
+              */}
               {canAddTravel && (
-                <div className="grid grid-cols-2 gap-2">
-                  <ActionCard
-                    icon={<ArrowRight className="size-4" />}
-                    iconClassName="bg-travel-container text-on-travel-container"
-                    title="移動を足す"
-                    description="この予定への移動を作る"
-                    disabled={readOnly}
-                    onClick={addTravel}
-                  />
-                  {/* 作った後でも、既存の移動を結べる（issue #1105）。 */}
-                  <ActionCard
-                    icon={<Link2 className="size-4" />}
-                    iconClassName="bg-surface-container-high text-primary"
-                    title="既存の移動を紐づける"
-                    description="作成済みの移動と結ぶ"
-                    disabled={readOnly}
-                    onClick={startLinkTravel}
-                  />
-                </div>
+                <ActionCard
+                  icon={<ArrowRight className="size-4" />}
+                  iconClassName="bg-travel-container text-on-travel-container"
+                  title="移動を登録"
+                  description="既存の移動を結ぶ・新しく作る"
+                  disabled={readOnly}
+                  onClick={startLinkTravel}
+                />
               )}
 
               {/*
@@ -691,7 +737,6 @@ export function EventDetailDialog({
               */}
               {!isActivity && (
                 <ActionCard
-                  wide
                   icon={<TaskStageMark stage="AFTER_END" className="h-4 w-5" />}
                   iconClassName="bg-secondary-container text-on-secondary-container"
                   title="タスクを登録"
@@ -702,20 +747,71 @@ export function EventDetailDialog({
               )}
 
               {/*
-                中止・不参加の記録（docs/spec.md §37）。記録はGoogleへ書き込まないため、
-                「使用」がオフのカレンダーの予定にも付けられる。記録済みのときは帯の
-                「記録を直す」から開くため、ここには出さない。
+                予定の状態（issue #1567）。仮予定・中止・不参加の3枚を横に並べる。仮予定は押すと
+                その場で切り替わる（もう一度押すと確定）。中止・不参加は、仮予定と両立しうる
+                （docs/spec.md §37）ため仮予定とは別に選び、押したときだけメモと「記録する」を出す。
+                記録はGoogleへ書き込まないため「使用」がオフのカレンダーの予定にも付けられる。
               */}
-              {!isActivity && !outcome && (
-                <ActionCard
-                  wide
-                  icon={<EventOutcomeMark className="size-4" />}
-                  iconClassName="bg-error-container text-on-error-container"
-                  title="中止・不参加にする"
-                  description="予定は消さず、起こらなかったと記録"
-                  disabled={readOnly}
-                  onClick={() => setEditingOutcome(true)}
-                />
+              {!isActivity && (
+                <div className="flex flex-col gap-2">
+                  <span className="type-label-medium text-on-surface-variant">この予定の状態</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatusCard
+                      selected={Boolean(event.tentative)}
+                      disabled={readOnly || confirmBusy}
+                      icon={<CircleDashed className="size-4" />}
+                      label="仮予定"
+                      onClick={() => void setTentative(!event.tentative)}
+                    />
+                    {EVENT_OUTCOME_KINDS.map((kind) => (
+                      <StatusCard
+                        key={kind}
+                        selected={pickKind === kind}
+                        disabled={readOnly || outcomeBusy}
+                        icon={<EventOutcomeMark className="size-4" />}
+                        label={EVENT_OUTCOME_KIND_LABELS[kind]}
+                        onClick={() => setPickKind(pickKind === kind ? null : kind)}
+                      />
+                    ))}
+                  </div>
+                  {confirmError && <p className="text-xs text-destructive">{confirmError}</p>}
+
+                  {pickKind && (
+                    <>
+                      <p className="type-body-small text-on-surface-variant">
+                        {EVENT_OUTCOME_KIND_DESCRIPTIONS[pickKind]}。予定はカレンダーに残り、Google Calendar側は書き換えません。
+                      </p>
+                      <Textarea
+                        id="event-outcome-note"
+                        label="メモ（任意）"
+                        rows={2}
+                        value={outcomeNote}
+                        disabled={readOnly || outcomeBusy}
+                        onChange={(e) => setOutcomeNote(e.target.value)}
+                        onClear={() => setOutcomeNote("")}
+                      />
+                      {outcomeError && <p className="text-xs text-destructive">{outcomeError}</p>}
+                      <Button
+                        className="w-full"
+                        disabled={readOnly || outcomeBusy}
+                        onClick={() => void saveOutcome()}
+                      >
+                        記録する
+                      </Button>
+                      {outcome && (
+                        <Button
+                          variant="destructive"
+                          className="w-full"
+                          disabled={readOnly || outcomeBusy}
+                          onClick={() => void clearOutcome()}
+                        >
+                          記録を外す
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {!pickKind && outcomeError && <p className="text-xs text-destructive">{outcomeError}</p>}
+                </div>
               )}
             </Accordion>
           )}
@@ -733,7 +829,7 @@ export function EventDetailDialog({
   );
 }
 
-/** 操作のカード。アイコン・太字の名前・説明の3段（アセットマネージャーの「詳細な設定」と同じ形）。 */
+/** 操作のカード。枠付きで、アイコン・太字の名前・説明の3段。押すと別の画面が開く（issue #1567）。 */
 function ActionCard({
   icon,
   iconClassName,
@@ -741,7 +837,6 @@ function ActionCard({
   description,
   onClick,
   disabled,
-  wide = false,
 }: {
   icon: ReactNode;
   iconClassName: string;
@@ -749,17 +844,13 @@ function ActionCard({
   description: string;
   onClick: () => void;
   disabled?: boolean;
-  wide?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "relative flex items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
-        !wide && "min-w-0",
-      )}
+      className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38"
     >
       <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
         {icon}
@@ -768,7 +859,40 @@ function ActionCard({
         <span className="font-bold">{title}</span>
         <span className="type-body-small text-on-surface-variant">{description}</span>
       </span>
-      {wide && <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />}
+      <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
+    </button>
+  );
+}
+
+/** 状態を選ぶカード。選んだものだけ primary-container で塗り、ほかは白（issue #1567）。 */
+function StatusCard({
+  selected,
+  disabled,
+  icon,
+  label,
+  onClick,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex min-w-0 flex-col items-center gap-1 rounded-xl border px-1 py-2.5 text-sm font-bold transition-colors disabled:opacity-38",
+        selected
+          ? "border-primary bg-primary-container text-on-primary-container"
+          : "border-outline-variant bg-surface-container-lowest hover:bg-primary/8",
+      )}
+    >
+      {icon}
+      {label}
     </button>
   );
 }
