@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.41.1",
+    date: "2026-11-15",
+    changes: [
+      "予定の入力画面と表示画面を、Googleカレンダーに近い見た目に変えました。項目ごとにアイコン付きの行で並び、区切り線で分かれて見やすくなっています。",
+    ],
+  },
+  {
     version: "4.41.0",
     date: "2026-11-15",
     changes: [
