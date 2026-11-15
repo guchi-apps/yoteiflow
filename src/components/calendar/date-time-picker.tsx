@@ -269,17 +269,27 @@ function PickerDialog({
   );
 }
 
-function TimeWheels({ time, onChange }: { time: string; onChange: (time: string) => void }) {
+/** 時・分のホイール。`rows` は見える行数（奇数）で、範囲ピッカーは3行に詰めて使う（issue #1551）。 */
+export function TimeWheels({
+  time,
+  onChange,
+  rows = VISIBLE_ROWS,
+}: {
+  time: string;
+  onChange: (time: string) => void;
+  rows?: number;
+}) {
   const { hour, minute } = splitTime(time);
+  const pad = (rows - 1) / 2;
   return (
-    <div className="relative flex items-center justify-center gap-2" style={{ height: ROW_HEIGHT * VISIBLE_ROWS }}>
+    <div className="relative flex items-center justify-center gap-2" style={{ height: ROW_HEIGHT * rows }}>
       <div
         className="pointer-events-none absolute inset-x-2 rounded-lg bg-primary-container"
-        style={{ top: ROW_HEIGHT * 2, height: ROW_HEIGHT }}
+        style={{ top: ROW_HEIGHT * pad, height: ROW_HEIGHT }}
       />
-      <Wheel label="時" size={24} value={hour} onChange={(next) => onChange(joinTime(next, minute))} />
+      <Wheel label="時" size={24} pad={pad} value={hour} onChange={(next) => onChange(joinTime(next, minute))} />
       <span className="relative text-xl font-bold">:</span>
-      <Wheel label="分" size={60} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
+      <Wheel label="分" size={60} pad={pad} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
     </div>
   );
 }
@@ -291,11 +301,14 @@ function TimeWheels({ time, onChange }: { time: string; onChange: (time: string)
 function Wheel({
   label,
   size,
+  pad,
   value,
   onChange,
 }: {
   label: string;
   size: number;
+  /** 選択行の上下に空ける行数 */
+  pad: number;
   value: number;
   onChange: (value: number) => void;
 }) {
@@ -345,7 +358,7 @@ function Wheel({
         timer.current = setTimeout(settle, 90);
       }}
     >
-      <div style={{ height: ROW_HEIGHT * 2 }} aria-hidden />
+      <div style={{ height: ROW_HEIGHT * pad }} aria-hidden />
       {[0, 1, 2].flatMap((copy) =>
         Array.from({ length: size }, (_, n) => (
           <button
@@ -366,7 +379,7 @@ function Wheel({
           </button>
         )),
       )}
-      <div style={{ height: ROW_HEIGHT * 2 }} aria-hidden />
+      <div style={{ height: ROW_HEIGHT * pad }} aria-hidden />
     </div>
   );
 }

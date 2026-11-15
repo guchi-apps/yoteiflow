@@ -16,7 +16,7 @@ import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
-import { DateTimeInput } from "./date-time-input";
+import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventNotificationDialog } from "./event-notification-dialog";
@@ -132,23 +132,8 @@ export function EventForm({
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
 
-  // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
-  // Google Calendarと同じ挙動にして、終了が開始より前になる状態を作りにくくする。
-  // 活動記録は長さが決まっておらず、押し忘れた開始だけを後から直すことが多いため動かさない（issue #1309）。
-  const changeStart = (value: string) => {
-    const previous = inputToDate(start, allDay);
-    const next = inputToDate(value, allDay);
-
-    if (previous && next && !activityCalendarIds?.has(calendarId)) {
-      const durationMs = Math.max((inputToDate(end, allDay)?.getTime() ?? 0) - previous.getTime(), 0);
-      const nextEnd = new Date(next.getTime() + durationMs);
-      setEnd(dateToInput(nextEnd, allDay));
-    }
-
-    // 毎週の曜日は開始日から入る。自分で選び直していない間は、新しい開始日の曜日へ移す。
-    setRecurrence((current) => withStart(current, start, value));
-    setStart(value);
-  };
+  // 開始を動かしたときの終了の追従（長さを保つ・活動記録は動かさない issue #1309）は、
+  // 開始・終了を1枚で選ぶ範囲ピッカー（`DateRangePickerFields`・issue #1551）が行う。
 
   // 文字列は同じ書式でゼロ埋めされているため、そのまま比較して前後関係が判定できる。
   const rangeError = (() => {
@@ -346,27 +331,20 @@ export function EventForm({
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
-          {allDay ? (
-            <>
-              <DateTimeInput id="event-start" label="開始" value={start} onChange={changeStart} dateOnly />
-              <DateTimeInput id="event-end" label="終了" value={end} onChange={setEnd} dateOnly />
-            </>
-          ) : (
-            <>
-              <DateTimeInput
-                id="event-start"
-                label="開始"
-                value={start}
-                onChange={changeStart}
-              />
-              <DateTimeInput
-                id="event-end"
-                label="終了"
-                value={end}
-                onChange={setEnd}
-              />
-            </>
-          )}
+          {/* 開始・終了のどちらを押しても、同じ1枚の「日時を設定」画面が開く（issue #1551）。 */}
+          <DateRangePickerFields
+            idPrefix="event"
+            start={start}
+            end={end}
+            allDay={allDay}
+            follow={!activityCalendarIds?.has(calendarId)}
+            onChange={(nextStart, nextEnd) => {
+              // 毎週の曜日は開始日から入る。自分で選び直していない間は、新しい開始日の曜日へ移す。
+              setRecurrence((current) => withStart(current, start, nextStart));
+              setStart(nextStart);
+              setEnd(nextEnd);
+            }}
+          />
         </div>
 
         <CalendarChipSelect
@@ -457,18 +435,6 @@ export function EventForm({
       />
     </>
   );
-}
-
-/** 入力欄の値をDateへ。終日は日付のみなのでUTC正午として扱い、日付のずれを避ける。 */
-function inputToDate(value: string, allDay: boolean): Date | null {
-  if (!value) return null;
-  const date = new Date(allDay ? `${value}T12:00:00Z` : `${value}:00Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateToInput(date: Date, allDay: boolean): string {
-  const iso = date.toISOString();
-  return allDay ? iso.slice(0, 10) : iso.slice(0, 16);
 }
 
 /** 編集用の初期値。ISO 8601 を入力欄の形式へ直す。 */
