@@ -115,7 +115,7 @@ export function ReminderList({
    * この画面の主題である日付リマインドだけ。タスクはタスク画面から作る。
    */
   const openAdd = () => {
-    setItemDialog({ reminder: { dateMode: "date", date: utils.todayKey() } });
+    setItemDialog({ reminder: { date: utils.todayKey() } });
   };
 
   return (

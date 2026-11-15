@@ -6,11 +6,9 @@ import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
@@ -22,13 +20,9 @@ import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
 
-/** 対象日の指定方法。記念日・更新日は日付だけのことが多いため、時刻は任意にする。 */
-type DateMode = "date" | "datetime";
-
 export type ReminderDraft = {
   reminder?: ReminderItem;
-  dateMode: DateMode;
-  /** dateMode に応じて YYYY-MM-DD または YYYY-MM-DDTHH:mm */
+  /** 時刻なしは YYYY-MM-DD、時刻ありは YYYY-MM-DDTHH:mm（記念日・更新日は日付だけのことが多い） */
   date: string;
 };
 
@@ -58,7 +52,6 @@ export function ReminderForm({
 }) {
   const editing = draft.reminder;
 
-  const [dateMode, setDateMode] = useState<DateMode>(draft.dateMode);
   const [date, setDate] = useState(draft.date);
   const [category, setCategory] = useState(editing?.category ?? "");
   const [memo, setMemo] = useState(editing?.memo ?? "");
@@ -71,20 +64,9 @@ export function ReminderForm({
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
 
-  const dateError = !date
-    ? dateMode === "datetime"
-      ? "日付と時刻を入力してください。"
-      : "日付を入力してください。"
-    : null;
+  const dateError = !date ? "日付を入力してください。" : null;
 
-  const changeDateMode = (next: DateMode) => {
-    const dateKey = date.slice(0, 10);
-    setDate(next === "datetime" ? `${dateKey}T${date.slice(11, 16) || "09:00"}` : dateKey);
-    setDateMode(next);
-  };
-
-  const buildDate = () =>
-    dateMode === "date" ? date.slice(0, 10) : localInputToIso(date, timeZone);
+  const buildDate = () => (date.includes("T") ? localInputToIso(date, timeZone) : date.slice(0, 10));
 
   const save = async () => {
     // 開いている最中に通信が落ちることもある。押せない状態にするだけでなく、ここでも断つ。
@@ -147,44 +129,9 @@ export function ReminderForm({
           autoFocus={autoFocusTitle}
         />
 
-        <div className="flex flex-col gap-1.5">
-          <Label>日付</Label>
-          <div className="flex gap-1">
-            {(
-              [
-                ["date", "日付のみ"],
-                ["datetime", "日時指定"],
-              ] as const
-            ).map(([mode, label]) => (
-              <Button
-                key={mode}
-                type="button"
-                variant={dateMode === mode ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => changeDateMode(mode)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-          {dateMode === "datetime" ? (
-            <DateTimeInput
-              id="reminder-date"
-              dateLabel="日付"
-              timeLabel="時刻"
-              value={date}
-              onChange={setDate}
-            />
-          ) : (
-            <Input
-              id="reminder-date"
-              label="日付"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          )}
-        </div>
+        {/* 時刻の有無はピッカーの中で選ぶ（issue #1527）。日付のみ・日時の別はここで持たず、
+            値の `T` の有無から決める。 */}
+        <DateTimeInput id="reminder-date" label="日付" value={date} allowNoTime defaultTime="09:00" onChange={setDate} />
 
         {/* 種類はNotionのselectで1件につき1つ。押し直すと未設定へ戻せるようにする。 */}
         <TagPicker
@@ -256,10 +203,9 @@ function touchedRanges(
 /** 編集用の初期値。ISO 8601 を入力欄の形式へ直す。 */
 export function toReminderDraft(reminder: ReminderItem, timeZone: string): ReminderDraft {
   // 毎年の項目は表示中の年へ展開されている。編集するのは元ページなので登録した年に戻す。
-  if (!reminder.hasTime) return { reminder, dateMode: "date", date: reminder.sourceDate };
+  if (!reminder.hasTime) return { reminder, date: reminder.sourceDate };
   return {
     reminder,
-    dateMode: "datetime",
     date: isoToLocalInput(reminder.sourceDate, timeZone),
   };
 }
