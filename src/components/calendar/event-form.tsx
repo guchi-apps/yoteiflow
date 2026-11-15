@@ -297,7 +297,7 @@ export function EventForm({
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           autoFocus={autoFocusTitle}
-          className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
 
         <FormRow icon={<Clock />}>
@@ -306,7 +306,7 @@ export function EventForm({
             （DaySpan独自のDBは持たない）。まだ本決まりでない予定を削除せず区別して置くため。
             チェックボックスではなく、押すと色が変わるカード型のトグルにする。
           */}
-          <div className="mb-1 flex flex-wrap items-center gap-2 py-1">
+          <div className="flex flex-wrap items-center gap-2">
             <ToggleCard pressed={allDay} onToggle={() => toggleAllDay(!allDay)}>
               終日
             </ToggleCard>

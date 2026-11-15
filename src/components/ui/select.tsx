@@ -76,7 +76,7 @@ function SelectTrigger({
   if (!label) return trigger
 
   return (
-    <div data-slot="field" className={fieldShell(variant, "h-14")}>
+    <div data-slot="field" className={fieldShell(variant, variant === "flat" ? "h-10" : "h-14")}>
       <label htmlFor={triggerId} className={fieldLabel}>
         {label}
       </label>

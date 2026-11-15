@@ -97,7 +97,7 @@ export function EventNotificationEditor({
           type="button"
           disabled={disabled}
           onClick={start}
-          className="flex min-h-11 w-full items-center text-left text-sm text-muted-foreground disabled:opacity-38"
+          className="flex min-h-10 w-full items-center text-left text-sm text-muted-foreground disabled:opacity-38"
         >
           通知
         </button>
@@ -105,7 +105,7 @@ export function EventNotificationEditor({
         <div className="flex flex-col">
           {items.map((minutes, index) => (
             <div key={index} className="flex flex-col">
-              <div className="flex min-h-11 items-center gap-3">
+              <div className="flex min-h-10 items-center gap-3">
                 <button
                   type="button"
                   aria-expanded={openIndex === index}
@@ -141,7 +141,7 @@ export function EventNotificationEditor({
             type="button"
             disabled={disabled}
             onClick={add}
-            className="flex min-h-11 items-center gap-1.5 text-sm text-primary disabled:opacity-38"
+            className="flex min-h-10 items-center gap-1.5 text-sm text-primary disabled:opacity-38"
           >
             <Plus className="size-4" />
             通知を追加
