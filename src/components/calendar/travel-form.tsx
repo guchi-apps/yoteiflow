@@ -19,6 +19,8 @@ import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type
 import { clearTransitSession, rememberTransitSession } from "@/lib/transit-search-session";
 import { transitConditionSummary, transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { stationWalkMinutes } from "@/lib/station-walk";
+import type { StationChoice } from "@/lib/station-name";
+import { TransitStationPicker, useTransitStations } from "@/components/calendar/transit-station-picker";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import {
   suggestTransitSearch,
@@ -189,11 +191,13 @@ export function TravelForm({
   // Yahoo!乗換案内アプリで検索する条件（公共交通のときだけ・issue #1330）。必須は発着地と基準側の日時だけ
   const nativeTransit = useSyncExternalStore(() => () => {}, hasNativeTransit, () => false);
   const [transitStatus, setTransitStatus] = useState<NativeTransitOpened | null>(null);
+  // 発着地に最寄り駅が複数あるときの乗る駅・降りる駅（issue #1607）
+  const transitStations = useTransitStations(origin, destination, placeCatalog.places);
   const transitCondition =
     mode === "PUBLIC_TRANSIT" && !offline
       ? transitSearchCondition({
-          origin: resolveYahooPlace(origin, placeCatalog.places),
-          destination: resolveYahooPlace(destination, placeCatalog.places),
+          origin: resolveYahooPlace(origin, placeCatalog.places, transitStations.originChoice),
+          destination: resolveYahooPlace(destination, placeCatalog.places, transitStations.destinationChoice),
           departAt,
           arriveAt,
           basis,
@@ -299,11 +303,17 @@ export function TravelForm({
   const [transitContext, setTransitContext] = useState<TransitContext | "loading" | "error" | null>(null);
   const formatClock = (iso: string) => isoToLocalInput(iso, timeZone).slice(11, 16).replace(/^0/, "");
   // 予定の場所の最寄り駅からの徒歩。余裕分には含めず、提案のたびに場所DBから引く（issue #1370）
-  const walkMinutes = stationWalkMinutes(suggestTarget?.location, placeCatalog.places);
+  // 予定の場所に最寄り駅が複数あるときは、乗る駅・降りる駅で選んだ駅の徒歩（issue #1607）
+  const walkMinutes = stationWalkMinutes(
+    suggestTarget?.location,
+    placeCatalog.places,
+    transitStations.walkChoiceFor(suggestTarget?.location),
+  );
   const buildSuggestion = (
     nextPurpose: TravelSearchPurpose,
     nextMargin: number,
     context: TransitContext | null,
+    walk: number = walkMinutes,
   ): TransitSuggestion | null =>
     suggestTarget
       ? suggestTransitSearch({
@@ -314,7 +324,7 @@ export function TravelForm({
           travels: context?.travels ?? [],
           home: draft.home ?? null,
           excludeTravelId: editing?.id ?? null,
-          walkMinutes,
+          walkMinutes: walk,
           formatTime: formatClock,
         })
       : null;
@@ -396,6 +406,13 @@ export function TravelForm({
     const value = Number(text);
     if (!purpose || text.trim() === "" || !Number.isInteger(value) || value < 0 || value > MAX_TRAVEL_SEARCH_MARGIN_MINUTES) return;
     applySuggestion(buildSuggestion(purpose, value, loadedContext), { force: true });
+  };
+  /** 予定の場所の側で乗る駅・降りる駅を選び直したら、徒歩を合わせて提案の時刻を求め直す（時刻を触っていなければ） */
+  const chooseTransitStation = (side: "origin" | "destination", choice: StationChoice) => {
+    if (!purpose || marginMinutes === null || !suggestTarget) return;
+    if (transitStations.walkSideFor(suggestTarget.location) !== side) return;
+    const walk = stationWalkMinutes(suggestTarget.location, placeCatalog.places, choice);
+    applySuggestion(buildSuggestion(purpose, marginMinutes, loadedContext, walk));
   };
   const chooseCandidate = (text: string) => {
     if (purpose === "BEFORE_EVENT") editOrigin(text);
@@ -1106,6 +1123,12 @@ export function TravelForm({
 
         {transitCondition && (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            <TransitStationPicker
+              origin={origin}
+              destination={destination}
+              state={transitStations}
+              onChange={chooseTransitStation}
+            />
             <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Yahoo!乗換案内で探す基準">
               {(["depart", "arrive"] as const).map((side) => (
                 <Button

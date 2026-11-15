@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { parseCoordinates } from "@/lib/coordinates";
+import { readStationsBody } from "@/lib/station-name";
 import { getNotionPlaceConnection } from "@/services/calendar/write-context";
 import {
   deletePlace,
@@ -64,6 +65,8 @@ export async function PATCH(
     coordinates?: string | null;
     /** 最寄り駅。空文字・null は「消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
     station?: string | null;
+    /** 最寄り駅の一覧（issue #1607）。`{ name, minutes }` の配列。あれば station / stationMinutes より優先。 */
+    stations?: unknown;
     /** 最寄り駅までの徒歩（分）。null は「消す」、項目ごと渡さないのは「触らない」。 */
     stationMinutes?: number | null;
     /** 付けるタグの名前。固定のタグか、その場所に既に付いているタグだけ受ける（issue #1361）。 */
@@ -72,6 +75,8 @@ export async function PATCH(
 
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+  const stations = "stations" in body ? readStationsBody(body.stations) : undefined;
+  if (stations === null) return NextResponse.json({ error: "stations must be an array" }, { status: 400 });
 
   try {
     const place = await updatePlace(connection, placeId, {
@@ -82,6 +87,7 @@ export async function PATCH(
       ...("stationMinutes" in body
         ? { stationMinutes: typeof body.stationMinutes === "number" ? body.stationMinutes : null }
         : {}),
+      ...(stations ? { stations } : {}),
       ...("tags" in body ? { tags: readTags(body.tags) } : {}),
     });
     return NextResponse.json(place);

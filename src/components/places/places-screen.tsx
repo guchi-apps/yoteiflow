@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCoordinates } from "@/lib/coordinates";
 import { filterPlaces } from "@/lib/place-filter";
+import { placeStations, stationsLabel } from "@/lib/station-name";
 import { cn } from "@/lib/utils";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -272,8 +273,8 @@ export function PlacesScreen({
                     {/* 最寄り駅は電車の移動でそのまま発着地になる。住所と同じ行へ添えて、
                         どの駅から探されるのかを一覧から読めるようにする。 */}
                     <span className="type-body-small truncate text-on-surface-variant">
-                      {place.station
-                        ? `${place.address ?? "住所なし"} ・ ${place.station}`
+                      {placeStations(place).length > 0
+                        ? `${place.address ?? "住所なし"} ・ ${stationsLabel(placeStations(place))}`
                         : (place.address ?? "住所なし")}
                     </span>
                   </div>

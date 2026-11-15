@@ -1,8 +1,12 @@
+import { placeStations, type PlaceStation } from "@/lib/station-name";
+
 /** 絞り込みに使う場所の項目。`PlaceItem` のうち読むものだけ。 */
 export type FilterablePlace = {
   name: string;
   address?: string | null;
   station?: string | null;
+  /** 最寄り駅の一覧（issue #1607）。無ければ station を1件として照合する。 */
+  stations?: PlaceStation[];
   tags: string[];
 };
 
@@ -25,7 +29,8 @@ export function filterPlaces<T extends FilterablePlace>(
       return false;
     }
     if (!needle) return true;
-    return [place.name, place.address ?? "", place.station ?? "", ...place.tags]
+    const stations = placeStations(place).map((station) => station.name);
+    return [place.name, place.address ?? "", ...stations, ...place.tags]
       .join(" ")
       .toLowerCase()
       .includes(needle);
