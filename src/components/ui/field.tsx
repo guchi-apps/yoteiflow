@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils"
  * 入れず、呼び出し側で指定する。
  */
 export function fieldShell(
-  variant: "filled" | "outlined" = "filled",
+  variant: "filled" | "outlined" | "flat" = "filled",
   className?: string,
   layout: "stack" | "row" = "stack",
 ) {
@@ -34,6 +34,9 @@ export function fieldShell(
       // 下端の線をフォーカスで2dpへ太らせたいが、border幅を変えると中身が1pxずれる。
       // 既存の1px枠はそのままに、内側へもう1px重ねてshadowで太さを表現する。
       "rounded-t-xs border-b border-outline bg-muted hover:bg-muted/70 focus-within:border-primary focus-within:shadow-[inset_0_-1px_0_var(--color-primary)]",
+    // Googleカレンダー風の行（issue #1563）。面も枠も持たず、行の区切り線は呼び出し側が引く。
+    variant === "flat" &&
+      "rounded-none border-b border-transparent bg-transparent px-0 focus-within:border-primary",
     variant === "outlined" &&
       "rounded-xs border border-outline bg-transparent hover:border-on-surface focus-within:border-primary focus-within:shadow-[inset_0_0_0_1px_var(--color-primary)]",
     "has-aria-invalid:border-destructive has-aria-invalid:shadow-[inset_0_0_0_1px_var(--color-destructive)]",

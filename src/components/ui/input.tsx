@@ -27,7 +27,7 @@ function Input({
 }: React.ComponentProps<"input"> & {
   label?: string
   /** M3のテキストフィールドは Filled と Outlined の2種類。ラベル付きの既定はFilled。 */
-  variant?: "filled" | "outlined"
+  variant?: "filled" | "outlined" | "flat"
   /**
    * 渡すと、文字が入っている間だけ右端に ✕ を出す（issue #446）。
    * 消したあとの値は呼び出し側が決めるため、ここでは空にする合図だけを渡す。

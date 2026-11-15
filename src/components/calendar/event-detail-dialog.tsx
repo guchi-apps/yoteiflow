@@ -564,16 +564,10 @@ export function EventDetailDialog({
                   <button
                     type="button"
                     onClick={() => openTravel(travel)}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md border py-1.5 pr-2.5 text-left text-xs text-on-surface"
-                    style={{
-                      backgroundColor: colors.background,
-                      borderColor: colors.border,
-                      borderLeftWidth: "3px",
-                      borderLeftColor: colors.accent,
-                      paddingLeft: "8px",
-                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 border-l-[3px] py-2 pr-2 pl-3 text-left text-sm text-on-surface"
+                    style={{ borderLeftColor: colors.accent }}
                   >
-                    <TravelMark mode={travel.mode} className="size-3.5 shrink-0" />
+                    <TravelMark mode={travel.mode} className="size-5 shrink-0 text-on-surface-variant" />
                     <span className="min-w-0 flex-1 truncate">
                       {travel.title}
                       <span className="opacity-75">（{travelSummary(travel)}）</span>
@@ -612,8 +606,7 @@ export function EventDetailDialog({
                     key={task.id}
                     type="button"
                     onClick={() => openTask(task)}
-                    className="flex items-center gap-2 rounded-md border border-secondary-container bg-secondary-container/40 py-1.5 pr-2.5 text-left text-xs text-on-surface"
-                    style={{ borderLeftWidth: "3px", paddingLeft: "8px" }}
+                    className="flex items-center gap-3 border-l-[3px] border-secondary-container py-2 pr-2 pl-3 text-left text-sm text-on-surface"
                   >
                     <TaskStageMark
                       stage={links[0].stage}
@@ -668,7 +661,7 @@ export function EventDetailDialog({
             <Accordion
               title="予定の操作"
               description={canAddTravel ? "移動・タスク・中止" : "タスク・中止"}
-              className="bg-surface-container-lowest"
+              flat
             >
               {canAddTravel && (
                 <div className="grid grid-cols-2 gap-2">
@@ -764,8 +757,8 @@ function ActionCard({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "relative rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
-        wide ? "flex items-center gap-3" : "flex flex-col gap-1.5",
+        "relative flex items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-surface-container-low active:bg-surface-container disabled:opacity-38",
+        !wide && "min-w-0",
       )}
     >
       <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
