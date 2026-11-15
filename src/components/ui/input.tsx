@@ -54,7 +54,7 @@ function Input({
       data-slot="input"
       ref={setRef}
       className={cn(
-        label ? cn(fieldControl, "h-6") : undefined,
+        label ? cn(fieldControl, "h-6", variant === "flat" && "text-sm") : undefined,
         // 外観を落とすと iOS でも幅の指定どおりに描画され、ダイアログからはみ出さなくなる。
         type && NATIVE_SIZED_TYPES.has(type) && "appearance-none [-webkit-appearance:none]",
         !label &&

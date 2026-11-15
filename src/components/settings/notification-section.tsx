@@ -165,7 +165,7 @@ export function NotificationSection({
               <div className="flex flex-col gap-1">
                 <Label htmlFor="event-enabled">予定</Label>
                 <p className="type-body-small text-on-surface-variant">
-                  予定の通知を使うかどうかの親スイッチです。通知するのは、予定の画面で通知を入れた予定だけです（終日の予定は対象外）。下の時間は、通知を入れるときの初期値になります。
+                  予定の通知を使うかどうかの親スイッチです。通知するのは、予定の画面で通知を入れた予定だけです。下の時間は、通知を入れるときの初期値になります。
                 </p>
               </div>
 
