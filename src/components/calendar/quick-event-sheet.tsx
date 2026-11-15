@@ -364,11 +364,16 @@ export function QuickEventSheet({
 
           {/* 予定とタスクの欄を同じセルに重ね、高い方に合わせる。切り替えるたびにシートの高さが
               変わって保存ボタンの位置がずれない（issue #1313）。選んでいない側は invisible と
-              inert で、見えず・押せず・フォーカスも入らない。 */}
+              inert で、見えず・押せず・フォーカスも入らない。iOSで invisible の切り替えが再描画
+              されず両方の欄が重なって見えた（issue #1586）ため、opacity-0 でも隠す。 */}
           <div className="grid min-w-0">
             <div
-              className={cn("col-start-1 row-start-1 flex min-w-0 flex-col gap-3", isTask && "invisible")}
+              className={cn(
+                "col-start-1 row-start-1 flex min-w-0 flex-col gap-3",
+                isTask && "invisible pointer-events-none opacity-0",
+              )}
               inert={isTask}
+              aria-hidden={isTask}
             >
               {/* 開始・終了のどちらを押しても同じ1枚の「日時を設定」画面が開き、日をまたぐ予定も作れる
                   （issue #1551。旧: 同じ日の中だけ）。 */}
@@ -415,8 +420,12 @@ export function QuickEventSheet({
 
             {taskAvailable && (
               <div
-                className={cn("col-start-1 row-start-1 flex min-w-0 flex-col gap-3", !isTask && "invisible")}
+                className={cn(
+                  "col-start-1 row-start-1 flex min-w-0 flex-col gap-3",
+                  !isTask && "invisible pointer-events-none opacity-0",
+                )}
                 inert={!isTask}
+                aria-hidden={!isTask}
               >
                 <div className="flex flex-col gap-1.5">
                   <Label>入れる日付</Label>
