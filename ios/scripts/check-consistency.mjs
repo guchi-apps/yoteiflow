@@ -296,10 +296,13 @@ export function checkConsistency() {
   if (!appleAppId || appleAppId !== `${team}.com.gucchii.yoteiflow` || !pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;")) {
     problems.push(`AASA の appID（${appleAppId}）が Team ID・アプリの Bundle ID と一致しません`);
   }
-  const tsLinkPaths = parseList(universalLinks.match(/UNIVERSAL_LINK_PATHS = \[([^\]]*)\]/)?.[1]);
-  const swiftLinkPaths = parseList(sharedConfig.match(/universalLinkPaths: Set<String> = \[([^\]]*)\]/)?.[1]);
-  if (!tsLinkPaths || tsLinkPaths !== swiftLinkPaths) {
-    problems.push(`Universal Link の対象パスが一致しません: Swift=${swiftLinkPaths} / TS=${tsLinkPaths}`);
+  // サーバー（AASA）が広告するパスは、アプリが処理できるパスの部分集合であること。
+  // Webが先にデプロイされiOSが後追いになるため、アプリ側が先に対応しておく分には構わない（#1529）
+  const tsLinkPaths = parseList(universalLinks.match(/UNIVERSAL_LINK_PATHS = \[([^\]]*)\]/)?.[1]).split(",").filter(Boolean);
+  const swiftLinkPaths = parseList(sharedConfig.match(/universalLinkPaths: Set<String> = \[([^\]]*)\]/)?.[1]).split(",").filter(Boolean);
+  const unsupported = tsLinkPaths.filter((path) => !swiftLinkPaths.includes(path));
+  if (tsLinkPaths.length === 0 || unsupported.length > 0) {
+    problems.push(`AASAが広告するパスをアプリが処理できません: Swift=${swiftLinkPaths} / TS=${tsLinkPaths}`);
   }
   if (!/url\.scheme == "https"[\s\S]*?openUniversalLink[\s\S]*?openFromWidget/.test(read("ios/YoteiFlow/YoteiFlowApp.swift"))) {
     problems.push("YoteiFlowApp.swift が https を openUniversalLink、それ以外を openFromWidget へ分けていません");

@@ -59,8 +59,9 @@ enum SharedConfig {
     }
 
     /// Universal Link（issue #1366）でアプリが開く画面。サーバーの AASA（`src/lib/universal-links.ts` の
-    /// `UNIVERSAL_LINK_PATHS`）と揃えること（`ios/scripts/check-consistency.mjs` が照合する）
-    static let universalLinkPaths: Set<String> = ["/calendar"]
+    /// `UNIVERSAL_LINK_PATHS`）が広告するパスの上位集合にすること（`ios/scripts/check-consistency.mjs` が照合する）。
+    /// アプリが先に対応し、新ビルドの配布後にAASA側へ足す（`/tasks` は issue #1529）
+    static let universalLinkPaths: Set<String> = ["/calendar", "/tasks"]
 
     /// Universal Link（`https://dayspan.gucchii.com/calendar?date=2026-11-09`）から開く先のパス。
     /// `baseURL` とスキーム・ホスト・ポートが一致し、許可した画面のときだけ返す。引き継ぐクエリは

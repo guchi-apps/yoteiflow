@@ -8,7 +8,14 @@
  */
 export const APPLE_APP_ID = "6AA3WFTR94.com.gucchii.yoteiflow";
 
-/** アプリで開くパス。ほかの画面は従来どおりSafari（ブラウザ）で開く。 */
+/**
+ * AASAで広告する（＝アプリで開く）パス。ほかの画面は従来どおりSafari（ブラウザ）で開く。
+ *
+ * ここへ足すのは、そのパスを処理できるiOSビルドがTestFlightで配布済みになってから（issue #1529）。
+ * Webは先にデプロイされ、iOSの配布は後追いのため、旧アプリが処理できないパスを広告すると、
+ * アプリへ渡ったあと何も開かずSafariで開けていた経路まで壊れる。アプリ側（`SharedConfig.universalLinkPaths`）が
+ * 先に対応しているのは `/tasks`（#1525）で、新ビルドの配布後に別のPRでここへ足す。
+ */
 export const UNIVERSAL_LINK_PATHS = ["/calendar"];
 
 /** `/.well-known/apple-app-site-association` の中身。 */
