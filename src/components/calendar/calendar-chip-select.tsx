@@ -27,7 +27,10 @@ export function CalendarChipSelect({
   value,
   calendars,
   onChange,
+  flat = false,
 }: {
+  /** Googleカレンダー風の行に置くとき（issue #1563）。見出しは行のアイコンが担うため読み上げ専用にする。 */
+  flat?: boolean;
   label: string;
   value: string;
   calendars: WritableCalendar[];
@@ -74,7 +77,10 @@ export function CalendarChipSelect({
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <span id={labelId} className="type-label-medium text-on-surface-variant">
+      <span
+        id={labelId}
+        className={cn("type-label-medium text-on-surface-variant", flat && "sr-only")}
+      >
         {label}
       </span>
       <div

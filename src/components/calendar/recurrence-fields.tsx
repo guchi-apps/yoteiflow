@@ -50,7 +50,7 @@ export function RecurrenceFields({
           onChange(withFrequency(value, next as RecurrenceFrequency, start))
         }
       >
-        <SelectTrigger label="繰り返し">
+        <SelectTrigger variant="flat" label="繰り返し">
           <SelectValue placeholder="繰り返さない" />
         </SelectTrigger>
         <SelectContent>
@@ -65,6 +65,7 @@ export function RecurrenceFields({
       {repeating && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
           <Input
+                variant="flat"
             id="event-recurrence-interval"
             label={intervalLabel(value.frequency)}
             type="number"
@@ -88,7 +89,7 @@ export function RecurrenceFields({
             value={value.end}
             onValueChange={(next) => onChange({ ...value, end: next as RecurrenceEnd })}
           >
-            <SelectTrigger label="繰り返しの終了">
+            <SelectTrigger variant="flat" label="繰り返しの終了">
               <SelectValue placeholder="終了日なし" />
             </SelectTrigger>
             <SelectContent>
@@ -104,6 +105,7 @@ export function RecurrenceFields({
           {value.end === "until" && (
             <div className="sm:col-start-2">
               <Input
+                variant="flat"
                 id="event-recurrence-until"
                 label="繰り返しの終了日"
                 type="date"
@@ -116,6 +118,7 @@ export function RecurrenceFields({
           {value.end === "count" && (
             <div className="sm:col-start-2">
               <Input
+                variant="flat"
                 id="event-recurrence-count"
                 label="繰り返す回数"
                 type="number"

@@ -36,10 +36,13 @@ function SelectTrigger({
   className,
   size = "default",
   label,
+  variant = "filled",
   id,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
+  /** `flat` は予定フォームのGoogleカレンダー風の行（issue #1563）。 */
+  variant?: "filled" | "flat"
   size?: "sm" | "default"
   /** 渡すとテキストフィールドと同じ枠になり、見出しを枠の中の上部に置く。 */
   label?: string
@@ -73,7 +76,7 @@ function SelectTrigger({
   if (!label) return trigger
 
   return (
-    <div data-slot="field" className={fieldShell("filled", "h-14")}>
+    <div data-slot="field" className={fieldShell(variant, "h-14")}>
       <label htmlFor={triggerId} className={fieldLabel}>
         {label}
       </label>

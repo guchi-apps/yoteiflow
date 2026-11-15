@@ -49,8 +49,11 @@ export function DateRangePickerFields({
   end,
   allDay,
   follow = true,
+  flat = false,
   onChange,
 }: {
+  /** Googleカレンダー風の行（issue #1563）。枠・面を持たず「日付　時刻」を1行に出す。 */
+  flat?: boolean;
   idPrefix: string;
   start: string;
   end: string;
@@ -67,10 +70,23 @@ export function DateRangePickerFields({
       id={id}
       type="button"
       onClick={() => setOpen(true)}
-      className={cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")}
+      className={
+        flat
+          ? "flex min-h-11 w-full items-center gap-3 text-left text-base text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:text-sm"
+          : cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")
+      }
     >
-      <span className={fieldLabel}>{text}</span>
-      <span className="truncate text-base text-foreground md:text-sm">{label(value)}</span>
+      {flat ? (
+        <>
+          <span className="w-9 shrink-0 text-on-surface-variant">{text}</span>
+          <span className="truncate">{label(value)}</span>
+        </>
+      ) : (
+        <>
+          <span className={fieldLabel}>{text}</span>
+          <span className="truncate text-base text-foreground md:text-sm">{label(value)}</span>
+        </>
+      )}
     </button>
   );
 

@@ -21,7 +21,7 @@ function Textarea({
   ...props
 }: React.ComponentProps<"textarea"> & {
   label?: string
-  variant?: "filled" | "outlined"
+  variant?: "filled" | "outlined" | "flat"
   /** 渡すと、文字が入っている間だけ右上に ✕ を出す（issue #446）。Input と同じ扱い。 */
   onClear?: () => void
 }) {

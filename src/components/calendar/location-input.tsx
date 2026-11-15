@@ -43,7 +43,10 @@ export function LocationInput({
   places,
   eventTitle,
   placeDatabaseReady,
+  variant = "filled",
 }: {
+  /** `flat` は予定フォームのGoogleカレンダー風の行（issue #1563）。 */
+  variant?: "filled" | "flat";
   /** 入力欄のid。移動では出発地・目的地の2つが同じ画面に並ぶため、呼び出し側で分ける。 */
   id?: string;
   label?: string;
@@ -231,6 +234,7 @@ export function LocationInput({
           <Input
             id={id}
             label={label}
+            variant={variant}
             value={value}
             onChange={(event) => change(event.target.value)}
             // 消した直後は別の場所を選び直したいことが多い。候補は開いたままにする。

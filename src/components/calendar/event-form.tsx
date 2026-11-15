@@ -3,14 +3,13 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { Bell, BellOff } from "lucide-react";
+import { AlignLeft, Bell, BellOff, CalendarDays, Clock, MapPin, Repeat } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
@@ -19,6 +18,7 @@ import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { FormRow } from "./event-form-row";
 import { EventNotificationDialog } from "./event-notification-dialog";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
@@ -291,32 +291,17 @@ export function EventForm({
       {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、中に縮まない要素
           （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
           中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
-      <div className="flex min-w-0 flex-col gap-4">
-        <Input
+      <div className="flex min-w-0 flex-col">
+        {/* タイトルは枠も面も持たない大きな文字（Googleカレンダー風・issue #1563）。 */}
+        <input
           id="event-title"
-          label="タイトル"
+          aria-label="タイトル"
+          placeholder="タイトルを追加"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          onClear={() => onTitleChange("")}
           autoFocus={autoFocusTitle}
+          className="mb-2 min-h-12 w-full min-w-0 bg-transparent px-0 text-2xl text-foreground outline-none placeholder:text-muted-foreground"
         />
-
-        {/*
-          仮の予定（issue #688）。Google Calendarの status フィールドをそのまま使う
-          （DaySpan独自のDBは持たない）。まだ本決まりでない予定を、削除せず区別して
-          置いておけるようにするため。終日と同じ「予定の性質」のチェックなので横に並べる
-          （issue #739）。
-        */}
-        <div className="-my-1 flex flex-wrap items-center gap-x-2">
-          <label className="flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
-            終日
-          </label>
-          <label className="flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
-            仮の予定
-          </label>
-        </div>
 
         {editingNotification && (
           <EventNotificationDialog
@@ -330,10 +315,25 @@ export function EventForm({
           />
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
+        <FormRow icon={<Clock />}>
+          {/*
+            終日・仮の予定（issue #688・#739）。仮の予定はGoogle Calendarの status をそのまま使う
+            （DaySpan独自のDBは持たない）。まだ本決まりでない予定を削除せず区別して置くため。
+          */}
+          <div className="flex flex-wrap items-center gap-x-6">
+            <label className="flex min-h-11 items-center gap-3 text-base select-none md:text-sm">
+              <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
+              終日
+            </label>
+            <label className="flex min-h-11 items-center gap-3 text-base select-none md:text-sm">
+              <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
+              仮の予定
+            </label>
+          </div>
           {/* 開始・終了のどちらを押しても、同じ1枚の「日時を設定」画面が開く（issue #1551）。 */}
           <DateRangePickerFields
             idPrefix="event"
+            flat
             start={start}
             end={end}
             allDay={allDay}
@@ -345,24 +345,31 @@ export function EventForm({
               setEnd(nextEnd);
             }}
           />
-        </div>
+        </FormRow>
 
-        <CalendarChipSelect
-          label="保存先カレンダー"
-          value={calendarId}
-          calendars={calendars}
-          onChange={(next) => {
-            setCalendarId(next);
-            setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
-          }}
-        />
+        <FormRow icon={<CalendarDays />}>
+          <CalendarChipSelect
+            flat
+            label="保存先カレンダー"
+            value={calendarId}
+            calendars={calendars}
+            onChange={(next) => {
+              setCalendarId(next);
+              setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
+            }}
+          />
+        </FormRow>
 
         {/* 時刻のある新規の入力だけ。終日は開始・終了が日付だけで移動の欄の形と合わない。 */}
         {pickedTravel &&
           !editing &&
           !allDay &&
           calendarId === travelCalendarId &&
-          onOpenTravel && <TravelEntryHint onOpen={() => onOpenTravel({ start, end })} />}
+          onOpenTravel && (
+            <FormRow>
+              <TravelEntryHint onOpen={() => onOpenTravel({ start, end })} />
+            </FormRow>
+          )}
 
         {/*
           予定ごとの通知設定（issue #708）。新規作成・既存の編集どちらもこのフォームから選ぶ
@@ -373,55 +380,61 @@ export function EventForm({
           recurrenceが動かないため、このガードは常にfalseで副作用なく共存する）。
         */}
         {!allDay && !draft.fromQuick && (
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined}
-              disabled={recurrence.frequency !== "none"}
-              onClick={() => setEditingNotification(true)}
-            >
-              {!notification?.enabled ? (
-                <BellOff className="size-4" />
-              ) : (
-                <Bell className="size-4" />
+          <FormRow icon={notification?.enabled ? <Bell /> : <BellOff />}>
+            <div className="flex min-h-11 flex-wrap items-center gap-x-3">
+              <button
+                type="button"
+                disabled={recurrence.frequency !== "none"}
+                onClick={() => setEditingNotification(true)}
+                className={cn(
+                  "text-left text-base md:text-sm disabled:opacity-38",
+                  notification?.enabled ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {eventNotificationSummary(notification)}
+              </button>
+              {recurrence.frequency !== "none" && (
+                <span className="type-label-small text-on-surface-variant">
+                  繰り返し予定は保存してから設定できます
+                </span>
               )}
-              {eventNotificationSummary(notification)}
-            </Button>
-            {recurrence.frequency !== "none" && (
-              <span className="type-label-small text-on-surface-variant">
-                繰り返し予定は保存してから設定できます
-              </span>
-            )}
-          </div>
+            </div>
+          </FormRow>
         )}
 
         {!editing && (
-          <RecurrenceFields
-            value={recurrence}
-            start={start}
-            weekStartsOn={weekStartsOn}
-            onChange={setRecurrence}
-          />
+          <FormRow icon={<Repeat />}>
+            <RecurrenceFields
+              value={recurrence}
+              start={start}
+              weekStartsOn={weekStartsOn}
+              onChange={setRecurrence}
+            />
+          </FormRow>
         )}
 
-        <LocationInput
-          value={location}
-          onChange={setLocation}
-          places={placeCatalog.places}
-          eventTitle={title}
-          placeDatabaseReady={placeCatalog.ready}
-        />
+        <FormRow icon={<MapPin />}>
+          <LocationInput
+            variant="flat"
+            value={location}
+            onChange={setLocation}
+            places={placeCatalog.places}
+            eventTitle={title}
+            placeDatabaseReady={placeCatalog.ready}
+          />
+        </FormRow>
 
-        <Textarea
-          id="event-description"
-          label="説明"
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onClear={() => setDescription("")}
-        />
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            id="event-description"
+            label="説明"
+            variant="flat"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onClear={() => setDescription("")}
+          />
+        </FormRow>
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
