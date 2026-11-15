@@ -310,19 +310,20 @@ export async function updateEvent(
 }
 
 /**
- * 仮の予定を確定する（issue #688）。「仮の予定を確定する」ボタン専用の軽量PATCHで、
- * status だけを送る。フルの updateEvent() を経由させないのは、確定操作では
- * タイトル・日時など他の項目を毎回送らせる理由が無いため。
+ * 仮の予定を確定する・仮の予定へ戻す（issue #688・#1567）。表示画面の確定ボタンと状態カード専用の
+ * 軽量PATCHで、status だけを送る。フルの updateEvent() を経由させないのは、この操作では
+ * タイトル・日時など他の項目を毎回送らせる理由が無いため。`tentative` 未指定は確定。
  */
 export async function confirmEvent(
   account: GoogleAccount,
   calendarId: string,
   eventId: string,
+  tentative = false,
 ): Promise<void> {
   await googleCalendarFetch(
     account,
     `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-    { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) },
+    { method: "PATCH", body: JSON.stringify({ status: tentative ? "tentative" : "confirmed" }) },
   );
 }
 
