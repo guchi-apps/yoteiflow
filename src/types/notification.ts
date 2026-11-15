@@ -12,6 +12,8 @@ export type NotificationSettings = {
   taskEnabled: boolean;
   /** 時刻の無い期限をまとめて知らせる時刻（設定タイムゾーンでの HH:MM）。 */
   taskDigestTime: string;
+  /** 出張・年休の事前申請が未完了のとき、前営業日の16時に会社宛てメールで知らせるか（issue #1552）。 */
+  workApplyMailEnabled: boolean;
 };
 
 /**
@@ -27,6 +29,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   eventLeadMinutes: 10,
   taskEnabled: true,
   taskDigestTime: "08:00",
+  workApplyMailEnabled: false,
 };
 
 /**

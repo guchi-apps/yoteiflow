@@ -242,6 +242,22 @@ export function NotificationSection({
               />
             </div>
           </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="work-apply-mail-enabled">事前申請の未完了をメールで知らせる</Label>
+              <p className="type-body-small text-on-surface-variant">
+                出張・年休の事前申請が済んでいないとき、開始日の前日（土日祝・休みを挟むときはその手前の出勤日）の16時台に会社宛てへメールを1通送ります（{timeZone}）。
+              </p>
+            </div>
+
+            <Switch
+              id="work-apply-mail-enabled"
+              checked={value.workApplyMailEnabled}
+              disabled={busy}
+              onCheckedChange={(checked) => void send({ workApplyMailEnabled: checked })}
+            />
+          </div>
         </CardContent>
       </Card>
 

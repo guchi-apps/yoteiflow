@@ -21,6 +21,7 @@ export async function getNotificationSettings(userId: string): Promise<Notificat
     eventLeadMinutes: row.eventLeadMinutes,
     taskEnabled: row.taskEnabled,
     taskDigestTime: row.taskDigestTime,
+    workApplyMailEnabled: row.workApplyMailEnabled,
   };
 }
 
@@ -61,5 +62,6 @@ export async function updateNotificationSettings(
     eventLeadMinutes: row.eventLeadMinutes,
     taskEnabled: row.taskEnabled,
     taskDigestTime: row.taskDigestTime,
+    workApplyMailEnabled: row.workApplyMailEnabled,
   };
 }

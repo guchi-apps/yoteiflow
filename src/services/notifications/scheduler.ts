@@ -1,4 +1,5 @@
 import { isAnyPushConfigured } from "@/lib/push-configured";
+import { isWorkApplyMailConfigured, runWorkApplyMail } from "@/services/notifications/work-apply-mail";
 import { dispatchDueNotifications } from "@/services/notifications/dispatch";
 import { listUsersToPlan, planUserNotifications } from "@/services/notifications/plan";
 
@@ -37,6 +38,31 @@ export function startNotificationScheduler(): void {
   timer.unref();
 
   console.info("[dayspan] notification scheduler started.");
+}
+
+/**
+ * 事前申請が未完了のときの会社宛てメールのタイマー（issue #1552）。
+ *
+ * Web Push の鍵が無い環境でも動くよう、通知のタイマーとは別に始める。本番以外で
+ * 宛先（AIDE_TEXT_MAIL_URL）が未設定の環境（開発中の worktree など）では何もしない。手動dispatchの入口には載せない。
+ */
+let workApplyMailStarted = false;
+
+export function startWorkApplyMailScheduler(): void {
+  if (workApplyMailStarted) return;
+  workApplyMailStarted = true;
+
+  if (!isWorkApplyMailConfigured()) {
+    console.info("[dayspan] work apply mail scheduler: 本番以外で AIDE_TEXT_MAIL_URL が未設定のため起動しません。");
+    return;
+  }
+
+  const timer = setInterval(() => {
+    void runWorkApplyMail().catch((error) => console.error("[dayspan] work apply mail failed:", error));
+  }, TICK_MS);
+  timer.unref();
+
+  console.info("[dayspan] work apply mail scheduler started.");
 }
 
 /** 1回ぶんの処理。送信を先に行い、そのあとで下書きを作り直す。 */
