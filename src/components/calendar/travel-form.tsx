@@ -39,6 +39,7 @@ import {
   type TravelSearchPurpose,
 } from "@/types/calendar";
 
+import { DateRangePickerFields } from "./date-range-picker";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventNotificationEditor } from "./event-notification-editor";
@@ -477,18 +478,21 @@ export function TravelForm({
    * 候補を押したときは applyEstimate が直接 setDepartAt / setArriveAt を呼ぶため、
    * この経路は通らない（出どころが押した候補のまま残る）。
    */
-  const editTime = (side: TimeBasis, value: string) => {
+  /** 出発・到着をまとめて直す（範囲ピッカー用）。個別欄からの1側の変更も同じ経路を通し、前処理を1回だけ行う */
+  const editRange = (nextDepart: string, nextArrive: string) => {
     touch("times");
     // 直す前に両側が入っていれば、その長さを覚える（計算ボタンで使う）。反対側は自動では動かさない（手入力の所要時間を妨げない）
     if (routeMinutes === null && departAt && arriveAt) {
       const gap = (new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime()) / 60_000;
       if (Number.isFinite(gap) && gap > 0) setLengthMinutes(gap);
     }
-    if (side === "depart") setDepartAt(value);
-    else setArriveAt(value);
+    setDepartAt(nextDepart);
+    setArriveAt(nextArrive);
     // 手で直した時刻はGoogle由来の所要時間と混同しない。計算ボタンで求め直すと戻る
     setEstimateSource("MANUAL");
   };
+  const editTime = (side: TimeBasis, value: string) =>
+    side === "depart" ? editRange(value, arriveAt) : editRange(departAt, value);
   /** 「出発日時から計算」「到着日時から計算」。押した側を固定し、反対側を所要時間から求める */
   const calculateFrom = (side: TimeBasis) => {
     touch("times");
@@ -938,8 +942,27 @@ export function TravelForm({
 
         <FormRow icon={<Clock />}>
           <div className="flex flex-col gap-1">
-            <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
-            <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+            {departAt && arriveAt ? (
+              // 両方入っているときは、予定と同じ1枚の「日時を設定」画面で選ぶ（issue #1605）。
+              // 出発を直しても到着は自動で動かさない（#1203）ので follow は切る。
+              <DateRangePickerFields
+                idPrefix="travel"
+                flat
+                start={departAt}
+                end={arriveAt}
+                allDay={false}
+                follow={false}
+                startLabel="出発"
+                endLabel="到着"
+                onChange={editRange}
+              />
+            ) : (
+              // 片側だけのあいだは従来の個別欄のまま（所要時間から反対側を求める流れ・#1209）
+              <>
+                <DateTimeInput id="travel-depart" label="出発" flat value={departAt} onChange={editDepartAt} />
+                <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
+              </>
+            )}
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 type="button"
