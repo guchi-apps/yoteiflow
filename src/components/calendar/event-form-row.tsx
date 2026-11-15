@@ -38,3 +38,31 @@ export function FormRow({
     </div>
   );
 }
+
+/** 終日・仮予定の選択カード（issue #1568）。押すと色が変わり、選択中だと分かる。 */
+export function ToggleCard({
+  pressed,
+  onToggle,
+  children,
+}: {
+  pressed: boolean;
+  onToggle: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onToggle}
+      className={cn(
+        "min-h-10 rounded-lg border px-4 text-sm transition-colors select-none",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        pressed
+          ? "border-primary-container bg-primary-container font-bold text-on-primary-container"
+          : "border-outline text-foreground hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
+  );
+}

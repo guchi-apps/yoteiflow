@@ -42,11 +42,14 @@ export function DateTimePickerField({
   allowNoTime = false,
   defaultTime = "09:00",
   dateOnly = false,
+  flat = false,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** Googleカレンダー風の行（issue #1582）。枠・面を持たず「ラベル　日時」を1行に出す。 */
+  flat?: boolean;
   allowNoTime?: boolean;
   defaultTime?: string;
   /** 終日の欄用。日付だけを選び、`YYYY-MM-DD` を返す（時刻の行・表示を出さない）。 */
@@ -61,10 +64,23 @@ export function DateTimePickerField({
         id={id}
         type="button"
         onClick={() => setOpen(true)}
-        className={cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")}
+        className={
+          flat
+            ? "flex min-h-10 w-full items-center gap-2 text-left text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            : cn(fieldShell("filled", "h-14 cursor-pointer text-left"), "items-start justify-center")
+        }
       >
-        <span className={fieldLabel}>{label}</span>
-        <span className="truncate text-base text-foreground md:text-sm">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+        {flat ? (
+          <>
+            <span className="shrink-0 text-on-surface-variant">{label}</span>
+            <span className="truncate">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+          </>
+        ) : (
+          <>
+            <span className={fieldLabel}>{label}</span>
+            <span className="truncate text-base text-foreground md:text-sm">{dateOnly ? formatPickerDateLabel(parsed) : formatPickerLabel(parsed)}</span>
+          </>
+        )}
       </button>
       {open && (
         <PickerDialog

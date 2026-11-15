@@ -9,7 +9,6 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { sameNotificationOverride } from "@/lib/event-notification";
-import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -17,7 +16,7 @@ import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateRangePickerFields } from "./date-range-picker";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
-import { FormRow } from "./event-form-row";
+import { FormRow, ToggleCard } from "./event-form-row";
 import { EventNotificationEditor } from "./event-notification-editor";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
@@ -449,32 +448,4 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     tentative: event.tentative,
     notification: event.notification ?? null,
   };
-}
-
-/** 終日・仮予定の選択カード（issue #1568）。押すと色が変わり、選択中だと分かる。 */
-function ToggleCard({
-  pressed,
-  onToggle,
-  children,
-}: {
-  pressed: boolean;
-  onToggle: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onToggle}
-      className={cn(
-        "min-h-10 rounded-lg border px-4 text-sm transition-colors select-none",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-        pressed
-          ? "border-primary-container bg-primary-container font-bold text-on-primary-container"
-          : "border-outline text-foreground hover:bg-muted",
-      )}
-    >
-      {children}
-    </button>
-  );
 }
