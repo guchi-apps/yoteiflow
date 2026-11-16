@@ -51,8 +51,10 @@ export function reflectTarget(
 ): ReflectTarget | null {
   if (
     edit.title !== (snapshot.title ?? "") ||
-    (edit.location ?? "") !== (snapshot.location ?? "") ||
-    (edit.description ?? "") !== (snapshot.description ?? "")
+    // 未指定（undefined）は「変更なし」。ドラッグのPATCHは場所・メモを送らず、Google側も触らない。
+    // 明示的に消した（null・空文字）ときだけ控えと比べる。
+    (edit.location !== undefined && (edit.location ?? "") !== (snapshot.location ?? "")) ||
+    (edit.description !== undefined && (edit.description ?? "") !== (snapshot.description ?? ""))
   ) {
     return null;
   }

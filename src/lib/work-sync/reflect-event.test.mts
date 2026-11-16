@@ -67,3 +67,15 @@ test("控えを新しい時刻へ直せば、反映後の予定は手動調整�
   // 控えを直さなければ手動調整へ倒れる（従来の挙動）
   assert.equal(decide(updated, { status: "ACTIVE", snapshot }, current), "markManual");
 });
+
+test("ドラッグ（場所・メモを送らない）でも、場所・メモのある勤務予定の時刻を反映する", () => {
+  const withMemo: Snapshot = { ...snapshot, description: "メモ" };
+  const drag = { start: "2026-10-06T00:00:00.000Z", end: "2026-10-06T08:30:00.000Z", title: "勤務（在宅）" };
+  const expected = { date: "2026-10-06", startMinutes: 540, endMinutes: 1050 };
+  assert.deepEqual(
+    reflectTarget(withMemo, "2026-10-06", { ...drag, location: undefined, description: undefined }, TZ),
+    expected,
+  );
+  // 明示的に消した場合は変更ありとして反映しない
+  assert.equal(reflectTarget(withMemo, "2026-10-06", { ...drag, location: null, description: undefined }, TZ), null);
+});
