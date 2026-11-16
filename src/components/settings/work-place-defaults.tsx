@@ -13,7 +13,7 @@ import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 
 import { WorkPlaceLinkFields, type LinkablePlace } from "./work-place-link-fields";
-import { pickDefaultRoute, transitBaseTrain, transitMinutes } from "@/lib/work-sync/route-modes";
+import { MODE_RANK_ORDER, pickDefaultRoute, transitBaseTrain, transitMinutes } from "@/lib/work-sync/route-modes";
 import { MAX_TRAVEL_WALK_MINUTES, TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
 
 export type WorkRouteRow = {
@@ -221,7 +221,9 @@ export function PlaceDefaultFields({
             });
             const chosen = leg.kind === "out" ? form.outDefault : form.backDefault;
             // 未登録の方法はデフォルトにできない。登録済みの先頭（固定順）へ落とす。
-            const defaultMode = wanted.some((item) => item.mode === chosen) ? chosen : wanted[0]?.mode;
+            const defaultMode = wanted.some((item) => item.mode === chosen)
+              ? chosen
+              : MODE_RANK_ORDER.find((mode) => wanted.some((item) => item.mode === mode));
             return { ...leg, wanted, defaultMode };
           });
 
