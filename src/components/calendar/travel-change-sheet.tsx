@@ -13,6 +13,7 @@ import { applyDuration, dropGeneratedNote, type FixedSide } from "@/lib/travel-c
 import { cn } from "@/lib/utils";
 import { TRAVEL_MODE_LABELS, TRAVEL_MODES, type TravelItem, type TravelMode } from "@/types/calendar";
 
+import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { patchTravelTimes } from "./travel-time-patch";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -41,7 +42,7 @@ export function TravelChangeSheet({
   onCancel: () => void;
   onSaved: (touched: TouchedRange[] | null) => void;
   /** 編集画面を、選んだ移動方法で開く（Yahoo!乗換案内・Googleマップで調べる）。 */
-  onSearch: (mode: TravelMode) => void;
+  onSearch: (mode: TravelMode, times: { departAt: string; arriveAt: string }) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [mode, setMode] = useState<TravelMode>(travel.mode);
@@ -77,6 +78,14 @@ export function TravelChangeSheet({
     const range = applyDuration(fixed, start, end, value);
     setStart(range.start);
     setEnd(range.end);
+    setTrainId(null);
+    setTouched(true);
+  };
+
+  const editTime = (side: "start" | "end", value: string) => {
+    const iso = localInputToIso(value, timeZone);
+    if (side === "start") setStart(iso);
+    else setEnd(iso);
     setTrainId(null);
     setTouched(true);
   };
@@ -182,7 +191,7 @@ export function TravelChangeSheet({
           )}
 
           {(mode === "PUBLIC_TRANSIT" || mode === "CAR") && (
-            <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => onSearch(mode)}>
+            <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => onSearch(mode, { departAt: isoToLocalInput(start, timeZone), arriveAt: isoToLocalInput(end, timeZone) })}>
               {mode === "PUBLIC_TRANSIT" ? "Yahoo!乗換案内で別の経路を選ぶ" : "Googleマップで調べる"}
             </Button>
           )}
@@ -211,6 +220,28 @@ export function TravelChangeSheet({
               </Button>
             </div>
           </div>
+
+          {mode === "PUBLIC_TRANSIT" && (
+            <div>
+              <p className="mb-1 text-xs text-on-surface-variant">
+                出発・到着時刻（変えたあと「別の経路を選ぶ」でその時刻で再検索できます）
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <DateTimeInput
+                  id="change-depart"
+                  label="出発"
+                  value={isoToLocalInput(start, timeZone)}
+                  onChange={(value) => value && editTime("start", value)}
+                />
+                <DateTimeInput
+                  id="change-arrive"
+                  label="到着"
+                  value={isoToLocalInput(end, timeZone)}
+                  onChange={(value) => value && editTime("end", value)}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <p className="mb-1 text-xs text-on-surface-variant">固定する側</p>

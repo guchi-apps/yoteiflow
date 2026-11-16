@@ -76,7 +76,7 @@ export function TravelDetailDialog({
   onClose: () => void;
   onEdit: () => void;
   /** 変更シートから、選んだ移動方法で編集画面を開く（issue #1466）。 */
-  onEditWithMode?: (mode: TravelMode) => void;
+  onEditWithMode?: (mode: TravelMode, times?: { departAt: string; arriveAt: string }) => void;
   onDeleted: (touched: TouchedRange[] | null) => void;
   /** この移動に紐づいているタスク（issue #914）。出発前に確かめるタスクなどを置く。 */
   linkedTasks?: TaskItem[];
@@ -156,7 +156,7 @@ export function TravelDetailDialog({
           setOpen(true);
         }}
         onSaved={(touched) => onLinked?.(touched)}
-        onSearch={(mode) => onEditWithMode?.(mode)}
+        onSearch={(mode, times) => onEditWithMode?.(mode, times)}
       />
     );
   }
