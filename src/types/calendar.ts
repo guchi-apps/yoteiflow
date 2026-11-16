@@ -314,7 +314,8 @@ export type ReminderItem = {
  * 電車・バス・飛行機はいずれもYahoo!乗換案内で経路検索できるため、公共交通として1つに
  * まとめる（issue #538）。自転車はどの分類にも当てはまらないため、その他へ含める。
  */
-export const TRAVEL_MODES = ["CAR", "PUBLIC_TRANSIT", "WALK", "OTHER"] as const;
+/** 選択肢の表示順（公共交通を先頭にする・issue #1625）。判定の優先順位には使わない */
+export const TRAVEL_MODES = ["PUBLIC_TRANSIT", "CAR", "WALK", "OTHER"] as const;
 
 export type TravelMode = (typeof TRAVEL_MODES)[number];
 
