@@ -21,6 +21,7 @@ import {
   moveEventNotificationSetting,
 } from "@/services/calendar/event-notification-settings";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
+import { reflectWorkEventEdit } from "@/services/work-sync/reflect-event";
 import {
   dropLinksForEvent,
   fetchLinkedEvent,
@@ -142,9 +143,22 @@ export async function PATCH(
       title: body.title.trim(),
     });
 
+    // 自動生成した勤務予定の時刻を直したときは、勤務記録の指定へ書き戻す（issue #1618）。
+    // 予定の更新は成功しているため、失敗しても応答は失敗にしない（手動調整扱いに倒れるだけ）。
+    await reflectWorkEventEdit(userId, eventId, {
+      allDay: Boolean(body.allDay),
+      start: body.start,
+      end: body.end,
+      title: body.title.trim(),
+      location: body.location,
+      description: body.description,
+    }).catch((error) => {
+      console.error("[dayspan] work event reflect failed:", error instanceof Error ? error.message : error);
+    });
+
     return NextResponse.json({ ok: true, taskLinks: links });
   } catch (error) {
-    return externalApiError("google", moving ? "予定のカレンダー移動" : "予定の更新", error);
+    return externalApiError("google", moving ?"予定のカレンダー移動" : "予定の更新", error);
   }
 }
 
