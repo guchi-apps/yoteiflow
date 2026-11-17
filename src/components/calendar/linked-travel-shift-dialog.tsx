@@ -453,7 +453,7 @@ function TransitFollowCard({
             分
           </label>
           {condition && stations && (
-            <TransitStationPicker origin={condition.origin} destination={condition.destination} state={stations} />
+            <TransitStationPicker origin={condition.origin} destination={condition.destination} state={stations} onlyWhenChoosable />
           )}
           {search?.ok ? (
             <span className="type-body-small">
