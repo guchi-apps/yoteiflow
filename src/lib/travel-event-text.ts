@@ -24,6 +24,7 @@ export function travelEventDescription(plan: {
   departAt: Date;
   arriveAt: Date;
   note: string | null;
+  routeDetail?: string | null;
   estimateSource: TravelEstimateSource;
 }): string {
   const via = parseVia(plan.via);
@@ -35,6 +36,7 @@ export function travelEventDescription(plan: {
     `所要時間: ${travelMinutes(plan)}分${estimateSuffix(plan.estimateSource)}`,
   ];
   if (plan.note) lines.push("", plan.note);
+  if (plan.routeDetail) lines.push("", plan.routeDetail);
   // YoteiFlowが書いた予定であることを残す。Google側で直接編集しても戻ることを伝えるため。
   lines.push("", "YoteiFlowの移動として管理しています。編集はYoteiFlowから行ってください。");
   return lines.join("\n");

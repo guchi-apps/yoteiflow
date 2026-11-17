@@ -38,6 +38,8 @@ export type TravelWriteInput = {
   departAt: string;
   arriveAt: string;
   note?: string | null;
+  /** 経路の詳細（Yahoo!の取り込み）。項目ごと省くと触らない（issue #1634） */
+  routeDetail?: string | null;
   /**
    * 所要時間の出どころ。渡されなければ estimated から決める。
    * 古い呼び出し元（AIの見積もりしか無かった頃の形）をそのまま受けられるようにしておく。
@@ -98,6 +100,7 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
     start: plan.departAt.toISOString(),
     end: plan.arriveAt.toISOString(),
     note: plan.note,
+    routeDetail: plan.routeDetail,
     estimated: plan.estimateSource !== "MANUAL",
     estimateSource: plan.estimateSource,
     linkedEventId: plan.linkedEventId,
@@ -352,6 +355,7 @@ function toWriteData(input: TravelWriteInput) {
     departAt,
     arriveAt,
     note: input.note?.trim() || null,
+    ...(input.routeDetail !== undefined ? { routeDetail: input.routeDetail?.trim() || null } : {}),
     estimateSource: resolveEstimateSource(input),
     // 項目ごと渡されなかったときは触らない。編集の保存で紐づけが外れないようにするため
     // （issue #1105）。作成のときは未指定でもnullで入る（列の既定値）。紐づけの付け外しは

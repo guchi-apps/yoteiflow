@@ -45,7 +45,9 @@ describe("applySharedRoute", () => {
     assert.equal(draft.destination, "淀屋橋");
     assert.equal(draft.departAt, "2026-11-01T13:20");
     assert.equal(draft.arriveAt, "2026-11-01T13:38");
-    assert.equal(draft.note, "資料を持っていく\n\n梅田 13:20発\n淀屋橋 13:38着");
+    // 経路の詳細はメモに混ぜず別の項目へ入る（issue #1634）
+    assert.equal(draft.note, "資料を持っていく");
+    assert.equal(draft.routeDetail, "梅田 13:20発\n淀屋橋 13:38着");
     assert.equal(draft.linkedEvent?.id, "e1");
     assert.deepEqual(draft.notification, { enabled: true, leadMinutes: [10] });
     assert.equal(draft.travel, undefined);
@@ -62,9 +64,9 @@ describe("applySharedRoute", () => {
     assert.match(draft.notice, /移動「自宅→本社」を更新します/);
   });
 
-  it("同じ経路のメモは二重に足さない", () => {
-    const draft = applySharedRoute({ ...session, draft: { ...session.draft, note: route.note } }, route);
-    assert.equal(draft.note, route.note);
+  it("選び直した経路の詳細は、前の経路の詳細を置き換える", () => {
+    const draft = applySharedRoute({ ...session, draft: { ...session.draft, routeDetail: "前の経路" } }, route);
+    assert.equal(draft.routeDetail, route.note);
   });
 
   it("日付をまたぐ便（終電）は共有の日時のまま残し、検索した日と同じなら報せない", () => {

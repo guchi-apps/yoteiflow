@@ -29,6 +29,8 @@ export type TransitSearchDraft = {
   departAt: string;
   arriveAt: string;
   note?: string;
+  /** Yahoo!から取り込んだ経路の詳細（メモとは別・issue #1634） */
+  routeDetail?: string;
   linkedEvent?: {
     id: string;
     calendarId: string;
@@ -142,7 +144,7 @@ export type SharedTransitRoute = {
  * - 発着地・発着時刻は選んだ経路で置き換える（貼り付けは選んだ経路という強い意思表示・issue #498 と同じ扱い）
  * - 日付も共有の日時を採る。検索はこの下書きの日時で開いているため通常は同じ日で、日付をまたぐ便
  *   （終電）も正しく残る。違う日だったときだけ報せる（Yahoo!側で日付を変えて選んだとき）
- * - メモは元のメモを残し、経路の詳細を後ろへ足す（編集中の移動のメモを失わない）
+ * - メモには触れず、経路の詳細は別の項目（`routeDetail`）へ入れる（メモを経路全文で埋めない・issue #1634）
  * - 編集中の移動・紐づく予定・通知の選択はそのまま（保存は利用者が確かめてから行う）
  */
 export function applySharedRoute(
@@ -150,9 +152,8 @@ export function applySharedRoute(
   route: SharedTransitRoute,
 ): TransitSearchDraft & { notice: string; adoptCheck: boolean } {
   const { draft } = session;
-  const previousNote = (draft.note ?? "").trim();
-  const routeNote = route.note.trim();
-  const note = !routeNote || previousNote.includes(routeNote) ? previousNote : [previousNote, routeNote].filter(Boolean).join("\n\n");
+  // 経路の詳細はメモとは別の項目へ入れる。選び直したら新しい経路の詳細で置き換える（issue #1634）
+  const routeDetail = route.note.trim() || (draft.routeDetail ?? "");
   const searchedDate = (draft.arriveAt || draft.departAt).slice(0, 10);
   const dateDiffers = searchedDate !== "" && route.arriveAt.slice(0, 10) !== searchedDate && route.departAt.slice(0, 10) !== searchedDate;
   const notice = [
@@ -170,7 +171,7 @@ export function applySharedRoute(
     destination: route.destination,
     departAt: route.departAt,
     arriveAt: route.arriveAt,
-    note,
+    routeDetail,
     notice,
     // 元の移動を更新するときは、保存の前に予定の今の状態と紐づけを確かめる（issue #1332）
     adoptCheck: Boolean(draft.travel && draft.linkedEvent),
