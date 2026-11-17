@@ -145,10 +145,14 @@ export function parseShareHandoff(search: string): ShareHandoff | null {
 }
 
 /** 予定の場所欄へ入れる文字列。DaySpanの場所欄は `名前 住所` の形（`place-text.ts`）に揃える。 */
-export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "place" }>): string {
-  const label = [handoff.title, handoff.address].filter(Boolean).join(" ");
+export function joinLocationText(title: string, address: string, lat: number | null, lng: number | null): string {
+  const label = [title.trim(), address.trim()].filter(Boolean).join(" ");
   if (label) return label;
-  return handoff.lat !== null && handoff.lng !== null ? `${handoff.lat},${handoff.lng}` : "";
+  return lat !== null && lng !== null ? `${lat},${lng}` : "";
+}
+
+export function handoffLocationText(handoff: Extract<ShareHandoff, { kind: "place" }>): string {
+  return joinLocationText(handoff.title, handoff.address, handoff.lat, handoff.lng);
 }
 
 /** ハンドオフの検証が必要なクエリのキー。ページ側で消すときに使う。 */
