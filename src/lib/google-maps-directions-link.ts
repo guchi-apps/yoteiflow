@@ -36,6 +36,35 @@ function pointParam(text: string, places: PlaceItem[]): string | null {
   return splitNameAndAddress(value)?.address ?? value;
 }
 
+// `!3e` は読み取り側（google-maps-route.ts）と同じ対応。その他は指定せずGoogleマップの既定に任せる
+const DATA_MODE: Record<TravelMode, string | null> = { CAR: "0", WALK: "2", PUBLIC_TRANSIT: "3", OTHER: null };
+
+/**
+ * 日時つきのURL。公式の `dir/?api=1` には日時の指定が無いため、共有URLと同じ
+ * `/maps/dir/<出発>/<経由>/<到着>/data=!4m6!4m5!2m3!6e<0出発|1到着>!7e2!8j<時刻>` の形にする（非公式）。
+ * `!8j` は現地の壁時計をUTCとして数えた値（読み取り側 `dataSchedule()` と同じ・issue #1160）。
+ * 日時が読めなければ null（呼び出し側が日時なしのURLへ落とす）。
+ */
+function scheduledLink(
+  input: { origin: string; via?: string[]; mode: TravelMode; places: PlaceItem[] },
+  destination: string,
+  schedule: { at: string; basis: "depart" | "arrive" },
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(schedule.at)) return null;
+  const ms = Date.parse(`${schedule.at}:00Z`);
+  if (Number.isNaN(ms)) return null;
+
+  const segment = (value: string | null) => (value ? encodeURIComponent(value) : "");
+  const path = [
+    segment(pointParam(input.origin, input.places)),
+    ...(input.via ?? []).map((item) => segment(pointParam(item, input.places))).filter(Boolean),
+    segment(destination),
+  ].join("/");
+  const mode = DATA_MODE[input.mode];
+  const data = `!4m6!4m5!2m3!6e${schedule.basis === "arrive" ? 1 : 0}!7e2!8j${Math.floor(ms / 1000)}${mode ? `!3e${mode}` : ""}`;
+  return `https://www.google.com/maps/dir/${path}/data=${data}`;
+}
+
 /**
  * 経路画面を開くURL。目的地が決まらなければ null。
  * 出発地が空のときは `origin` を付けず、Googleマップ側の現在地に任せる。
@@ -46,9 +75,16 @@ export function googleMapsDirectionsLink(input: {
   via?: string[];
   mode: TravelMode;
   places: PlaceItem[];
+  /** 検索する日時（設定タイムゾーンの壁時計 `YYYY-MM-DDTHH:mm`）と、その日時を出発・到着のどちらとして探すか（issue #1653） */
+  schedule?: { at: string; basis: "depart" | "arrive" };
 }): string | null {
   const destination = pointParam(input.destination, input.places);
   if (!destination) return null;
+
+  if (input.schedule) {
+    const scheduled = scheduledLink(input, destination, input.schedule);
+    if (scheduled) return scheduled;
+  }
 
   const params = [`destination=${encodeURIComponent(destination)}`];
   const origin = pointParam(input.origin, input.places);
