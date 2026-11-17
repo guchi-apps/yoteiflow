@@ -20,7 +20,6 @@ export default async function TaskSettingsPage() {
   if (!connection) redirect("/settings/notion");
 
   const options = await loadTagOptions(connection, "task");
-  const progressOptions = await loadTagOptions(connection, "progress");
 
   const state: TagSectionState = {
     kind: "task",
@@ -32,24 +31,12 @@ export default async function TaskSettingsPage() {
     databaseUrl: notionUrl(connection.taskDatabaseId),
   };
 
-  const progressState: TagSectionState = {
-    kind: "progress",
-    title: "タスクの進捗",
-    description:
-      "「承認待ち」「保留」のような途中の状態です。入力画面と詳細画面から選べ、完了とは別に持てます。",
-    options: progressOptions,
-    missingMessage:
-      "タスクDBに進捗（セレクト）のプロパティがありません。設定のNotion画面で「不足しているプロパティを追加」を押すか、Notion側で「進捗」という名前のセレクトを足してから、タスクDBを選び直してください。",
-    databaseUrl: notionUrl(connection.taskDatabaseId),
-  };
-
   return (
     <SettingsShell
       title="タスク"
-      description="タスクのタグと進捗の選択肢を、色つきで登録しておけます。"
+      description="タスクのタグの選択肢を、色つきで登録しておけます。"
     >
       <TagSection state={state} />
-      <TagSection state={progressState} />
     </SettingsShell>
   );
 }
