@@ -48,7 +48,7 @@ import {
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { nowLocalInput } from "@/lib/share-import/candidate-times";
-import { HANDOFF_QUERY_KEYS, handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { HANDOFF_QUERY_KEYS, hasHandoffQuery, joinLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
 import { applyGoogleShare, applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
@@ -75,6 +75,7 @@ import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, EventForm, toEventDraft, type EventDraft } from "./event-form";
 import { EventPickerDialog, type PickedItem } from "./event-picker-dialog";
+import { SharedPlaceChoiceDialog, type SharedPlace } from "@/components/calendar/shared-place-choice-dialog";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
@@ -339,6 +340,8 @@ export function CalendarShell({
     drafts: ItemDrafts;
   } | null>(null);
   // 空いているところを押したときの簡易入力。詳細な項目は「詳細」から入力画面へ引き継ぐ。
+  // 共有された場所の選択画面（issue #1677）
+  const [sharedPlace, setSharedPlace] = useState<SharedPlace | null>(null);
   const [quickDraft, setQuickDraft] = useState<QuickEventDraft | null>(null);
   // クリックした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
@@ -382,20 +385,8 @@ export function CalendarShell({
 
     const date = utils.todayKey();
     if (handoff.kind === "place") {
-      const draft = toQuickEventDraft(date, DEFAULT_START_MINUTES);
-      setItemDialog({
-        initialKind: "event",
-        drafts: {
-          event: {
-            allDay: false,
-            start: `${draft.date}T${draft.startTime}`,
-            end: `${draft.date}T${draft.endTime}`,
-            title: handoff.title || undefined,
-            location: handoffLocationText(handoff) || undefined,
-            description: handoff.url ?? undefined,
-          },
-        },
-      });
+      // 予定を作るか場所として登録するかを選ばせる（issue #1677）
+      setSharedPlace(handoff);
       return;
     }
     if (!handoff.link && handoff.resolve && handoff.url && handoff.session) {
@@ -1420,6 +1411,30 @@ export function CalendarShell({
           onSelect={openSharedTravel}
         />
       )}
+      {sharedPlace && (
+        <SharedPlaceChoiceDialog
+          place={sharedPlace}
+          onClose={() => setSharedPlace(null)}
+          onCreateEvent={({ name, address }) => {
+            const draft = toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES);
+            setSharedPlace(null);
+            setItemDialog({
+              initialKind: "event",
+              drafts: {
+                event: {
+                  allDay: false,
+                  start: `${draft.date}T${draft.startTime}`,
+                  end: `${draft.date}T${draft.endTime}`,
+                  title: name.trim() || undefined,
+                  location: joinLocationText(name, address, sharedPlace.lat, sharedPlace.lng) || undefined,
+                  description: sharedPlace.url ?? undefined,
+                },
+              },
+            });
+          }}
+        />
+      )}
+
       <CalendarBody
         dataPromise={dataPromise}
         tagCatalogPromise={tagCatalogPromise}

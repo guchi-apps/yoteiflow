@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handoffLocationText, hasHandoffQuery, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { handoffLocationText, hasHandoffQuery, joinLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 
 test("場所の引き継ぎを検証して読む", () => {
   const handoff = parseShareHandoff("?newEvent=place&title=Tower&address=大阪&lat=34.1&lng=135.2&url=https%3A%2F%2Fmaps.app.goo.gl%2Fx");
@@ -124,4 +124,11 @@ test("Googleマップの再取得（resolve）の共有は link なしでも ses
   assert.equal(ok?.kind === "travel" ? ok.resolve : "x", true);
   const noResolve = parseShareHandoff(`${base}&session=${id}`);
   assert.equal(noResolve?.kind === "travel" ? noResolve.session : "x", null);
+});
+
+test("joinLocationText は名称と住所を分けた入力から場所欄の文字列を作る", () => {
+  assert.equal(joinLocationText("Tower", "大阪市", null, null), "Tower 大阪市");
+  assert.equal(joinLocationText(" Tower ", "", null, null), "Tower");
+  assert.equal(joinLocationText("", "", 34.5, 135.5), "34.5,135.5");
+  assert.equal(joinLocationText("", "", null, null), "");
 });
