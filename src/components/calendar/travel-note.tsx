@@ -128,6 +128,10 @@ function ResearchSheet({
   const [open, setOpen] = useState(true);
   const [date, setDate] = useState(() => addDays(zonedDateKey(startIso, timeZone), stop.dayOffset));
   const [time, setTime] = useState(stop.departTime ?? "");
+  // 欄を直しても元の出発日時が分かるよう、開いた時点の値を別に持つ（発車時刻が読めない駅では出さない）
+  const [originalDeparture] = useState(() =>
+    stop.departTime ? formatOriginalDeparture(addDays(zonedDateKey(startIso, timeZone), stop.dayOffset), stop.departTime) : "",
+  );
 
   const close = () => {
     setOpen(false);
@@ -156,7 +160,8 @@ function ResearchSheet({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent position="bottom">
+      {/* 開いた直後に出発日の欄へフォーカスが移ると端末の日付ピッカーが開くため、自動フォーカスを止める（issue #1641） */}
+      <DialogContent position="bottom" onOpenAutoFocus={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{stop.station}から再検索</DialogTitle>
         </DialogHeader>
@@ -165,6 +170,11 @@ function ResearchSheet({
           <p className="text-on-surface-variant">
             {stop.station} → {resolveYahooPlace(destination, places)?.name ?? destination}
           </p>
+          {originalDeparture && (
+            <p className="text-on-surface-variant">
+              元の出発 <span className="text-on-surface">{originalDeparture}</span>
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
@@ -223,6 +233,13 @@ function zonedDateKey(iso: string, timeZone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(iso));
+}
+
+/** `2026/11/17(火) 22:52` の形。曜日は日付キーそのものから求める（実行環境のタイムゾーンに依存させない）。 */
+function formatOriginalDeparture(dateKey: string, time: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const weekday = "日月火水木金土"[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}(${weekday}) ${time}`;
 }
 
 function addDays(dateKey: string, days: number): string {
