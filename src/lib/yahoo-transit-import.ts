@@ -12,7 +12,7 @@ import {
   parseYahooTransitRoute,
   yahooRouteFields,
   yahooSearchedDateKey,
-  yahooStationName,
+  yahooPlaceName,
 } from "@/lib/yahoo-transit-route";
 
 export type YahooTravelImport = {
@@ -116,8 +116,8 @@ export function buildYahooTravelImport(
   return {
     ok: true,
     travel: {
-      origin: yahooStationName(route.fromStation),
-      destination: yahooStationName(route.toStation),
+      origin: yahooPlaceName(route.fromStation, route.railAtStart),
+      destination: yahooPlaceName(route.toStation, route.railAtEnd),
       mode: "PUBLIC_TRANSIT",
       departAt: shifted(trainDepartIso, -before),
       arriveAt: shifted(trainArriveIso, after),
