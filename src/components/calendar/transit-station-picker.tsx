@@ -1,18 +1,19 @@
 "use client";
 
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { matchPlaceByText, placeDisplayName } from "@/lib/place-text";
 import { isStationPlace } from "@/lib/place-tags";
 import { chooseStation, placeStations, type PlaceStation, type StationChoice } from "@/lib/station-name";
 import type { PlaceItem } from "@/services/notion/places";
 
 /** 場所欄の値に当たる場所の最寄り駅。場所そのものが駅（「駅・空港」タグ）なら持たない扱い。 */
-function stationsOf(text: string, places: PlaceItem[]): { place: PlaceItem | null; stations: PlaceStation[] } {
+function stationsOf(text: string, places: PlaceItem[]): { place: PlaceItem | null; stations: PlaceStation[]; isStation: boolean } {
   const place = text.trim() ? matchPlaceByText(text, places) : null;
-  if (!place || isStationPlace(place.tags)) return { place, stations: [] };
-  return { place, stations: placeStations(place) };
+  if (!place) return { place, stations: [], isStation: false };
+  if (isStationPlace(place.tags)) return { place, stations: [], isStation: true };
+  return { place, stations: placeStations(place), isStation: false };
 }
 
 /**
@@ -69,6 +70,10 @@ export function buildTransitStations(
     ...choices,
     originStations: from.stations,
     destinationStations: to.stations,
+    originIsStation: from.isStation,
+    destinationIsStation: to.isStation,
+    originRegistered: from.place !== null,
+    destinationRegistered: to.place !== null,
     walkSideFor,
     walkChoiceFor,
   };
@@ -76,96 +81,151 @@ export function buildTransitStations(
 
 export type TransitStations = ReturnType<typeof buildTransitStations>;
 
-function StationChips({
-  question,
+/** 「地点で探す」の言い換え（駅を使わず、登録した場所の位置から探す）。 */
+const POINT_LABEL = "登録地から探す";
+const POINT_HINT = "最寄り駅を使わず、この場所の位置で検索";
+
+/**
+ * 左右どちらかの駅選択。閉じているときは選んでいる駅1つだけを出し、押すと他の選択肢を開く。
+ * 最寄り駅が無いときは理由を文で出す（場所が駅そのもの・未登録・最寄り駅の未設定を分ける）。
+ */
+function StationColumn({
+  id,
+  heading,
   label,
   stations,
+  isStation,
+  registered,
   choice,
   onChoose,
 }: {
-  question: string;
+  id: string;
+  heading: string;
   label: string;
   stations: PlaceStation[];
+  isStation: boolean;
+  registered: boolean;
   choice: StationChoice;
   onChoose: (choice: StationChoice) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const current = chooseStation(stations, choice);
-  const options: { key: string; text: string; value: StationChoice; on: boolean }[] = [
+  const title = (
+    <p className="type-label-small mb-1 truncate text-on-surface-variant">
+      {heading}
+      {label && <span className="ml-1 text-on-surface">{label}</span>}
+    </p>
+  );
+  if (stations.length === 0) {
+    const message = isStation
+      ? "この場所は駅なので、駅名で探します"
+      : registered
+        ? "最寄り駅が設定されていません"
+        : label
+          ? `${POINT_LABEL}（未登録の場所）`
+          : "場所が未入力です";
+    return (
+      <div className="min-w-0">
+        {title}
+        <p className="type-body-small rounded-md border border-dashed border-outline-variant px-2.5 py-2 text-on-surface-variant">
+          {message}
+        </p>
+      </div>
+    );
+  }
+  const options: { key: string; text: string; hint: string | null; value: StationChoice; on: boolean }[] = [
     ...stations.map((station) => ({
       key: station.name,
-      text: station.minutes === null ? station.name : `${station.name}・徒歩${station.minutes}分`,
-      value: station.name,
+      text: station.name,
+      hint: station.minutes === null ? null : `徒歩${station.minutes}分`,
+      value: station.name as StationChoice,
       on: current?.name === station.name,
     })),
-    { key: "__point", text: "地点で探す", value: null, on: current === null },
+    { key: "__point", text: POINT_LABEL, hint: POINT_HINT, value: null, on: current === null },
   ];
+  const selected = options.find((option) => option.on) ?? options[0];
+  const Chevron = open ? ChevronUp : ChevronDown;
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="type-label-large text-on-surface">
-        {question}
-        <span className="type-body-small ml-1 text-on-surface-variant">（{label}）</span>
-      </p>
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={question}>
-        {options.map((option) => (
-          <Button
+    <div className="min-w-0">
+      {title}
+      <div className="overflow-hidden rounded-md border border-outline-variant bg-surface-container">
+        {(open ? options : [selected]).map((option, index) => (
+          <button
             key={option.key}
             type="button"
-            role="radio"
-            aria-checked={option.on}
-            variant={option.on ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => onChoose(option.value)}
+            role={open ? "radio" : undefined}
+            aria-checked={open ? option.on : undefined}
+            aria-expanded={open ? undefined : false}
+            aria-label={open ? undefined : `${heading}の駅を選ぶ（現在: ${option.text}）`}
+            id={index === 0 ? id : undefined}
+            onClick={() => {
+              if (!open) return setOpen(true);
+              onChoose(option.value);
+              setOpen(false);
+            }}
+            className={`flex w-full items-center justify-between gap-1.5 px-2.5 py-2 text-left ${
+              open && option.on ? "bg-secondary-container" : ""
+            } ${index > 0 ? "border-t border-outline-variant" : ""}`}
           >
-            {option.text}
-          </Button>
+            <span className="min-w-0">
+              <span className="type-body-medium block truncate text-on-surface">{option.text}</span>
+              {option.hint && <span className="type-label-small block text-on-surface-variant">{option.hint}</span>}
+            </span>
+            {(!open || index === 0) && <Chevron className="size-4 shrink-0 text-on-surface-variant" aria-hidden />}
+          </button>
         ))}
       </div>
     </div>
   );
 }
 
-/** 駅が2つ以上ある側だけ質問を出す。どちらも1つ以下なら何も描かない（従来と同じ見た目）。 */
+/**
+ * 左＝出発地・右＝到着地の駅選択。既定は両側とも常に出す（最寄り駅が1つでも・無くても。issue #1629）。
+ * `onlyWhenChoosable` のときは従来どおり、どちらかが2つ以上あるときだけ描く（再提案ダイアログ）。
+ */
 export function TransitStationPicker({
   origin,
   destination,
   state,
   onChange,
+  onlyWhenChoosable = false,
 }: {
   origin: string;
   destination: string;
   state: TransitStations;
   /** 選び直したあと（提案の時刻を合わせ直すため）。どちらの側を何にしたかを渡す */
   onChange?: (side: "origin" | "destination", choice: StationChoice) => void;
+  onlyWhenChoosable?: boolean;
 }) {
-  const showOrigin = state.originStations.length >= 2;
-  const showDestination = state.destinationStations.length >= 2;
-  if (!showOrigin && !showDestination) return null;
+  if (onlyWhenChoosable && state.originStations.length < 2 && state.destinationStations.length < 2) return null;
   return (
-    <div className="flex flex-col gap-2">
-      {showOrigin && (
-        <StationChips
-          question="どの駅から乗りますか？"
-          label={placeDisplayName(origin)}
-          stations={state.originStations}
-          choice={state.originChoice}
-          onChoose={(choice) => {
-            state.setOriginChoice(choice);
-            onChange?.("origin", choice);
-          }}
-        />
-      )}
-      {showDestination && (
-        <StationChips
-          question="どの駅で降りますか？"
-          label={placeDisplayName(destination)}
-          stations={state.destinationStations}
-          choice={state.destinationChoice}
-          onChoose={(choice) => {
-            state.setDestinationChoice(choice);
-            onChange?.("destination", choice);
-          }}
-        />
-      )}
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label="乗る駅・降りる駅">
+      <StationColumn
+        id="transit-origin-station"
+        heading="出発地"
+        label={origin.trim() ? placeDisplayName(origin) : ""}
+        stations={state.originStations}
+        isStation={state.originIsStation}
+        registered={state.originRegistered}
+        choice={state.originChoice}
+        onChoose={(choice) => {
+          state.setOriginChoice(choice);
+          onChange?.("origin", choice);
+        }}
+      />
+      <StationColumn
+        id="transit-destination-station"
+        heading="到着地"
+        label={destination.trim() ? placeDisplayName(destination) : ""}
+        stations={state.destinationStations}
+        isStation={state.destinationIsStation}
+        registered={state.destinationRegistered}
+        choice={state.destinationChoice}
+        onChoose={(choice) => {
+          state.setDestinationChoice(choice);
+          onChange?.("destination", choice);
+        }}
+      />
     </div>
   );
 }
