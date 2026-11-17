@@ -80,32 +80,83 @@ export const MARK_ELBOW_WIDTH = 6;
 export function stackMarkTops(
   marks: { key: string; top: number }[],
   bottom?: number,
+  avoid: MarkAvoidBand[] = [],
 ): Map<string, number> {
   // 同じ時刻の印はキーで並びを決める。順序が入力の順に依存すると、サーバーとブラウザで
   // 並びが食い違ってハイドレーションが一致しなくなる。
   const sorted = [...marks].sort((a, b) => a.top - b.top || a.key.localeCompare(b.key));
+  const bands = mergeMarkAvoidBands(avoid);
+  const half = MARK_ROW_HEIGHT / 2;
+
+  /** 行（中心 top・高さ MARK_ROW_HEIGHT）がかかる帯を返す。 */
+  const hitBand = (top: number) =>
+    bands.find((band) => top + half > band.top && top - half < band.bottom);
 
   const placed: number[] = [];
   let last = Number.NEGATIVE_INFINITY;
 
   for (const mark of sorted) {
     last = Math.max(mark.top, last + MARK_ROW_HEIGHT);
+    // 予定の見出し帯にかかるなら、帯の下へ送る（帯は結合済みで、1回の送りで次の帯へ
+    // かかることもあるため、動かなくなるまで繰り返す）。
+    for (let band = hitBand(last); band; band = hitBand(last)) {
+      last = band.bottom + half;
+    }
     placed.push(last);
   }
 
   if (bottom !== undefined) {
     // 下端から順に押し返す。1件が下限に当たると、その上の行も間隔ぶんずつ引き上げられる。
+    // 押し返した先が見出し帯なら帯の上へ置く（避ける処理より下限を優先して帯へ戻さない）。
     let limit = bottom;
 
     for (let index = placed.length - 1; index >= 0; index -= 1) {
+      let top = Math.min(placed[index], limit);
+      for (let band = hitBand(top); band; band = hitBand(top)) {
+        top = band.top - half;
+      }
       // 一日ぶんの高さに収まりきらないときは、上端で重なりが残る。画面の外へ出して
       // 消してしまうより、読めない1行が残るほうが、何件あるかだけでも分かる。
-      placed[index] = Math.max(Math.min(placed[index], limit), MARK_ROW_HEIGHT / 2);
+      placed[index] = Math.max(top, half);
       limit = placed[index] - MARK_ROW_HEIGHT;
     }
   }
 
   return new Map(sorted.map((mark, index) => [mark.key, placed[index]]));
+}
+
+/** 印のラベルを避けさせる帯（予定の見出しなど）。列の上端からの px。 */
+export type MarkAvoidBand = { top: number; bottom: number };
+
+/** 印のラベルの最大幅（列の本文幅に対する割合）。残りを予定の文字に譲る（issue #1675）。 */
+export const MARK_LABEL_MAX_WIDTH = "60%";
+
+/**
+ * 予定・移動の見出し帯。タイトルと時刻の2行ぶんまでで、短い予定は実際の高さで頭打ちにする。
+ * 帯の下の本文は文字が少なく、ラベルが載っても予定の見出しは読める。
+ */
+export function eventHeaderBand(top: number, height: number): MarkAvoidBand {
+  return {
+    top,
+    bottom: top + Math.min(height, EVENT_BLOCK_PADDING_Y + EVENT_LINE_HEIGHT * 2),
+  };
+}
+
+/** 重なる・接する帯を1つにまとめる。入力の順に依存しない。 */
+export function mergeMarkAvoidBands(bands: MarkAvoidBand[]): MarkAvoidBand[] {
+  const sorted = [...bands].sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  const merged: MarkAvoidBand[] = [];
+
+  for (const band of sorted) {
+    const prev = merged[merged.length - 1];
+    if (prev && band.top <= prev.bottom) {
+      prev.bottom = Math.max(prev.bottom, band.bottom);
+    } else {
+      merged.push({ ...band });
+    }
+  }
+
+  return merged;
 }
 
 /**
