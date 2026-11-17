@@ -17,8 +17,12 @@ import { LinkifiedText } from "@/components/ui/linkified-text";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
+import { originResearchDraft, rememberTransitSession } from "@/lib/transit-search-session";
 import { readYahooRouteRestartPoints, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
+import type { TravelItem } from "@/types/calendar";
+
+import { isoToLocalInput } from "./datetime-fields";
 
 type Segment = { kind: "text"; text: string } | { kind: "stop"; text: string; stop: YahooRouteStop };
 
@@ -36,6 +40,7 @@ export function TravelNote({
   destination,
   places,
   readOnly,
+  travel,
 }: {
   note: string;
   /** 移動の出発時刻（ISO）。途中駅の日付は、この日（設定タイムゾーン）を基準にする。 */
@@ -45,6 +50,11 @@ export function TravelNote({
   places: PlaceItem[];
   /** オフライン中。Yahoo!乗換案内は通信が要るためボタンを出さない。 */
   readOnly: boolean;
+  /**
+   * この経路を持つ移動。渡すと、出発駅からの再検索は新しい移動を足さずこの移動を更新する（issue #1645）。
+   * 途中駅からの再検索は従来どおり新しい移動を足す。
+   */
+  travel?: TravelItem;
 }) {
   const [selected, setSelected] = useState<YahooRouteStop | null>(null);
 
@@ -106,6 +116,7 @@ export function TravelNote({
           timeZone={timeZone}
           destination={destination}
           places={places}
+          travel={travel}
           onClose={() => setSelected(null)}
         />
       )}
@@ -120,6 +131,7 @@ function ResearchSheet({
   timeZone,
   destination,
   places,
+  travel,
   onClose,
 }: {
   stop: YahooRouteStop;
@@ -127,6 +139,7 @@ function ResearchSheet({
   timeZone: string;
   destination: string;
   places: PlaceItem[];
+  travel?: TravelItem;
   onClose: () => void;
 }) {
   // 開いたままアンマウントすると<body>のpointer-eventsが残るため、閉じ切ってから返す。
@@ -156,7 +169,27 @@ function ResearchSheet({
   const [opened, setOpened] = useState<NativeTransitOpened | null>(null);
 
   /** アプリ内: Yahoo!アプリを開く。開けなければアプリが同じ条件のWeb版を開く */
+  const updatesTravel = Boolean(travel && stop.isOrigin);
   const openInNativeApp = async () => {
+    if (travel && stop.isOrigin) {
+      // 出発駅からの再検索は、今の移動を更新対象として覚える。共有で戻った経路で移動の編集画面を開き、
+      // 経路の詳細も置き換える（保存は利用者が確かめてから・issue #1645）。途中駅は下の従来経路（新しい移動を足す）
+      const session = rememberTransitSession(
+        `${stop.station}→${target?.name ?? destination}`,
+        originResearchDraft(travel, {
+          departAt: isoToLocalInput(travel.start, timeZone),
+          arriveAt: isoToLocalInput(travel.end, timeZone),
+        }),
+      );
+      setOpened(
+        await openTransitInNativeApp({
+          appUrl: appHref ?? "",
+          webUrl: href,
+          session: { id: session.id, label: session.label, expiresAt: session.expiresAt },
+        }),
+      );
+      return;
+    }
     // 再検索は共有で戻す下書きを持たない。移動の入力画面で置いた印が残っていると、ここで選んだ経路が
     // 別の移動の下書きへ反映されうるため、開く前に消す（ブリッジはメッセージを順に処理する）
     clearTransitInNativeApp();
@@ -184,6 +217,11 @@ function ResearchSheet({
             <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
+          {nativeTransit && updatesTravel && (
+            <p className="text-xs text-on-surface-variant">
+              出発駅からの再検索は、この移動を選んだ経路で更新します（保存の前に確かめられます）。
+            </p>
+          )}
           {opened && opened !== "app" && (
             <p className="text-xs text-on-surface-variant" role="status">
               {opened === "web" ? "アプリを開けなかったため、Web版で開きました。" : "Yahoo!乗換案内を開けませんでした。"}

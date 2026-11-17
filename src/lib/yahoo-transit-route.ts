@@ -309,6 +309,11 @@ export type YahooRouteStop = {
   departTime: string | null;
   /** 経路の始点の発車を0日目として、日をまたいだ日数。 */
   dayOffset: number;
+  /**
+   * 経路の最初の印（出発駅）かどうか（issue #1645）。出発駅から再検索すると今の移動を更新し、
+   * 途中駅からは新しい移動を足す。返却配列の先頭とは限らない（途中駅だけを返す読み方がある）ため、印の順で決める。
+   */
+  isOrigin: boolean;
 };
 
 const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～]/;
@@ -375,7 +380,7 @@ function readStopsFrom(text: string, minMarks: number, skip: number): YahooRoute
       body[mark].trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, ""),
     );
     if (station === "") return;
-    stops.push({ lineIndex: mark, station, departTime, dayOffset });
+    stops.push({ lineIndex: mark, station, departTime, dayOffset, isOrigin: order === 0 });
   });
 
   return stops;
