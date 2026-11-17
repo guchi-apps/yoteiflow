@@ -164,7 +164,8 @@ async function retargetSharedWalk(
     const response = await fetch(`/api/travels/walk?${query}`, { signal: AbortSignal.timeout(4000) });
     if (!response.ok) return link;
     const { walk } = (await response.json()) as { walk: { before: number; after: number } | null };
-    return (walk && retargetYahooWalk(link, walk)) || link;
+    const retargeted = walk && retargetYahooWalk({ ...link, routeDetail: link.note }, walk);
+    return retargeted ? { departAt: retargeted.departAt, arriveAt: retargeted.arriveAt, note: retargeted.routeDetail } : link;
   } catch {
     return link;
   }
@@ -513,9 +514,9 @@ export function CalendarShell({
     const times = linkedTravelTimes(isoToLocalInput(item.start, timeZone), sharedDepart, sharedArrive);
     const dateDiffers = sharedArrive.slice(0, 10) !== times.arriveAt.slice(0, 10);
     const notice = [
-      dateDiffers ? "共有の検索日と予定の日が違うため、日付は予定の日に合わせ、時刻だけ取り込みました（メモは共有された検索結果のままです）。" : null,
+      dateDiffers ? "共有の検索日と予定の日が違うため、日付は予定の日に合わせ、時刻だけ取り込みました（経路の詳細は共有された検索結果のままです）。" : null,
       // メモを渡せなかった（旧拡張など）ときだけ、手動で補う案内を残す
-      link.note ? null : "経路の詳細は、下のメモへ貼り付けて追加できます。",
+      link.note ? null : "経路の詳細は、メモへ貼り付けて追加できます。",
     ]
       .filter(Boolean)
       .join("");
@@ -528,7 +529,7 @@ export function CalendarShell({
           mode: link.mode,
           departAt: times.departAt,
           arriveAt: times.arriveAt,
-          note: link.note || undefined,
+          routeDetail: link.note || undefined,
           linkedEvent: { id: item.eventId, calendarId: item.calendarId, startAt: item.start, endAt: item.end },
           notice,
         },
