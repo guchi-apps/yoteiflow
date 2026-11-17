@@ -122,8 +122,9 @@ export async function PATCH(
       allDay: Boolean(body.allDay),
       start: body.start,
       end: body.end,
-      location: body.location ?? null,
-      description: body.description ?? null,
+      // 未指定（ドラッグ）は触らず、null（入力を空にして保存）は消す（issue #1650）。
+      location: body.location,
+      description: body.description,
       attendees: body.attendees ?? [],
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
       // ドラッグ（commitDrag/commitAllDayDrag）はtentativeを送らずこのPATCHを呼ぶ。
