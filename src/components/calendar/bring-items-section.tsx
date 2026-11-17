@@ -19,7 +19,7 @@ type BringTravel = {
   end: string;
   relationLabel: string;
 };
-type DueState = { state: "set" | "unset" | "reselect"; reason?: "unlinked" | "not-before" };
+type DueState = { state: "set" | "direct" | "unset" | "reselect"; reason?: "unlinked" | "not-before" };
 
 /**
  * 予定の「持ち物」（issue #1080）。1項目 = 1 Task で、その場で完了にできる。
@@ -158,7 +158,12 @@ export function BringItemsSection({
   };
 
   // 期限が未設定、または再選択が必要な持ち物があるときは、対象の移動を選べるようにする。
-  const needsChoice = tasks?.some((task) => (states[task.id]?.state ?? "unset") !== "set") ?? false;
+  const needsChoice =
+    tasks?.some((task) => {
+      const state = states[task.id]?.state ?? "unset";
+      return state === "unset" || state === "reselect" || (state === "direct" && travels.length > 0);
+    }) ?? false;
+  const hasUnset = tasks?.some((task) => (states[task.id]?.state ?? "unset") === "unset") ?? false;
 
   // 取得前、または持ち物が無く追加もできない（オフライン）ときは何も出さない。
   if (tasks === null || (tasks.length === 0 && readOnly)) return null;
@@ -189,6 +194,7 @@ export function BringItemsSection({
 
       {tasks.map((task) => {
         const departure = task.links.find((link) => link.target === "DUE" && link.travelId);
+        const direct = task.links.find((link) => link.target === "DUE" && !link.travelId);
         return (
           <label
             key={task.id}
@@ -208,7 +214,9 @@ export function BringItemsSection({
               <span className="block text-xs text-on-surface-variant">
                 {departure
                   ? `出発 ${formatLinkedDate(departure.resolvedAt, timeZone)} まで`
-                  : "期限未設定"}
+                  : direct
+                    ? `予定の開始 ${formatLinkedDate(direct.resolvedAt, timeZone)} まで`
+                    : "期限未設定"}
                 {states[task.id]?.state === "reselect" && (
                   <span className="text-error">
                     {" "}
@@ -232,6 +240,17 @@ export function BringItemsSection({
               ? "期限にする移動の出発を選ぶ"
               : "この予定に移動を紐づけると、出発が期限になります"}
           </span>
+          {hasUnset && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start"
+              disabled={busy}
+              onClick={() => void attach("")}
+            >
+              予定の開始を期限にする
+            </Button>
+          )}
           {travels.map((travel) => (
             <Button
               key={travel.id}

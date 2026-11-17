@@ -3,15 +3,14 @@
 import { useOffline } from "next/offline";
 import { useRef, useState } from "react";
 
-import { ExternalLink } from "lucide-react";
+import { AlignLeft, CalendarClock, ExternalLink, Flag, Repeat, Tag } from "lucide-react";
 
+import { shouldAutoPickTag } from "@/lib/ai-task-tag";
 import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
 import { isPendingTaskId, isQueuedRecurringCompletion } from "@/lib/offline-queue/ops";
 import type { TaskWriteInput } from "@/services/notion/tasks";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -40,15 +39,15 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventPickerDialog, type PendingEventLink } from "./event-picker-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { FormRow } from "./event-form-row";
 import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
 import { formatLinkedDate, taskLinkFullLabel } from "./task-link-label";
+import { TaskPriorityBadges } from "./task-priority-badges";
 import { TaskStageMark } from "./task-stage-mark";
 import { TaskStagePicker } from "./task-stage-picker";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
-const PRIORITY_OPTIONS = ["高", "中", "低"];
-const NO_VALUE = "__none__";
 
 /** 期限・予定日の指定方法（docs/spec.md §15）。 */
 type DueMode = "datetime" | "date" | "none";
@@ -105,7 +104,6 @@ export function TaskForm({
   draft,
   timeZone,
   tagOptions,
-  progressOptions = null,
   weekStartsOn = 0,
   title,
   autoFocusTitle,
@@ -116,11 +114,6 @@ export function TaskForm({
   timeZone: string;
   /** 設定画面で登録済みのタグ。無い名前もここから足せる（Notionが選択肢を増やす）。 */
   tagOptions: TagOption[];
-  /**
-   * 進捗（「承認待ち」など。issue #873）の選択肢。null はタスクDBに進捗のプロパティが無い
-   * （または取得できなかった）ことを表し、欄ごと出さない。
-   */
-  progressOptions?: TagOption[] | null;
   /** 予定を選ぶ月グリッドの週の始まり。 */
   weekStartsOn?: number;
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
@@ -137,10 +130,9 @@ export function TaskForm({
   // 予定日は必須ではないため、追加のときは未設定から始める。
   const [plannedMode, setPlannedMode] = useState<DueMode>(draft.plannedMode ?? "none");
   const [planned, setPlanned] = useState(draft.planned ?? "");
-  const [done, setDone] = useState(editing?.done ?? false);
-  const progressAvailable = progressOptions !== null || Boolean(editing?.canProgress);
-  const [progress, setProgress] = useState<string[]>(editing?.progress ? [editing.progress] : []);
-  const [priority, setPriority] = useState(editing?.priority ?? NO_VALUE);
+  // 完了・進捗は詳細画面で変えるため、この画面では編集しない（issue #1661）。進捗は送らず現状を保つ。
+  const done = editing?.done ?? false;
+  const [priority, setPriority] = useState<string | null>(editing?.priority ?? null);
   const [memo, setMemo] = useState(editing?.memo ?? "");
   const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
   const [recurrence, setRecurrence] = useState(editing?.recurrence ?? "なし");
@@ -168,6 +160,39 @@ export function TaskForm({
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
+
+  // タイトルの入力が終わったとき、タグが未選択なら既存のタグから合うものを自動で選ぶ（issue #1666）。
+  const lastAskedTitle = useRef<string | null>(null);
+  const autoPickTag = async () => {
+    const trimmed = title.trim();
+    if (
+      !shouldAutoPickTag({
+        title,
+        selectedCount: tags.length,
+        lastAskedTitle: lastAskedTitle.current,
+        tagCount: tagOptions.length,
+        offline,
+      })
+    ) {
+      return;
+    }
+    lastAskedTitle.current = trimmed;
+    try {
+      const response = await fetch("/api/tasks/tag-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed, tags: tagOptions.map((option) => option.name) }),
+      });
+      // 手で選べば済むので、失敗はエラー帯に出さない。
+      if (!response.ok) return;
+      const result = (await response.json()) as { tag?: string | null };
+      const picked = result.tag;
+      // 待っている間に利用者が選んだタグは上書きしない。
+      if (picked) setTags((prev) => (prev.length === 0 ? [picked] : prev));
+    } catch {
+      // 通信できないときも手動選択のまま続ける
+    }
+  };
 
   // 日付を選ぶモードなのに空欄のままだと、保存時の日時変換で失敗する。先に画面で知らせる。
   const missingDateError = (label: string, mode: DueMode, value: string): string | null => {
@@ -280,8 +305,7 @@ export function TaskForm({
       ...(nextPlanned === undefined ? {} : { planned: nextPlanned }),
       done,
       ...(editing?.skipped && !done ? { outcome: null } : {}),
-      priority: priority === NO_VALUE ? null : priority,
-      ...(progressAvailable ? { progress: progress[0] ?? null } : {}),
+      priority,
       memo: memo.trim() || null,
       tags,
       recurrence,
@@ -359,9 +383,7 @@ export function TaskForm({
         done,
         // 「対応しない」のタスクを未完了へ戻すときは対応状況も外す。残すと読み取りが片付いた扱いのままになる。
         ...(editing?.skipped && !done ? { outcome: null } : {}),
-        priority: priority === NO_VALUE ? null : priority,
-        // プロパティが無いDBには送らない（書き込む先が無い）。
-        ...(progressAvailable ? { progress: progress[0] ?? null } : {}),
+        priority,
         memo: memo.trim() || null,
         tags,
         recurrence,
@@ -462,14 +484,17 @@ export function TaskForm({
         />
       )}
 
-      <div className="flex min-w-0 flex-col gap-4">
-        <Input
+      <div className="flex min-w-0 flex-col">
+        {/* タイトルは予定の入力画面と同じ、枠も面も持たない文字（issue #1661）。 */}
+        <input
           id="task-title"
-          label="タイトル"
+          aria-label="タイトル"
+          placeholder="タイトルを追加"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          onClear={() => onTitleChange("")}
+          onBlur={() => void autoPickTag()}
           autoFocus={autoFocusTitle}
+          className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
 
         {/*
@@ -477,6 +502,7 @@ export function TaskForm({
           タスクを作れたあとの再試行では、作成済みのタスクの行き先を変えないよう押せなくする。
         */}
         {!editing && draft.linkTo && (
+          <FormRow divider>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>紐づける日付</Label>
@@ -508,6 +534,7 @@ export function TaskForm({
               onChange={setLinkStage}
             />
           </div>
+          </FormRow>
         )}
 
         {/*
@@ -515,6 +542,8 @@ export function TaskForm({
           予定から決まるため、欄ではなく紐づけ先を出す。直したいときは解除してもらう。
           ここで直せるようにすると、次に予定が動いた時点で入れた値が黙って書き戻される。
         */}
+        <FormRow icon={<CalendarClock />}>
+        <div className="flex flex-col gap-3">
         {linkedDue ? (
           <LinkedDateField
             label="期限"
@@ -588,23 +617,12 @@ export function TaskForm({
           />
         )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger label="優先度">
-              <SelectValue placeholder="未設定" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_VALUE}>未設定</SelectItem>
-              {PRIORITY_OPTIONS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        </div>
+        </FormRow>
 
+        <FormRow icon={<Repeat />}>
           <Select value={recurrence} onValueChange={setRecurrence}>
-            <SelectTrigger label="繰り返し">
+            <SelectTrigger label="繰り返し" variant="flat">
               <SelectValue placeholder="なし" />
             </SelectTrigger>
             <SelectContent>
@@ -621,33 +639,28 @@ export function TaskForm({
                 )}
             </SelectContent>
           </Select>
-        </div>
+        </FormRow>
 
-        <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
+        <FormRow icon={<Flag />}>
+          <TaskPriorityBadges value={priority} onChange={setPriority} disabled={busy} />
+        </FormRow>
 
-        {progressAvailable && (
-          <TagPicker
-            label="進捗"
-            options={progressOptions ?? []}
-            value={progress}
-            multiple={false}
-            onChange={setProgress}
+        {/* タグの追加は別の画面で行う。ここでは登録済みの選択肢から選ぶだけ（issue #1661）。 */}
+        <FormRow icon={<Tag />}>
+          <TagPicker label="タグ" options={tagOptions} value={tags} multiple allowAdd={false} onChange={setTags} />
+        </FormRow>
+
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            id="task-memo"
+            label="メモ"
+            variant="flat"
+            rows={3}
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            onClear={() => setMemo("")}
           />
-        )}
-
-        <Textarea
-          id="task-memo"
-          label="メモ"
-          rows={3}
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-          onClear={() => setMemo("")}
-        />
-
-        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-          <Checkbox checked={done} onCheckedChange={(v) => setDone(v === true)} />
-          完了
-        </label>
+        </FormRow>
 
         {editing?.url && (
           <a
