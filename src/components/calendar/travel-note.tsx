@@ -16,9 +16,9 @@ import { Input } from "@/components/ui/input";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
-import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
+import { resolveResearchDestination, resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import { originResearchDraft, rememberTransitSession } from "@/lib/transit-search-session";
-import { readYahooRouteRestartPoints, truncateYahooRouteAt, type YahooRouteStop } from "@/lib/yahoo-transit-route";
+import { readYahooRouteEndpoints, readYahooRouteRestartPoints, truncateYahooRouteAt, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TravelContinueFrom, TravelItem } from "@/types/calendar";
 
@@ -160,7 +160,8 @@ function ResearchSheet({
   };
 
   const origin = resolveYahooPlace(stop.station, places);
-  const target = resolveYahooPlace(destination, places);
+  // 検索の目的地は経路の到着駅を優先する（issue #1674）。保存用の下書き（destination）は変えない
+  const target = resolveResearchDestination(destination, readYahooRouteEndpoints(noteText).destination, places);
   const departAt = date && time ? `${date}T${time}` : "";
   const href = yahooTransitLink({ origin, destination: target, departAt, arriveAt: "", basis: "depart" });
   // アプリ用のリンク（issue #1520）。Web用のURLはiOSでUniversal Linkとしてアプリに渡ると、日時の指定が
@@ -229,7 +230,7 @@ function ResearchSheet({
 
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-on-surface-variant">
-            {stop.station} → {resolveYahooPlace(destination, places)?.name ?? destination}
+            {stop.station} → {target?.name ?? destination}
           </p>
           {originalDeparture && (
             <p className="text-on-surface-variant">

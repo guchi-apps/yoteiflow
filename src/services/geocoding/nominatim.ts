@@ -136,26 +136,34 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Geocoded
   };
 }
 
-/** 地名・施設名から地点を引く（前方ジオコーディング）。見つからなければnull。 */
-export async function searchPlace(query: string): Promise<GeocodedPlace | null> {
-  // addressdetails を付けないと `address` が返らず、住所を組み立てられない。
-  const json = (await requestNominatim("/search", {
-    q: query,
-    limit: "1",
-    addressdetails: "1",
-  })) as NominatimPlace[];
-  const first = Array.isArray(json) ? json[0] : undefined;
-  if (!first?.lat || !first.lon) return null;
-
-  const lat = Number(first.lat);
-  const lng = Number(first.lon);
+function toGeocoded(item: NominatimPlace): GeocodedPlace | null {
+  if (!item.lat || !item.lon) return null;
+  const lat = Number(item.lat);
+  const lng = Number(item.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
   return {
-    name: first.name?.trim() || null,
-    address: toAddress(first),
-    japanese: isJapan(first) ? japanesePartsOf(first) : null,
+    name: item.name?.trim() || null,
+    address: toAddress(item),
+    japanese: isJapan(item) ? japanesePartsOf(item) : null,
     lat,
     lng,
   };
+}
+
+/** 地名・施設名から候補を複数件引く（名前の入力候補用。issue #1676）。 */
+export async function searchPlaces(query: string, limit: number): Promise<GeocodedPlace[]> {
+  const json = (await requestNominatim("/search", {
+    q: query,
+    limit: String(limit),
+    addressdetails: "1",
+  })) as NominatimPlace[];
+  if (!Array.isArray(json)) return [];
+  return json.map(toGeocoded).filter((place): place is GeocodedPlace => place !== null);
+}
+
+/** 地名・施設名から地点を引く（前方ジオコーディング）。見つからなければnull。 */
+export async function searchPlace(query: string): Promise<GeocodedPlace | null> {
+  // addressdetails を付けないと `address` が返らず、住所を組み立てられない。
+  return (await searchPlaces(query, 1))[0] ?? null;
 }

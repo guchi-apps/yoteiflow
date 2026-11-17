@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
+import { attachBringItemsForEvent } from "@/services/task-links/bring-items";
 import {
   deleteTravel,
+  getTravel,
   TravelLinkChangedError,
   updateTravel,
   validateTravelInput,
@@ -68,8 +70,16 @@ export async function DELETE(
   const { travelId } = await params;
 
   try {
+    const linkedEventId = (await getTravel(userId, travelId))?.linkedEventId ?? null;
     const deleted = await deleteTravel(userId, travelId);
     if (!deleted) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    // 紐づけを外された持ち物の期限は、予定の開始へ戻す（issue #1681）。失敗しても削除は成功のまま。
+    // 勤務同期の自動削除（deleteTravel の直接呼び出し）は対象外にし、Googleの取得を増やさない。
+    if (linkedEventId) {
+      await attachBringItemsForEvent(userId, linkedEventId, null).catch((error) =>
+        console.error("[dayspan] bring item reattach after travel delete failed:", error),
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     // Googleの削除に失敗したときはDaySpan側の行も残している。もう一度押せばやり直せる。

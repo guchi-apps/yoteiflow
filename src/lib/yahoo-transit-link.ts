@@ -79,6 +79,23 @@ export function resolveYahooPlace(
   return { name: split.name, query: split.address, coordinates: null };
 }
 
+/**
+ * 再検索で渡す目的地（issue #1674）。優先順位は 経路の到着駅 > 場所DBの最寄り駅 > 住所・名前。
+ * 勤務の自動生成の移動は目的地が勤務先名で保存され、経路で選んだ駅（大日）はメモにしか無いため、
+ * 経路の到着駅が読めるときはそれを使う。読めなければ従来どおり保存済みの目的地を解決する。
+ * 検索に渡すだけで、移動の保存値・下書きの目的地は変えない。
+ */
+export function resolveResearchDestination(
+  destination: string,
+  routeDestination: string | null,
+  places: PlaceItem[],
+): YahooTransitPlace | null {
+  if (routeDestination) {
+    return { name: routeDestination, query: yahooSearchStationName(routeDestination), coordinates: null };
+  }
+  return resolveYahooPlace(destination, places);
+}
+
 /** 検索の基準。どちらの時刻を指定して探すか。 */
 export type YahooTransitBasis = "depart" | "arrive";
 
