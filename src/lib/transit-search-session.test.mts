@@ -55,6 +55,22 @@ describe("applySharedRoute", () => {
     assert.match(draft.notice, /確かめてから保存/);
   });
 
+  it("再検索の続きは新規の移動のまま、元の移動の切り詰め情報を持ち回って案内する（issue #1642）", () => {
+    const continueFrom = {
+      travelId: "t0",
+      title: "大阪→門真市",
+      destination: "南茨木",
+      arriveAt: "2026-11-01T14:12:00.000Z",
+      routeDetail: "■大阪\n■南茨木",
+    };
+    const draft = applySharedRoute({ ...session, draft: { ...session.draft, continueFrom } }, route);
+    assert.deepEqual(draft.continueFrom, continueFrom);
+    assert.equal(draft.travel, undefined);
+    assert.equal(draft.adoptCheck, false);
+    assert.match(draft.notice, /「大阪→門真市」の続きとして登録/);
+    assert.match(draft.notice, /「南茨木」までに切り詰まります/);
+  });
+
   it("編集中の移動はそのまま持ち回り、同じ移動の更新になる", () => {
     const travel = { id: "t1", title: "自宅→本社" } as TravelItem;
     const draft = applySharedRoute({ ...session, draft: { ...session.draft, travel } }, route);

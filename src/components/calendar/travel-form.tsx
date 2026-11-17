@@ -37,6 +37,7 @@ import {
   type EventNotificationOverride,
   type TravelEstimateSource,
   MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
+  type TravelContinueFrom,
   type TravelItem,
   type TravelMode,
   type TravelSearchPurpose,
@@ -106,6 +107,8 @@ export type TravelDraft = {
    * 確かめ（調べたあとにまた変わった・消えたなら確認を求める）、更新は紐づけが変わっていないときだけにする。
    */
   adoptCheck?: boolean;
+  /** 移動メモの途中駅から再検索して戻った経路。保存すると元の移動を切り詰め、この移動をその続きにする（issue #1642） */
+  continueFrom?: TravelContinueFrom;
 };
 
 type AdoptCheck =
@@ -846,6 +849,16 @@ export function TravelForm({
           : {}),
         // 戻した経路での更新は、紐づけが変わっていないときだけ（外れていたら409で断られる・issue #1332）
         ...(editing && adoptBase ? { expectLinkedEventId: adoptBase.id } : {}),
+        ...(!editing && draft.continueFrom
+          ? {
+              continueFrom: {
+                travelId: draft.continueFrom.travelId,
+                destination: draft.continueFrom.destination,
+                arriveAt: draft.continueFrom.arriveAt,
+                routeDetail: draft.continueFrom.routeDetail,
+              },
+            }
+          : {}),
         ...(editing
           ? {}
           : {

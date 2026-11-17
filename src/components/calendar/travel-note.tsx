@@ -18,11 +18,11 @@ import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
 import { originResearchDraft, rememberTransitSession } from "@/lib/transit-search-session";
-import { readYahooRouteRestartPoints, type YahooRouteStop } from "@/lib/yahoo-transit-route";
+import { readYahooRouteRestartPoints, truncateYahooRouteAt, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
-import type { TravelItem } from "@/types/calendar";
+import type { TravelContinueFrom, TravelItem } from "@/types/calendar";
 
-import { isoToLocalInput } from "./datetime-fields";
+import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 
 type Segment = { kind: "text"; text: string } | { kind: "stop"; text: string; stop: YahooRouteStop };
 
@@ -51,8 +51,8 @@ export function TravelNote({
   /** オフライン中。Yahoo!乗換案内は通信が要るためボタンを出さない。 */
   readOnly: boolean;
   /**
-   * この経路を持つ移動。渡すと、出発駅からの再検索は新しい移動を足さずこの移動を更新する（issue #1645）。
-   * 途中駅からの再検索は従来どおり新しい移動を足す。
+   * この経路を持つ移動。渡すと、出発駅からの再検索はこの移動を更新し（issue #1645）、途中駅からの再検索は
+   * 選んだ経路を元の移動の続きとして登録できる（issue #1642）。渡さない（移動に紐づかないメモ）なら従来どおり。
    */
   travel?: TravelItem;
 }) {
@@ -117,6 +117,7 @@ export function TravelNote({
           destination={destination}
           places={places}
           travel={travel}
+          noteText={note}
           onClose={() => setSelected(null)}
         />
       )}
@@ -132,6 +133,7 @@ function ResearchSheet({
   destination,
   places,
   travel,
+  noteText,
   onClose,
 }: {
   stop: YahooRouteStop;
@@ -140,6 +142,7 @@ function ResearchSheet({
   destination: string;
   places: PlaceItem[];
   travel?: TravelItem;
+  noteText: string;
   onClose: () => void;
 }) {
   // 開いたままアンマウントすると<body>のpointer-eventsが残るため、閉じ切ってから返す。
@@ -173,7 +176,7 @@ function ResearchSheet({
   const openInNativeApp = async () => {
     if (travel && stop.isOrigin) {
       // 出発駅からの再検索は、今の移動を更新対象として覚える。共有で戻った経路で移動の編集画面を開き、
-      // 経路の詳細も置き換える（保存は利用者が確かめてから・issue #1645）。途中駅は下の従来経路（新しい移動を足す）
+      // 経路の詳細も置き換える（保存は利用者が確かめてから・issue #1645）
       const session = rememberTransitSession(
         `${stop.station}→${target?.name ?? destination}`,
         originResearchDraft(travel, {
@@ -190,10 +193,30 @@ function ResearchSheet({
       );
       return;
     }
-    // 再検索は共有で戻す下書きを持たない。移動の入力画面で置いた印が残っていると、ここで選んだ経路が
-    // 別の移動の下書きへ反映されうるため、開く前に消す（ブリッジはメッセージを順に処理する）
-    clearTransitInNativeApp();
-    setOpened(await openTransitInNativeApp({ appUrl: appHref ?? "", webUrl: href, session: null }));
+    // 途中駅からの再検索は、共有で戻した経路を「元の移動の続き」として登録する下書きを置く（issue #1642）。
+    // 続きにできない（移動に紐づかない・駅への到着が読めない）ときは下書きを持たず、移動の入力画面で
+    // 置いた印が残っていると別の移動の下書きへ反映されうるため、開く前に消す。
+    const continueFrom = travel ? buildContinuation(travel, stop, noteText, timeZone, startIso, date, time) : null;
+    if (!continueFrom) {
+      clearTransitInNativeApp();
+      setOpened(await openTransitInNativeApp({ appUrl: appHref ?? "", webUrl: href, session: null }));
+      return;
+    }
+    const session = rememberTransitSession(`${continueFrom.title}の続き`, {
+      origin: stop.station,
+      destination: travel!.destination,
+      mode: "PUBLIC_TRANSIT",
+      departAt: departAt,
+      arriveAt: "",
+      continueFrom,
+    });
+    setOpened(
+      await openTransitInNativeApp({
+        appUrl: appHref ?? "",
+        webUrl: href,
+        session: { id: session.id, label: session.label, expiresAt: session.expiresAt },
+      }),
+    );
   };
 
   return (
@@ -266,6 +289,37 @@ function ResearchSheet({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * 再検索駅までに切り詰めたあとの元の移動（issue #1642）。駅への到着時刻が読めないときは、再検索の
+ * 出発日時を使う。切り詰め後の到着が出発以前になる（＝切り詰められない）ときは null。
+ */
+function buildContinuation(
+  travel: TravelItem,
+  stop: YahooRouteStop,
+  noteText: string,
+  timeZone: string,
+  startIso: string,
+  searchDate: string,
+  searchTime: string,
+): TravelContinueFrom | null {
+  const baseDate = zonedDateKey(startIso, timeZone);
+  const arriveLocal = stop.arriveTime
+    ? `${addDays(baseDate, stop.arriveDayOffset)}T${stop.arriveTime}`
+    : searchDate && searchTime
+      ? `${searchDate}T${searchTime}`
+      : "";
+  if (!arriveLocal) return null;
+  const arriveAt = localInputToIso(arriveLocal, timeZone);
+  if (new Date(arriveAt).getTime() <= new Date(travel.start).getTime()) return null;
+  return {
+    travelId: travel.id,
+    title: travel.title,
+    destination: stop.station,
+    arriveAt,
+    routeDetail: truncateYahooRouteAt(noteText, stop.lineIndex, stop.station),
+  };
 }
 
 /** 設定タイムゾーンでの日付キー（`YYYY-MM-DD`）。 */

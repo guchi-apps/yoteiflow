@@ -214,6 +214,19 @@ export const TASK_EVENT_STAGE_LABELS: Record<TaskEventStage, string> = {
   AFTER_END: "終了後",
 };
 
+/**
+ * 再検索の続きとして登録するとき、元の移動をどこまで切り詰めるか（issue #1642）。
+ * 目的地は再検索駅、到着はその駅への到着時刻（ISO 8601）、経路の詳細は再検索駅までのもの（読めなければ null）。
+ */
+export type TravelContinueFrom = {
+  travelId: string;
+  /** 元の移動の見出し（案内の表示用） */
+  title: string;
+  destination: string;
+  arriveAt: string;
+  routeDetail: string | null;
+};
+
 /** 紐づけ先が移動のときの段階の呼び名。出発・到着に置き換える（issue #914）。 */
 export const TRAVEL_TASK_STAGE_LABELS: Record<TaskEventStage, string> = {
   BEFORE_START: "出発まで",
@@ -409,6 +422,8 @@ export type TravelItem = {
   searchEvent?: { start: string; end: string; location: string | null } | null;
   /** 「今は変更しない」を押した変更の印（issue #1332） */
   followDismissedKey?: string | null;
+  /** 再検索の続きとして登録した移動の、元（前）の移動のID（issue #1642）。古い応答には無い */
+  previousTravelId?: string | null;
   /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
   exported: boolean;
   /**

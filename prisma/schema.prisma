@@ -437,6 +437,10 @@ model TravelPlan {
   linkedCalendarId String?
   returnLeg        Boolean @default(false)
 
+  // 再検索の続きとして登録したとき、元（前）の移動のID。前の移動を再検索駅までに切り詰め、
+  // この移動がその続きになる（issue #1642）。null＝続きではない。前の移動が消えたらnullへ戻す。
+  previousTravelId String?
+
   // Googleへ書き出した予定。書き出しに失敗した場合はnullのまま残す（移動そのものは失われない）。
   googleCalendarId String?
   googleEventId    String?
@@ -449,6 +453,7 @@ model TravelPlan {
   @@index([userId, departAt])
   // 書き出した予定はGoogleからも取得される。二重に描かないよう、取得した予定のIDで引いて落とす。
   @@index([userId, googleEventId])
+  @@index([userId, previousTravelId])
 }
 
 // --- 勤務記録からの自動生成（docs/spec.md §46） ---

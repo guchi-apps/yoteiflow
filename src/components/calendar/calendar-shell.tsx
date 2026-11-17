@@ -2401,6 +2401,13 @@ function CalendarBody({
           onLinked={handleSaved}
           weekStartsOn={weekStartsOn}
           places={placeCatalog.places}
+          previousTravel={
+            viewingTravel.previousTravelId
+              ? (data.travels.find((t) => t.id === viewingTravel.previousTravelId) ?? null)
+              : null
+          }
+          nextTravel={data.travels.find((t) => t.previousTravelId === viewingTravel.id) ?? null}
+          onOpenTravel={onOpenTravel}
           linkedEventTitle={linkedEventOfTravel?.title ?? null}
           linkedEventRange={linkedEventOfTravel ?? null}
           linkedEventColor={linkedEventOfTravel?.color ?? null}
