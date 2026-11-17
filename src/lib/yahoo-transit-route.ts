@@ -431,3 +431,27 @@ export function truncateYahooRouteAt(text: string, lineIndex: number, station: s
   while (head.length > 0 && head[head.length - 1].trim() === "") head.pop();
   return [...head, `■${station}`].join("\n");
 }
+
+/**
+ * 経路のメモから出発駅・到着駅（先頭と末尾の印・issue #1674）。
+ *
+ * 勤務の自動生成の移動は目的地が勤務先名（`名前 住所`）で保存され、実際の駅はメモ・経路の詳細にだけ残る。
+ * 再検索で勤務先の住所を渡すと最寄り駅までで探せないため、経路の到着駅を検索に使う。
+ * 印が2つ未満の経路、駅として読めない端（住所・座標・現在地のドアtoドア）は null を返し、呼び出し側が従来の値へ落とす。
+ * 駅名は「駅」を補った表示用（`yahooPlaceName()`）。
+ */
+export function readYahooRouteEndpoints(text: string): { origin: string | null; destination: string | null } {
+  const lines = text.split(/\r?\n/);
+  const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
+  const body = end === -1 ? lines : lines.slice(0, end);
+  const marks = body.filter((line) => /^[■▼]/.test(line.trim()));
+  if (marks.length < 2) return { origin: null, destination: null };
+
+  const read = (line: string): string | null => {
+    const raw = line.trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, "");
+    const name = yahooPlaceName(raw, true);
+    if (name === "" || /〒|\d+[-－ー]\d+|^現在地|^(北海道|東京都|大阪府|京都府|.{2,3}県)/.test(yahooStationName(raw))) return null;
+    return name;
+  };
+  return { origin: read(marks[0]), destination: read(marks[marks.length - 1]) };
+}

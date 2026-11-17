@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseYahooTransitRoute,
+  readYahooRouteEndpoints,
   readYahooRouteRestartPoints,
   readYahooRouteStops,
   truncateYahooRouteAt,
@@ -334,4 +335,15 @@ test("isOrigin: 最初の印だけが出発駅で、発車時刻が無くて出�
     readYahooRouteRestartPoints(noTime).map((s) => [s.station, s.isOrigin]),
     [["京都", false]],
   );
+});
+
+test("readYahooRouteEndpoints: 先頭・末尾の印から駅名を返す（issue #1674）", () => {
+  const note = "高槻市 ⇒ 大日\n\n■高槻市\n↓ 06:46〜06:53\n↓ 阪急京都本線 大阪梅田行\n▼[乗換不要] 淡路\n↓ 06:55〜07:09\n↓ 阪急京都本線 河原町行\n■大日(大阪府)\n\n[Yahoo!乗換案内] アプリ";
+  assert.deepEqual(readYahooRouteEndpoints(note), { origin: "高槻市駅", destination: "大日駅" });
+});
+
+test("readYahooRouteEndpoints: 印が2つ未満・住所の端は null（issue #1674）", () => {
+  assert.deepEqual(readYahooRouteEndpoints("メモだけ"), { origin: null, destination: null });
+  const door = "■現在地\n↓ 徒歩\n■大阪府門真市御堂町1-1";
+  assert.deepEqual(readYahooRouteEndpoints(door), { origin: null, destination: null });
 });

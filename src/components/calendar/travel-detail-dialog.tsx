@@ -36,7 +36,7 @@ import { placeCoordinates } from "./location-input";
 import { TravelNote } from "./travel-note";
 import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
-import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
+import { readYahooRouteEndpoints, readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
@@ -181,6 +181,8 @@ export function TravelDetailDialog({
   const legacyRouteInNote = !travel.routeDetail && readYahooRouteStops(travel.note ?? "").length > 0;
   const routeDetailText = travel.routeDetail || (legacyRouteInNote ? travel.note : null);
   const noteText = legacyRouteInNote ? null : travel.note;
+  const stations = readYahooRouteEndpoints(travel.routeDetail || travel.note || "");
+  const routeStations = stations.origin && stations.destination ? { origin: stations.origin, destination: stations.destination } : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
@@ -249,6 +251,16 @@ export function TravelDetailDialog({
               </span>
             </span>
           </DetailRow>
+
+          {/* 経路の駅（issue #1674）。出発地・目的地は勤務先名で保存されるため、実際に乗り降りする駅を示す。
+              経路の詳細を優先し、無ければメモから1回だけ読む（旧データはメモに経路が入っている） */}
+          {routeStations && (
+            <DetailRow icon={<Route className="size-4" />}>
+              <span>
+                経路: {routeStations.origin} → {routeStations.destination}
+              </span>
+            </DetailRow>
+          )}
 
           {noteText && (
             <CollapsibleNote>
