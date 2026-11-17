@@ -1,3 +1,5 @@
+import { ensureStationSuffix } from "@/lib/station-name";
+
 /**
  * Yahoo!乗換案内の「共有 ▸ コピー」で得られる経路のテキストを読む（docs/spec.md §29）。
  *
@@ -67,6 +69,12 @@ export type YahooTransitRoute = {
    */
   walkAtStart: boolean;
   walkAtEnd: boolean;
+  /**
+   * 始点・終点の隣の区間が鉄道か（issue #1639）。出発地・目的地欄に「高槻」ではなく「高槻駅」と入れるための判定で、
+   * 区間の路線名から鉄道だと言える（バス・飛行機・船・徒歩の語を含まない）ときだけ true。
+   */
+  railAtStart: boolean;
+  railAtEnd: boolean;
 };
 
 /**
@@ -121,6 +129,28 @@ export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
     toStation: stations.length > 1 ? (stations.at(-1) ?? null) : null,
     noteText: body.trim(),
     ...readEdgeWalks(lines),
+    ...readEdgeRails(lines),
+  };
+}
+
+// 鉄道ではない区間の目印。路線名の行にこれらを含むときは、始点・終点を駅とは決めない。
+const NON_RAIL_LEG = /徒歩|バス|航空|空港|フェリー|船|ＡＮＡ|ＪＡＬ|ANA|JAL|タクシー/;
+// 鉄道だと確認できる路線名の語。ここに当たらない手段（路面電車・ロープウェイなど）は駅と決めない。
+const RAIL_LEG = /線|新幹線|電鉄|鉄道|地下鉄|メトロ|ライン|特急|ＪＲ|JR/;
+
+function readEdgeRails(lines: string[]): { railAtStart: boolean; railAtEnd: boolean } {
+  const marks = lines.flatMap((line, index) => (line.startsWith("■") || line.startsWith("▼") ? [index] : []));
+  if (marks.length < 2) return { railAtStart: false, railAtEnd: false };
+  // 区間の行（`↓ ＪＲ京都線 姫路行`）のうち、時刻・番線の行を除いたものが路線名。
+  const isRail = (from: number, to: number) => {
+    const legs = lines
+      .slice(from + 1, to)
+      .filter((line) => line.startsWith("↓") && !/^↓\s*\d{1,2}:\d{2}/.test(line) && !/番線|番のりば/.test(line));
+    return legs.length > 0 && legs.some((line) => RAIL_LEG.test(line)) && !legs.some((line) => NON_RAIL_LEG.test(line));
+  };
+  return {
+    railAtStart: isRail(marks[0], marks[1]),
+    railAtEnd: isRail(marks[marks.length - 2], marks[marks.length - 1]),
   };
 }
 
@@ -257,6 +287,18 @@ export function yahooStationName(station: string): string {
   return station.replace(/[（(][^（）()]*[）)]\s*$/, "").trim();
 }
 
+/**
+ * 出発地・目的地欄へ入れる駅名に「駅」を補う（issue #1639）。Yahoo!は「高槻」のように「駅」を付けずに返し、
+ * そのまま欄へ入れると詳細画面のGoogleマップ検索で高槻市が当たる。鉄道の駅と分かるとき（`rail`）だけ補い、
+ * すでに駅・空港・港・停留所・前などで終わる名前、バス停・空港・徒歩の起終点は触らない。
+ */
+export function yahooPlaceName(station: string, rail: boolean): string {
+  const name = yahooStationName(station);
+  if (!rail || name === "") return name;
+  if (/(駅|空港|港|停|前|ターミナル|バス停|センター)$/.test(name)) return name;
+  return ensureStationSuffix(name) ?? name;
+}
+
 /** 途中駅（出発・到着を除く乗換駅・乗降駅）。メモの何行目か・再検索に使う駅名と発車時刻を持つ。 */
 export type YahooRouteStop = {
   /** メモを改行で分けたときの行番号（0始まり）。 */
@@ -283,6 +325,24 @@ const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～](?:\s*(\d{1,2}):(\d{2
  * （遅れたときに利用者が直せるよう、ボタンは隠さない）。時刻が前の駅より戻ったら日をまたいだと数える。
  */
 export function readYahooRouteStops(text: string): YahooRouteStop[] {
+  return readStopsFrom(text, 3, 1);
+}
+
+/**
+ * 再検索ボタンを置く駅（issue #1640）。出発駅から始まり、到着駅は含まない。
+ *
+ * `readYahooRouteStops()` は旧メモの判定・既定の開閉にも使われるため変えず、ボタンの置き場所だけを
+ * こちらで決める。出発駅は、直後に `↓ HH:MM〜` の発車時刻の行があるときだけ含める
+ * （■を2行書いただけの手書きメモに出さないため）。乗換の無い2駅の経路でも出発駅は返る。
+ */
+export function readYahooRouteRestartPoints(text: string): YahooRouteStop[] {
+  const stops = readStopsFrom(text, 2, 0);
+  const first = stops.at(0);
+  if (!first || first.departTime === null) return stops.slice(1);
+  return stops;
+}
+
+function readStopsFrom(text: string, minMarks: number, skip: number): YahooRouteStop[] {
   const lines = text.split(/\r?\n/);
   const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
   const body = end === -1 ? lines : lines.slice(0, end);
@@ -291,7 +351,7 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
     const trimmed = line.trim();
     return trimmed.startsWith("■") || trimmed.startsWith("▼") ? [index] : [];
   });
-  if (marks.length < 3) return [];
+  if (marks.length < minMarks) return [];
 
   let previous = -1;
   let dayOffset = 0;
@@ -329,7 +389,7 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
       pendingArrive = null;
     }
 
-    if (order === 0) return;
+    if (order < skip) return;
     const station = yahooStationName(
       body[mark].trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, ""),
     );
