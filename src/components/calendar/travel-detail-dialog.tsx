@@ -288,6 +288,7 @@ export function TravelDetailDialog({
                 destination={travel.destination}
                 places={places}
                 readOnly={readOnly}
+                travel={travel}
               />
             </CollapsibleNote>
           )}
