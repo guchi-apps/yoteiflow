@@ -68,6 +68,9 @@ export function TravelDetailDialog({
   onOpenLinkedEvent,
   weekStartsOn = 0,
   places = [],
+  previousTravel = null,
+  nextTravel = null,
+  onOpenTravel,
 }: {
   travel: TravelItem;
   timeZone: string;
@@ -97,6 +100,11 @@ export function TravelDetailDialog({
   weekStartsOn?: number;
   /** 場所DB。座標を持つ地点は座標でGoogleマップを開く。 */
   places?: PlaceItem[];
+  /** 再検索の続きとして登録した移動の、前の移動（元の移動）と続きの移動（issue #1642）。手元に無いときは null */
+  previousTravel?: TravelItem | null;
+  nextTravel?: TravelItem | null;
+  /** 前・続きの移動の表示画面へ移る */
+  onOpenTravel?: (travel: TravelItem) => void;
 }) {
   // 既存の予定を後から結ぶ・外す（issue #1105）。
   const [linkingEvent, setLinkingEvent] = useState(false);
@@ -273,6 +281,7 @@ export function TravelDetailDialog({
                 destination={travel.destination}
                 places={places}
                 readOnly={readOnly}
+                travel={travel}
               />
             </CollapsibleNote>
           )}
@@ -288,6 +297,7 @@ export function TravelDetailDialog({
                 destination={travel.destination}
                 places={places}
                 readOnly={readOnly}
+                travel={travel}
               />
             </CollapsibleNote>
           )}
@@ -306,6 +316,32 @@ export function TravelDetailDialog({
             予定名・日時・前後の区分を省略せず2段で見せる。付け替え・外すは操作アコーディオンの
             「予定を付け替える」へ置く（#1597）。
           */}
+          {/* 再検索の続き（issue #1642）。前の移動を再検索駅までに切り詰め、この移動がその続きになっている */}
+          {[
+            { label: "前の移動", target: previousTravel, missing: Boolean(travel.previousTravelId) && !previousTravel },
+            { label: "続きの移動", target: nextTravel, missing: false },
+          ].map(({ label, target, missing }) =>
+            target || missing ? (
+              <button
+                key={label}
+                type="button"
+                disabled={!target || !onOpenTravel}
+                onClick={() => target && onOpenTravel?.(target)}
+                className="flex min-w-0 items-center gap-3 rounded-md border border-outline-variant py-2 pr-2 pl-3 text-left disabled:opacity-60"
+              >
+                <Link2 className="size-4 shrink-0 text-on-surface-variant" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-bold break-words">{target ? target.title : "移動（表示範囲外）"}</span>
+                  <span className="type-body-small text-on-surface-variant">
+                    {label}
+                    {target && ` ・ ${formatTravelTime(target, timeZone)}`}
+                  </span>
+                </span>
+                {target && onOpenTravel && <ChevronRight className="size-4 shrink-0 opacity-70" />}
+              </button>
+            ) : null,
+          )}
+
           {travel.linkedEventId ? (
             <div className="flex items-stretch gap-1">
               <RowEl

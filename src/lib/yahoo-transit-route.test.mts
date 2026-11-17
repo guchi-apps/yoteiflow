@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   parseYahooTransitRoute,
   readYahooRouteStops,
+  truncateYahooRouteAt,
   yahooRouteFields,
   yahooSearchedDateKey,
   yahooStationName,
@@ -206,4 +207,36 @@ test("readYahooRouteStops: 途中駅が無い経路・経路でないメモは�
   const stops = readYahooRouteStops("■A\n↓ 10:00〜10:10\n■B\n↓ 徒歩\n■C");
   assert.equal(stops[0].station, "B");
   assert.equal(stops[0].departTime, null);
+});
+
+test("readYahooRouteStops: 途中駅への到着時刻を前の区間から読む（issue #1642）", () => {
+  const note = "■A\n↓ 23:00〜23:30\n▼B\n↓ 23:40〜00:10\n■C\n↓ 徒歩\n■D";
+  const stops = readYahooRouteStops(note);
+  assert.deepEqual(
+    stops.map((s) => [s.station, s.arriveTime, s.arriveDayOffset]),
+    [
+      ["B", "23:30", 0],
+      ["C", "00:10", 1],
+    ],
+  );
+  assert.equal(readYahooRouteStops("■A\n↓ 徒歩\n■B\n↓ 10:00〜10:10\n■C")[0].arriveTime, null);
+});
+
+test("truncateYahooRouteAt: 再検索駅までの詳細に切り詰める（issue #1642）", () => {
+  const note = `A ⇒ D
+10:00 ⇒ 11:00
+運賃 500円
+------------------------------
+■A
+↓ 10:00〜10:20
+↓ 線 行
+▼B
+↓ 10:25〜10:40
+■D
+
+[Yahoo!乗換案内]
+■広告`;
+  const stops = readYahooRouteStops(note);
+  assert.equal(truncateYahooRouteAt(note, stops[0].lineIndex, stops[0].station), "■A\n↓ 10:00〜10:20\n↓ 線 行\n■B");
+  assert.equal(truncateYahooRouteAt("普通のメモ", 1, "B"), null);
 });

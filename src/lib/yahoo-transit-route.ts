@@ -267,9 +267,13 @@ export type YahooRouteStop = {
   departTime: string | null;
   /** 経路の始点の発車を0日目として、日をまたいだ日数。 */
   dayOffset: number;
+  /** その駅への到着時刻（`HH:MM`）。直前の区間 `↓ 16:30〜16:42` の後半。読めなければ null（issue #1642）。 */
+  arriveTime: string | null;
+  /** 到着時刻の日数（`dayOffset` と同じ基準）。 */
+  arriveDayOffset: number;
 };
 
-const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～]/;
+const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～](?:\s*(\d{1,2}):(\d{2}))?/;
 
 /**
  * 経路のメモから途中駅（issue #1515）。先頭の印が出発、末尾の印が到着で、その間の `■`／`▼` が途中駅。
@@ -291,15 +295,19 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
 
   let previous = -1;
   let dayOffset = 0;
+  // 直前の区間の到着（次の駅への到着時刻）。次のループで、その駅の arriveTime になる
+  let pendingArrive: { time: string; dayOffset: number } | null = null;
   const stops: YahooRouteStop[] = [];
 
   marks.slice(0, -1).forEach((mark, order) => {
     const next = marks[order + 1];
     let departTime: string | null = null;
+    let arrive: { hour: string; minute: string } | null = null;
     for (const line of body.slice(mark + 1, next)) {
       const matched = SEGMENT_TIME.exec(line.trim());
       if (matched) {
         departTime = toTime(matched[1], matched[2]);
+        if (matched[3] !== undefined) arrive = { hour: matched[3], minute: matched[4] };
         break;
       }
     }
@@ -310,13 +318,50 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
       previous = minutes;
     }
 
+    const arrivedHere = pendingArrive;
+    if (departTime && arrive) {
+      const arriveMinutes = Number(arrive.hour) * 60 + Number(arrive.minute);
+      pendingArrive = {
+        time: toTime(arrive.hour, arrive.minute),
+        dayOffset: dayOffset + (arriveMinutes < previous ? 1 : 0),
+      };
+    } else {
+      pendingArrive = null;
+    }
+
     if (order === 0) return;
     const station = yahooStationName(
       body[mark].trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, ""),
     );
     if (station === "") return;
-    stops.push({ lineIndex: mark, station, departTime, dayOffset });
+    stops.push({
+      lineIndex: mark,
+      station,
+      departTime,
+      dayOffset,
+      arriveTime: arrivedHere?.time ?? null,
+      arriveDayOffset: arrivedHere?.dayOffset ?? dayOffset,
+    });
   });
 
   return stops;
+}
+
+/**
+ * 経路の詳細を、再検索駅までに切り詰める（issue #1642）。最初の駅の行から再検索駅の手前までを残し、その駅を終点の行
+ * （`■駅名`）にして、広告・注記（`[Yahoo!乗換案内]` 以降）は落とす。行番号は `readYahooRouteStops` の
+ * `lineIndex`（広告文言を除いた本文の行）。経路として読めない・行が範囲外なら null（呼び出し側は
+ * 経路の詳細を空にする）。
+ */
+export function truncateYahooRouteAt(text: string, lineIndex: number, station: string): string | null {
+  const lines = text.split(/\r?\n/);
+  const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
+  const body = end === -1 ? lines : lines.slice(0, end);
+  if (lineIndex <= 0 || lineIndex >= body.length) return null;
+  // 先頭の概要（全体の発着・所要時間・運賃・距離）は全区間の値で、切り詰めた経路には当てはまらないため落とす
+  const first = body.findIndex((line) => /^[■▼]/.test(line.trim()));
+  if (first === -1 || first >= lineIndex) return null;
+  const head = body.slice(first, lineIndex);
+  while (head.length > 0 && head[head.length - 1].trim() === "") head.pop();
+  return [...head, `■${station}`].join("\n");
 }

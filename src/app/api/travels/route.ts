@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { getMonthsFetchRange } from "@/lib/calendar-range";
 import {
+  createContinuedTravel,
   createTravel,
   listTravelsInRange,
+  TravelContinueError,
   toTravelItem,
   validateTravelInput,
   type TravelWriteInput,
@@ -21,6 +23,13 @@ type CreateBody = Partial<TravelWriteInput> & {
   eventStart?: string;
   eventEnd?: string;
   eventAllDay?: boolean;
+  /** 再検索の続きとして登録する。元の移動を切り詰める（issue #1642） */
+  continueFrom?: {
+    travelId?: string;
+    destination?: string;
+    arriveAt?: string;
+    routeDetail?: string | null;
+  };
 };
 
 /**
@@ -60,7 +69,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await createTravel(userId, {
+    const writeInput: TravelWriteInput = {
       origin: body.origin!,
       destination: body.destination!,
       via: body.via ?? null,
@@ -76,7 +85,27 @@ export async function POST(request: Request) {
       searchEvent: body.searchEvent,
       linkedEventId: body.linkedEventId ?? null,
       linkedCalendarId: body.linkedCalendarId ?? null,
-    });
+    };
+    const cont = body.continueFrom;
+    if (cont && (!cont.travelId || !cont.destination || !cont.arriveAt)) {
+      return NextResponse.json(
+        { error: "invalid_request", message: "続きの移動には元の移動・目的地・到着時刻が必要です。" },
+        { status: 400 },
+      );
+    }
+    const result = cont
+      ? await createContinuedTravel(
+          userId,
+          // 予定への紐づけは元の移動から引き継ぐ（フォームが持たない場合）
+          { ...writeInput, linkedEventId: body.linkedEventId, linkedCalendarId: body.linkedCalendarId },
+          {
+            travelId: cont.travelId!,
+            destination: cont.destination!,
+            arriveAt: cont.arriveAt!,
+            routeDetail: cont.routeDetail ?? null,
+          },
+        )
+      : await createTravel(userId, writeInput);
 
     // その予定の持ち物のうち移動が無くて期限が未設定のものを、この移動の出発へ紐づける
     // （issue #1080）。失敗しても移動の作成は成功のまま。
@@ -91,6 +120,9 @@ export async function POST(request: Request) {
     // 到着が出発より前などの不備はサービス層で例外になる。理由をそのまま画面へ返す。
     const message = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] travel create failed:", message);
+    if (error instanceof TravelContinueError) {
+      return NextResponse.json({ error: "travel_continue_failed", message }, { status: 409 });
+    }
     return NextResponse.json({ error: "travel_create_failed", message }, { status: 400 });
   }
 }
