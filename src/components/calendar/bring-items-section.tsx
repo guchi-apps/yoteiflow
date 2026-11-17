@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Accordion } from "@/components/ui/accordion";
@@ -33,12 +33,15 @@ export function BringItemsSection({
   timeZone,
   readOnly,
   onChanged,
+  onOpenTask,
 }: {
   event: CalendarEventItem;
   timeZone: string;
   readOnly: boolean;
   /** 追加・完了・紐づけのあと、カレンダーの取り直しを頼む（期限がカレンダーに出るため）。 */
   onChanged: () => void;
+  /** 持ち物の名前の部分を押したとき、タスクの詳細を開く（issue #1682）。 */
+  onOpenTask: (task: TaskItem) => void;
 }) {
   const [tasks, setTasks] = useState<TaskItem[] | null>(null);
   const [travels, setTravels] = useState<BringTravel[]>([]);
@@ -196,40 +199,45 @@ export function BringItemsSection({
         const departure = task.links.find((link) => link.target === "DUE" && link.travelId);
         const direct = task.links.find((link) => link.target === "DUE" && !link.travelId);
         return (
-          <label
-            key={task.id}
-            className="flex min-w-0 items-start gap-2 text-sm text-on-surface"
-          >
+          <div key={task.id} className="flex min-w-0 items-start gap-2 text-sm text-on-surface">
             <input
               type="checkbox"
               className="mt-0.5 size-4 shrink-0 accent-primary"
+              aria-label={`${task.title}を完了にする`}
               checked={task.done}
               disabled={readOnly}
               onChange={(e) => toggle(task, e.target.checked)}
             />
-            <span className="min-w-0 flex-1">
-              <span className={cn("break-words", task.done && "text-on-surface-variant line-through")}>
-                {task.title}
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-start gap-2 text-left"
+              onClick={() => onOpenTask(task)}
+            >
+              <span className="min-w-0 flex-1">
+                <span className={cn("break-words", task.done && "text-on-surface-variant line-through")}>
+                  {task.title}
+                </span>
+                <span className="block text-xs text-on-surface-variant">
+                  {departure
+                    ? `出発 ${formatLinkedDate(departure.resolvedAt, timeZone)} まで`
+                    : direct
+                      ? `予定の開始 ${formatLinkedDate(direct.resolvedAt, timeZone)} まで`
+                      : "期限未設定"}
+                  {states[task.id]?.state === "reselect" && (
+                    <span className="text-error">
+                      {" "}
+                      ・再選択が必要（
+                      {states[task.id].reason === "unlinked"
+                        ? "紐づけ先の移動がこの予定から外れています"
+                        : "予定前の移動ではなくなっています"}
+                      ）
+                    </span>
+                  )}
+                </span>
               </span>
-              <span className="block text-xs text-on-surface-variant">
-                {departure
-                  ? `出発 ${formatLinkedDate(departure.resolvedAt, timeZone)} まで`
-                  : direct
-                    ? `予定の開始 ${formatLinkedDate(direct.resolvedAt, timeZone)} まで`
-                    : "期限未設定"}
-                {states[task.id]?.state === "reselect" && (
-                  <span className="text-error">
-                    {" "}
-                    ・再選択が必要（
-                    {states[task.id].reason === "unlinked"
-                      ? "紐づけ先の移動がこの予定から外れています"
-                      : "予定前の移動ではなくなっています"}
-                    ）
-                  </span>
-                )}
-              </span>
-            </span>
-          </label>
+              <ChevronRight className="mt-0.5 size-4 shrink-0 opacity-70" />
+            </button>
+          </div>
         );
       })}
 
