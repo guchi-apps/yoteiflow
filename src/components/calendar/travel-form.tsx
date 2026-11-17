@@ -233,6 +233,18 @@ export function TravelForm({
       : null;
     return { condition, links };
   };
+  // 公共交通以外（車・徒歩・その他）は、同じ「検索する日時」でGoogleマップを日時・基準つきで開く（issue #1653）
+  const googleSearchFor = (side: TimeBasis) =>
+    mode === "PUBLIC_TRANSIT" || offline || !searchAt
+      ? null
+      : googleMapsDirectionsLink({
+          origin,
+          destination,
+          via,
+          mode,
+          places: placeCatalog.places,
+          schedule: { at: searchAt, basis: side },
+        });
   const transitDepart = transitSearchFor("depart");
   const transitArrive = transitSearchFor("arrive");
   // 戻した経路を採用する前の予定の確かめ（issue #1332）。調べたときの予定（下書き）と今の予定を比べる
@@ -1117,6 +1129,58 @@ export function TravelForm({
             ))}
           </div>
         </FormRow>
+
+        {/* 車・徒歩・その他は、公共交通と同じ「検索する日時」と出発/到着の2ボタンで、日時つきのGoogleマップを開く
+            （issue #1653）。素の <a> にするのはiOSがアプリを開けるようにするため。押したら入力を覚える（#1604）。
+            下の出発・到着欄・保存値には書き込まない。 */}
+        {mode !== "PUBLIC_TRANSIT" && !offline && (
+          <FormRow icon={<Search />}>
+            <div className="flex flex-col gap-2 py-1">
+              <DateTimeInput
+                id="travel-search-at-google"
+                label="検索する日時"
+                flat
+                value={searchAt}
+                onChange={(value) => setSearchAtEdited(value)}
+              />
+              <div className="flex gap-2">
+                {(["depart", "arrive"] as const).map((side) => {
+                  const href = googleSearchFor(side);
+                  const label = side === "depart" ? "出発時間で探す" : "到着時間で探す";
+                  const className =
+                    "type-label-large inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-primary px-3 py-2 text-primary";
+                  return href ? (
+                    <a
+                      key={side}
+                      href={href}
+                      onClick={rememberGoogleSearch}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={className}
+                    >
+                      <ExternalLink className="size-4" aria-hidden />
+                      {label}
+                    </a>
+                  ) : (
+                    <span key={side} aria-disabled className={`${className} opacity-38`}>
+                      <ExternalLink className="size-4" aria-hidden />
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+              {!googleMapsDirectionsLink({ origin, destination, mode, places: placeCatalog.places }) ? (
+                <p className="type-body-small text-on-surface-variant" role="status">
+                  Googleマップで探すには、目的地を入力してください。
+                </p>
+              ) : !searchAt ? (
+                <p className="type-body-small text-on-surface-variant" role="status">
+                  Googleマップで日時を指定して探すには、検索する日時を入力してください。
+                </p>
+              ) : null}
+            </div>
+          </FormRow>
+        )}
 
         {/* 公共交通は、駅（左＝出発地・右＝到着地）と検索する日時を決めて、押した側の基準でYahoo!乗換案内を開き、
             選んだ経路を共有で戻す（issue #1330・#1629）。実際の列車・発着時刻はYahoo!で選んだ結果を採る。
