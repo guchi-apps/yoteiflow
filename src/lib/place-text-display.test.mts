@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { splitPlaceForDisplay } from "./place-text.ts";
+import { splitPlaceForDisplay } from "@/lib/place-text";
 
 test("名前と住所を分ける", () => {
   assert.deepEqual(splitPlaceForDisplay("自宅 〒569-0076 大阪府高槻市xx"), {
