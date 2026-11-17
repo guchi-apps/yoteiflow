@@ -57,7 +57,8 @@ import {
 } from "@/services/notion/task-buckets";
 import { EMPTY_TAG_CATALOG, type TagCatalog, type TagOption } from "@/services/notion/tag-options";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
-import type { TaskItem, TaskPriority, WritableCalendar } from "@/types/calendar";
+import type { TaskItem, WritableCalendar } from "@/types/calendar";
+import { TaskPriorityIcon } from "@/components/calendar/task-priority-badges";
 import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
 /** 期限での分類の並び。完了・対応しないは分類の軸によらず末尾へ別に置くため含めない。 */
@@ -571,8 +572,6 @@ function TaskRow({
 
   return (
     <li className="flex items-start gap-2 border-b border-rule/50 py-1.5 pr-3 pl-2">
-      <PriorityBar priority={task.priority} />
-
       {/*
         行のチェックボックスは「完了」の1つだけにする（issue #858）。「対応しない」への切り替えは
         表示画面（TaskDetailDialog）からのみ行い、一覧行からは操作できない。対応しない区画の行では
@@ -590,13 +589,16 @@ function TaskRow({
       )}
 
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
-        <div
-          className={cn(
-            "type-body-medium clip-nowrap",
-            task.done && "text-on-surface-variant line-through",
-          )}
-        >
-          {task.title}
+        <div className="flex min-w-0 items-center gap-1">
+          <TaskPriorityIcon priority={task.priority} />
+          <span
+            className={cn(
+              "type-body-medium clip-nowrap min-w-0",
+              task.done && "text-on-surface-variant line-through",
+            )}
+          >
+            {task.title}
+          </span>
         </div>
 
         <div className="type-label-small flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-normal text-on-surface-variant">
@@ -639,25 +641,6 @@ function TaskRow({
         </div>
       </button>
     </li>
-  );
-}
-
-/**
- * 行の左端に出す優先度の帯。
- *
- * バッジで「高」と書くと日付やタグと同じ文字の列に混ざり、縦に並べたときどれが急ぐのか読めない
- * （issue #286）。色だけに意味を持たせないよう、読み上げ用の文字を添える。
- */
-function PriorityBar({ priority }: { priority: TaskPriority }) {
-  const tone = priority === "高" ? "bg-destructive" : priority === "中" ? "bg-tertiary" : null;
-
-  if (!tone) return <span className="w-[3px] shrink-0" aria-hidden />;
-
-  return (
-    <>
-      <span className={cn("w-[3px] shrink-0 self-stretch rounded-full", tone)} aria-hidden />
-      <span className="sr-only">優先度 {priority}</span>
-    </>
   );
 }
 

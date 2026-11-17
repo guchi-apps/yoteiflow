@@ -22,6 +22,32 @@ const OPTIONS: {
   { value: "低", label: "低", Icon: Minus, idle: "text-travel", selected: "border-travel/20 bg-travel/15 text-travel" },
 ];
 
+/**
+ * タイトルの先頭に置く優先度アイコン（issue #1664）。図柄・色は編集画面のバッジ（#1661）と同じ
+ * （高=3本線・赤、中=2本線・琥珀、低=1本線）。優先度なしは何も出さない。
+ * 余白は呼び出し側で持つ。色だけに意味を持たせないよう読み上げ用の文字を添える。
+ */
+export function TaskPriorityIcon({
+  priority,
+  className,
+}: {
+  priority: string | null;
+  className?: string;
+}) {
+  const option = OPTIONS.find((o) => o.value !== null && o.value === priority);
+
+  if (!option) return null;
+
+  const { Icon, idle, label } = option;
+
+  return (
+    <>
+      <Icon aria-hidden className={cn("size-4 shrink-0", idle, className)} strokeWidth={2.5} />
+      <span className="sr-only">優先度 {label}</span>
+    </>
+  );
+}
+
 export function TaskPriorityBadges({
   value,
   onChange,

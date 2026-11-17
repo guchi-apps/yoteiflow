@@ -10,7 +10,6 @@ import {
   CalendarClock,
   CalendarDays,
   ExternalLink,
-  Flag,
   Link2,
   NotebookText,
   Pencil,
@@ -47,6 +46,7 @@ import {
   taskLinkStageLabel,
   taskLinkTargetLabel,
 } from "./task-link-label";
+import { TaskPriorityIcon } from "./task-priority-badges";
 import { TaskStageMark } from "./task-stage-mark";
 import { TaskStagePicker } from "./task-stage-picker";
 import { readErrorMessage } from "./response-error";
@@ -250,8 +250,11 @@ export function TaskDetailDialog({
         </Button>
 
         <DialogHeader>
-          <DialogTitle className={cn("pr-22", done && "text-on-surface-variant line-through")}>
-            {task.title}
+          <DialogTitle
+            className={cn("flex items-center gap-2 pr-22", done && "text-on-surface-variant line-through")}
+          >
+            <TaskPriorityIcon priority={task.priority} className="size-5" />
+            <span className="min-w-0">{task.title}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -419,7 +422,6 @@ export function TaskDetailDialog({
             </div>
           ))}
 
-          {task.priority && <DetailField icon={<Flag className="size-4" />} value={`優先度: ${task.priority}`} />}
           {task.recurrence && task.recurrence !== "なし" && (
             <DetailField icon={<Repeat className="size-4" />} value={`繰り返し: ${task.recurrence}`} />
           )}
