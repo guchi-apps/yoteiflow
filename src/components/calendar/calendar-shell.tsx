@@ -2363,7 +2363,6 @@ function CalendarBody({
         <TaskDetailDialog
           task={viewingTask}
           tagOptions={tagCatalog.task ?? []}
-          progressOptions={tagCatalog.progress ?? null}
           timeZone={timeZone}
           readOnly={offline}
           onClose={onCloseDialogs}
