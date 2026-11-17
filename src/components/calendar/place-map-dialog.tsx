@@ -3,7 +3,7 @@
 import { useOffline } from "next/offline";
 import { useEffect, useRef, useState } from "react";
 
-import { MapPin, Plus } from "lucide-react";
+import { MapPin, Plus, Search } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
   parseCoordinates,
   type LatLng,
 } from "@/lib/coordinates";
+import { mergePlaceCandidates, type PlaceCandidate } from "@/lib/place-candidates";
 import { resolveMapStart, type MapStart } from "@/lib/place-map-start";
 import type { PlaceItem } from "@/services/notion/places";
 
@@ -170,6 +171,13 @@ export function PlaceMapDialog({
   // 直したあとは、地図を動かしても上書きしない（名前欄と同じ扱い・同じ理由）。
   const [addressTouched, setAddressTouched] = useState(false);
   const [lookup, setLookup] = useState<LookupState>("idle");
+  // 名前の入力候補（ネット＝OSM、0件のときだけAI。issue #1676）。nullは未検索。
+  const [candidates, setCandidates] = useState<PlaceCandidate[] | null>(null);
+  const [searchingName, setSearchingName] = useState(false);
+  const [askingAi, setAskingAi] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const candidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const candidateSeqRef = useRef(0);
   const { location: currentLocation, locating, locate: startLocate } = useCurrentLocation();
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,6 +284,119 @@ export function PlaceMapDialog({
     return () => clearTimeout(timer);
   }, [center, nameTouched, addressTouched]);
 
+  /** 住所（地名）から地点を引いて地図の中心を動かす。見つからなければ動かさず理由を出す。 */
+  const moveToAddress = async (text: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/places/geocode?q=${encodeURIComponent(text)}`);
+      if (!response.ok) throw new Error("failed");
+      const body = (await response.json()) as { place: { lat: number; lng: number } | null };
+      const found = body.place ? { lat: body.place.lat, lng: body.place.lng } : null;
+      if (!found || !isLatLng(found)) return false;
+      moveTo(found);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const searchAddress = async () => {
+    const text = address.trim();
+    if (!text) return;
+    setNotice(null);
+    setSearchingAddress(true);
+    const moved = await moveToAddress(text);
+    setSearchingAddress(false);
+    if (!moved) setNotice("この住所では地点が見つかりませんでした。番地を除くなど短くして試してください。");
+  };
+
+  /** 名前が止まってから、ネットの候補を1回だけ引く（Nominatimは1秒1回まで）。 */
+  const scheduleCandidates = (text: string) => {
+    if (candidateTimerRef.current) clearTimeout(candidateTimerRef.current);
+    const trimmed = text.trim();
+    const seq = ++candidateSeqRef.current;
+    if (trimmed.length < 2) {
+      setCandidates(null);
+      setSearchingName(false);
+      return;
+    }
+    candidateTimerRef.current = setTimeout(async () => {
+      setSearchingName(true);
+      try {
+        const response = await fetch(
+          `/api/places/geocode?q=${encodeURIComponent(trimmed)}&limit=5`,
+        );
+        const body = (await response.json()) as {
+          places?: { name: string | null; address: string | null; lat: number; lng: number }[];
+        };
+        if (seq !== candidateSeqRef.current) return;
+        setCandidates(
+          mergePlaceCandidates([
+            (body.places ?? []).map((place) => ({
+              name: place.name ?? trimmed,
+              address: place.address,
+              coordinates: { lat: place.lat, lng: place.lng },
+              source: "map" as const,
+            })),
+          ]),
+        );
+      } catch {
+        if (seq === candidateSeqRef.current) setCandidates([]);
+      } finally {
+        if (seq === candidateSeqRef.current) setSearchingName(false);
+      }
+    }, LOOKUP_DELAY_MS);
+  };
+
+  /** 候補が0件のときだけ、ボタンでAIに聞く（呼ぶたびに利用枠を消費するため）。 */
+  const askAi = async () => {
+    const text = name.trim();
+    if (!text || offline) return;
+    setAskingAi(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/places/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: text }),
+      });
+      if (!response.ok) {
+        setError(await readErrorMessage(response, "AIの提案を取得できませんでした。"));
+        return;
+      }
+      const body = (await response.json()) as {
+        places: { name: string; address: string | null }[];
+      };
+      setCandidates(
+        mergePlaceCandidates([
+          body.places.map((place) => ({ ...place, coordinates: null, source: "ai" as const })),
+        ]),
+      );
+    } catch {
+      setError("AIの提案を取得できませんでした。");
+    } finally {
+      setAskingAi(false);
+    }
+  };
+
+  const chooseCandidate = async (candidate: PlaceCandidate) => {
+    if (candidateTimerRef.current) clearTimeout(candidateTimerRef.current);
+    candidateSeqRef.current++;
+    setName(candidate.name);
+    setNameTouched(true);
+    if (candidate.address) {
+      setAddress(candidate.address);
+      setAddressTouched(true);
+    }
+    setCandidates(null);
+    setNotice(null);
+    if (candidate.coordinates && isLatLng(candidate.coordinates)) {
+      moveTo(candidate.coordinates);
+    } else if (candidate.address) {
+      // AIの候補は地点を持たない。住所から引いて地図を寄せる。
+      await moveToAddress(candidate.address);
+    }
+  };
+
   /** 地点だけを返す（編集の経路）。Notionへは呼び出し側が書くため、ここでは通信しない。 */
   const pick = () => {
     if (!onPicked) return;
@@ -351,20 +472,96 @@ export function PlaceMapDialog({
           className="h-[40vh] max-h-80 min-h-56"
         />
 
+        {/* 名前を先に置く。名前の候補を選ぶと住所と地図が付いてくる（issue #1676）。 */}
+        {!onPicked && (
+          <div className="flex flex-col gap-1">
+            <Input
+              id="place-map-name"
+              label="名前"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setNameTouched(true);
+                scheduleCandidates(event.target.value);
+              }}
+            />
+            {searchingName && (
+              <p className="type-body-small text-on-surface-variant">候補を探しています…</p>
+            )}
+            {candidates && candidates.length > 0 && (
+              <ul className="overflow-hidden rounded-md border border-outline-variant">
+                {candidates.map((candidate) => (
+                  <li key={`${candidate.name}:${candidate.address ?? ""}`}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col items-start gap-0.5 border-b border-outline-variant px-3 py-2 text-left last:border-b-0 hover:bg-surface-container"
+                      onClick={() => void chooseCandidate(candidate)}
+                    >
+                      <span className="type-body-medium text-on-surface">
+                        {candidate.name}
+                        {candidate.source === "ai" && (
+                          <span className="type-label-small ml-1.5 rounded-xs bg-secondary-container px-1 text-on-secondary-container">
+                            AI
+                          </span>
+                        )}
+                      </span>
+                      {candidate.address && (
+                        <span className="type-body-small text-on-surface-variant">
+                          {candidate.address}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {candidates && candidates.length === 0 && !searchingName && (
+              <div className="flex items-center gap-2">
+                <span className="type-body-small text-on-surface-variant">
+                  候補が見つかりませんでした。
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={askingAi || offline}
+                  onClick={() => void askAi()}
+                >
+                  {askingAi ? "AIに聞いています…" : "AIに聞く"}
+                </Button>
+              </div>
+            )}
+            <p className="type-body-small text-on-surface-variant">
+              この名前で場所DBへ登録し、場所欄に「名前 住所」の形で入ります。
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-col gap-1">
-          <Input
-            id="place-map-address"
-            label="住所"
-            value={address}
-            onChange={(event) => {
-              setAddress(event.target.value);
-              setAddressTouched(true);
-            }}
-            onClear={() => {
-              setAddress("");
-              setAddressTouched(true);
-            }}
-          />
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <Input
+                id="place-map-address"
+                label="住所"
+                value={address}
+                onChange={(event) => {
+                  setAddress(event.target.value);
+                  setAddressTouched(true);
+                }}
+                onClear={() => {
+                  setAddress("");
+                  setAddressTouched(true);
+                }}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              disabled={!address.trim() || searchingAddress}
+              onClick={() => void searchAddress()}
+            >
+              <Search className="size-4" />
+              {searchingAddress ? "検索中…" : "検索"}
+            </Button>
+          </div>
           <div className="flex items-start gap-2 text-on-surface-variant">
             {lookup === "loading" ? (
               <>
@@ -391,24 +588,6 @@ export function PlaceMapDialog({
             {formatCoordinates(center)}
           </span>
         </div>
-
-        {/* 地点を選び直すだけの経路では、名前も登録先も呼び出し側で決まっている。 */}
-        {!onPicked && (
-          <>
-            <Input
-              id="place-map-name"
-              label="名前"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                setNameTouched(true);
-              }}
-            />
-            <p className="type-body-small text-on-surface-variant">
-              この名前で場所DBへ登録し、場所欄に「名前 住所」の形で入ります。
-            </p>
-          </>
-        )}
 
         {notice && <p className="type-body-small text-on-surface-variant">{notice}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}

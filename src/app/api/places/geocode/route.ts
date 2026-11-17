@@ -4,6 +4,7 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { parsePointParams } from "@/lib/coordinates";
 import { resolvePointAddress } from "@/services/geocoding/resolve-point";
+import { searchPlaces } from "@/services/geocoding/nominatim";
 import { resolveTextPlace } from "@/services/geocoding/resolve-search";
 
 /**
@@ -23,6 +24,17 @@ export async function GET(request: Request) {
 
   if (!query && !point) {
     return NextResponse.json({ error: "q or lat/lon is required" }, { status: 400 });
+  }
+
+  // `?q=&limit=` は名前の入力候補（複数件）。地点・施設名・住所を添えて返す（issue #1676）。
+  const limit = Number(params.get("limit"));
+  if (!point && query && Number.isInteger(limit) && limit > 1) {
+    try {
+      const places = await searchPlaces(query, Math.min(limit, 5));
+      return NextResponse.json({ places });
+    } catch (error) {
+      return externalApiError("osm", "場所の候補の取得", error);
+    }
   }
 
   try {
