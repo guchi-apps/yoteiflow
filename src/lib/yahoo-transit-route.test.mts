@@ -243,3 +243,23 @@ test("鉄道の起終点は railAtStart/railAtEnd が true、徒歩・バスは 
   assert.equal(bus.railAtStart, false);
   assert.equal(bus.railAtEnd, false);
 });
+
+test("起終点が徒歩・区間を読めない・鉄道と確認できない手段のときは railAt* が false（issue #1639）", () => {
+  const unknown = parseYahooTransitRoute(`高槻 ⇒ 大阪
+20:58 ⇒ 21:46
+■高槻
+`);
+  assert.ok(unknown);
+  assert.equal(unknown.railAtStart, false);
+  assert.equal(unknown.railAtEnd, false);
+
+  const tram = parseYahooTransitRoute(`A ⇒ B
+20:58 ⇒ 21:46
+■A
+↓ 20:58〜21:10
+↓ ロープウェイ B行
+■B
+`);
+  assert.ok(tram);
+  assert.equal(tram.railAtStart, false);
+});

@@ -1,3 +1,5 @@
+import { ensureStationSuffix } from "@/lib/station-name";
+
 /**
  * Yahoo!乗換案内の「共有 ▸ コピー」で得られる経路のテキストを読む（docs/spec.md §29）。
  *
@@ -132,7 +134,9 @@ export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
 }
 
 // 鉄道ではない区間の目印。路線名の行にこれらを含むときは、始点・終点を駅とは決めない。
-const NON_RAIL_LEG = /徒歩|バス|航空|空港|フェリー|船|ＡＮＡ|ＪＡＬ|ANA|JAL|タクシー|車/;
+const NON_RAIL_LEG = /徒歩|バス|航空|空港|フェリー|船|ＡＮＡ|ＪＡＬ|ANA|JAL|タクシー/;
+// 鉄道だと確認できる路線名の語。ここに当たらない手段（路面電車・ロープウェイなど）は駅と決めない。
+const RAIL_LEG = /線|新幹線|電鉄|鉄道|地下鉄|メトロ|ライン|特急|ＪＲ|JR/;
 
 function readEdgeRails(lines: string[]): { railAtStart: boolean; railAtEnd: boolean } {
   const marks = lines.flatMap((line, index) => (line.startsWith("■") || line.startsWith("▼") ? [index] : []));
@@ -142,7 +146,7 @@ function readEdgeRails(lines: string[]): { railAtStart: boolean; railAtEnd: bool
     const legs = lines
       .slice(from + 1, to)
       .filter((line) => line.startsWith("↓") && !/^↓\s*\d{1,2}:\d{2}/.test(line) && !/番線|番のりば/.test(line));
-    return legs.length > 0 && !legs.some((line) => NON_RAIL_LEG.test(line));
+    return legs.length > 0 && legs.some((line) => RAIL_LEG.test(line)) && !legs.some((line) => NON_RAIL_LEG.test(line));
   };
   return {
     railAtStart: isRail(marks[0], marks[1]),
@@ -292,7 +296,7 @@ export function yahooPlaceName(station: string, rail: boolean): string {
   const name = yahooStationName(station);
   if (!rail || name === "") return name;
   if (/(駅|空港|港|停|前|ターミナル|バス停|センター)$/.test(name)) return name;
-  return `${name}駅`;
+  return ensureStationSuffix(name) ?? name;
 }
 
 /** 途中駅（出発・到着を除く乗換駅・乗降駅）。メモの何行目か・再検索に使う駅名と発車時刻を持つ。 */
