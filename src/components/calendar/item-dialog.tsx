@@ -157,7 +157,6 @@ export function ItemDialog({
             {...shared}
             draft={drafts.task}
             tagOptions={tagCatalog.task ?? []}
-            progressOptions={tagCatalog.progress ?? null}
             weekStartsOn={weekStartsOn}
           />
         )}
