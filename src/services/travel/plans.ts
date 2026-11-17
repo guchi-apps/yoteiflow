@@ -281,10 +281,30 @@ export async function createContinuedTravel(
     previousTravelId: original.id,
   };
 
-  const { created, cut } = await db.$transaction(async (tx) => {
-    const created = await tx.travelPlan.create({ data });
-    const cut = await tx.travelPlan.update({
-      where: { id: original.id },
+  // 再送・同時送信で同じ区間を複数作らない（issue #1667）。元の移動の `updatedAt` を版として
+  // 条件付き更新で「確保」し、確保できた1回だけが作成する。確保できなかったときは、同じ内容の
+  // 継続が作成済みなら（応答喪失後の再送）新しく作らずそれを返し、違う内容なら競合として断る。
+  const outcome = await db.$transaction(async (tx) => {
+    const findSame = () =>
+      tx.travelPlan.findFirst({
+        where: {
+          userId,
+          previousTravelId: original.id,
+          origin: data.origin,
+          destination: data.destination,
+          departAt: data.departAt,
+          arriveAt: data.arriveAt,
+        },
+      });
+    // 応答喪失後の再送: 確保より前に、同じ内容の継続が作成済みかを見る（確保後は元の updatedAt が
+    // 進んでいるため、再送は確保に成功して2件目を作ってしまう）。
+    const already = await findSame();
+    if (already) {
+      const current = await tx.travelPlan.findFirst({ where: { id: original.id, userId } });
+      if (current) return { replay: true as const, created: already, cut: current };
+    }
+    const claimed = await tx.travelPlan.updateMany({
+      where: { id: original.id, userId, updatedAt: original.updatedAt },
       data: {
         destination,
         arriveAt: cutArriveAt,
@@ -293,12 +313,34 @@ export async function createContinuedTravel(
         routeDetail: continuation.routeDetail?.trim() || null,
       },
     });
+    if (claimed.count === 0) {
+      // 同時送信で先に確保された場合。REPEATABLE READ ではこの tx のスナップショットに先行の作成が
+      // 見えないため、tx の外（コミット済みの状態）で読み直す。
+      const current = await db.travelPlan.findFirst({ where: { id: original.id, userId } });
+      const same = await db.travelPlan.findFirst({
+        where: {
+          userId,
+          previousTravelId: original.id,
+          origin: data.origin,
+          destination: data.destination,
+          departAt: data.departAt,
+          arriveAt: data.arriveAt,
+        },
+      });
+      if (current && same) return { replay: true as const, created: same, cut: current };
+      throw new TravelContinueError(
+        "元の移動が別の操作で変更されました。移動を開き直して、もう一度やり直してください。",
+      );
+    }
+    const cut = await tx.travelPlan.findUniqueOrThrow({ where: { id: original.id } });
+    const created = await tx.travelPlan.create({ data });
     await tx.taskEventLink.updateMany({
       where: { userId, travelId: original.id, stage: { in: ["BEFORE_END", "AFTER_END"] } },
       data: { travelId: created.id },
     });
-    return { created, cut };
+    return { replay: false as const, created, cut };
   });
+  const { created, cut } = outcome;
 
   for (const plan of [created, cut]) {
     await syncLinksForTravel(userId, plan.id, plan).catch((error: unknown) => {
