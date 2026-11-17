@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  MODE_RANK_ORDER,
   buildRouteLookup,
   pickDefaultRoute,
   transitBaseTrain,
@@ -55,4 +56,9 @@ test("デフォルトの電車が無ければ出発が最も早い電車を基�
   assert.equal(transitMinutes([train(450, 35), train(420, 40)], 10), 50);
   assert.equal(transitMinutes([], 10), null);
   assert.equal(transitMinutes([train(420, 40)], -5), 40);
+});
+
+test("既定が決まらないときの固定順は、画面の表示順（公共交通優先）に依らず 車→公共交通→徒歩→その他", () => {
+  assert.deepEqual([...MODE_RANK_ORDER], ["CAR", "PUBLIC_TRANSIT", "WALK", "OTHER"]);
+  assert.equal(pickDefaultRoute([row("PUBLIC_TRANSIT", 50), row("CAR", 35)])?.mode, "CAR");
 });

@@ -1,5 +1,5 @@
 import type { RouteLookup } from "@/lib/work-sync/plan";
-import { TRAVEL_MODES, type TravelMode } from "@/types/calendar";
+import type { TravelMode } from "@/types/calendar";
 
 /**
  * 勤務先の既定の移動を、方法（車・公共交通・徒歩・その他）ごとに扱う純粋関数（issue #1447）。
@@ -16,7 +16,9 @@ export type RouteModeRow = {
   updatedAt?: number;
 };
 
-const modeRank = (mode: TravelMode) => TRAVEL_MODES.indexOf(mode);
+// 既定が決まらないときの固定順。画面の表示順（TRAVEL_MODES）とは独立に保つ。
+export const MODE_RANK_ORDER: readonly TravelMode[] = ["CAR", "PUBLIC_TRANSIT", "WALK", "OTHER"];
+const modeRank = (mode: TravelMode) => MODE_RANK_ORDER.indexOf(mode);
 
 /**
  * 組の既定の行。isDefault の行（複数なら更新が新しいもの）、無ければ固定順（車→公共交通→徒歩→その他）の先頭。
