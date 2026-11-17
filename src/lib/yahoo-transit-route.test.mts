@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseYahooTransitRoute,
+  readYahooRouteRestartPoints,
   readYahooRouteStops,
   yahooRouteFields,
   yahooSearchedDateKey,
@@ -207,6 +208,27 @@ test("readYahooRouteStops: 途中駅が無い経路・経路でないメモは�
   const stops = readYahooRouteStops("■A\n↓ 10:00〜10:10\n■B\n↓ 徒歩\n■C");
   assert.equal(stops[0].station, "B");
   assert.equal(stops[0].departTime, null);
+});
+
+test("readYahooRouteRestartPoints: 出発駅から始まり到着駅は含まない（issue #1640）", () => {
+  const note = "■高槻市\n↓ 22:41〜22:50\n■南茨木(阪急線)\n↓ 22:52〜22:54\n■南茨木(大阪モノレール)\n↓ 23:04〜23:16\n■門真市";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(note).map((s) => [s.station, s.departTime]),
+    [
+      ["高槻市", "22:41"],
+      ["南茨木", "22:52"],
+      ["南茨木", "23:04"],
+    ],
+  );
+});
+
+test("readYahooRouteRestartPoints: 乗換なしの2駅でも出発駅を返し、時刻行の無い手書きメモには出さない", () => {
+  assert.deepEqual(
+    readYahooRouteRestartPoints("■草津\n↓ 20:58〜21:21\n■高槻").map((s) => s.station),
+    ["草津"],
+  );
+  assert.deepEqual(readYahooRouteRestartPoints("■自宅\n■会社"), []);
+  assert.deepEqual(readYahooRouteRestartPoints("普通のメモ"), []);
 });
 
 test("yahooPlaceName: 鉄道の駅には「駅」を補う（issue #1639）", () => {
