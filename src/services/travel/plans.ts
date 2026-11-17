@@ -314,9 +314,19 @@ export async function createContinuedTravel(
       },
     });
     if (claimed.count === 0) {
-      // 同時送信で先に確保された場合
-      const current = await tx.travelPlan.findFirst({ where: { id: original.id, userId } });
-      const same = await findSame();
+      // 同時送信で先に確保された場合。REPEATABLE READ ではこの tx のスナップショットに先行の作成が
+      // 見えないため、tx の外（コミット済みの状態）で読み直す。
+      const current = await db.travelPlan.findFirst({ where: { id: original.id, userId } });
+      const same = await db.travelPlan.findFirst({
+        where: {
+          userId,
+          previousTravelId: original.id,
+          origin: data.origin,
+          destination: data.destination,
+          departAt: data.departAt,
+          arriveAt: data.arriveAt,
+        },
+      });
       if (current && same) return { replay: true as const, created: same, cut: current };
       throw new TravelContinueError(
         "元の移動が別の操作で変更されました。移動を開き直して、もう一度やり直してください。",
