@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { PlaceSuggestion } from "@/lib/ai-place-suggest";
 import type { LatLng } from "@/lib/coordinates";
-import { toLocationText } from "@/lib/place-text";
+import { splitPlaceForDisplay, toLocationText } from "@/lib/place-text";
 import type { PlaceItem } from "@/services/notion/places";
 
 import { PlaceMapDialog } from "./place-map-dialog";
@@ -44,7 +44,10 @@ export function LocationInput({
   eventTitle,
   placeDatabaseReady,
   variant = "filled",
+  splitAddress = false,
 }: {
+  /** 住所を入力欄に含めず、ラベルの右に小さく別表示する（移動の出発地・目的地・issue #1633）。 */
+  splitAddress?: boolean;
   /** `flat` は予定フォームのGoogleカレンダー風の行（issue #1563）。 */
   variant?: "filled" | "flat";
   /** 入力欄のid。移動では出発地・目的地の2つが同じ画面に並ぶため、呼び出し側で分ける。 */
@@ -79,7 +82,9 @@ export function LocationInput({
   // 地図のタイルも住所の問い合わせも通信が要る（docs/spec.md §21）。
   const offline = useOffline();
 
-  const query = value.trim();
+  // 住所を別表示するときは、入力欄には名前だけを出す。値（value）は `名前 住所` のまま持つ。
+  const shown = splitAddress ? splitPlaceForDisplay(value) : { name: value, address: "" };
+  const query = shown.name.trim();
   const candidates = matchPlaces([...places, ...added], query);
   // 登録も、AIへの問い合わせも、候補が無いときだけ出す。
   // 登録済みの場所で足りるなら、同じ場所を作り直す必要もAIを呼ぶ必要もない。
@@ -234,15 +239,20 @@ export function LocationInput({
           <Input
             id={id}
             label={label}
+            labelAside={shown.address || undefined}
             variant={variant}
-            value={value}
-            onChange={(event) => change(event.target.value)}
+            value={shown.name}
+            onChange={(event) => {
+              // 名前を打ち直したら住所は外す（別の場所になるため）。変わっていなければ触らない。
+              if (event.target.value !== shown.name) change(event.target.value);
+            }}
             // 消した直後は別の場所を選び直したいことが多い。候補は開いたままにする。
             onClear={() => change("")}
             onFocus={() => setOpen(true)}
             onBlur={(event) => {
               setOpen(false);
-              onCommit?.(event.target.value);
+              // 住所を別表示しているときは、名前が変わっていなければ住所つきの値のまま確定する。
+              onCommit?.(event.target.value === shown.name ? value : event.target.value);
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape" && open) {

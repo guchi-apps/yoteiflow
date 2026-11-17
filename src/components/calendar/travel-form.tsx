@@ -939,6 +939,7 @@ export function TravelForm({
             id="travel-origin"
             label="出発地"
             variant="flat"
+            splitAddress
             value={origin}
             onChange={editOrigin}
             places={placeCatalog.places}
@@ -991,6 +992,7 @@ export function TravelForm({
             id="travel-destination"
             label="目的地"
             variant="flat"
+            splitAddress
             value={destination}
             onChange={editDestination}
             places={placeCatalog.places}
