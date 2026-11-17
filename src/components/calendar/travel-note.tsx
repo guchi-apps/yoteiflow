@@ -17,7 +17,7 @@ import { LinkifiedText } from "@/components/ui/linkified-text";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
-import { readYahooRouteStops, type YahooRouteStop } from "@/lib/yahoo-transit-route";
+import { readYahooRouteRestartPoints, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
 
 type Segment = { kind: "text"; text: string } | { kind: "stop"; text: string; stop: YahooRouteStop };
@@ -49,7 +49,7 @@ export function TravelNote({
   const [selected, setSelected] = useState<YahooRouteStop | null>(null);
 
   const segments = useMemo<Segment[]>(() => {
-    const stops = readYahooRouteStops(note);
+    const stops = readYahooRouteRestartPoints(note);
     if (stops.length === 0) return [{ kind: "text", text: note }];
 
     const lines = note.split(/\r?\n/);
@@ -77,18 +77,23 @@ export function TravelNote({
         segment.kind === "text" ? (
           <LinkifiedText key={index} text={segment.text} />
         ) : (
-          <div key={index} className="flex min-w-0 items-center justify-between gap-2">
-            <span className="min-w-0 break-words">{segment.text}</span>
+          <div key={index} className="flex min-w-0 items-center gap-2">
+            <span className={readOnly ? "min-w-0 break-words" : "min-w-0 truncate"}>{segment.text}</span>
             {!readOnly && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setSelected(segment.stop)}
-              >
-                <RefreshCw className="size-3.5" />
-                ここから再検索
-              </Button>
+              <>
+                {/* 駅名からボタンへ引く線。どの駅からの再検索かを読ませる（issue #1640） */}
+                <span aria-hidden className="h-0 min-w-2 flex-1 border-t-[1.5px] border-dotted border-primary/60" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  aria-label={`${segment.stop.station}から再検索`}
+                  onClick={() => setSelected(segment.stop)}
+                >
+                  <RefreshCw className="size-3.5" />
+                  再検索
+                </Button>
+              </>
             )}
           </div>
         ),
