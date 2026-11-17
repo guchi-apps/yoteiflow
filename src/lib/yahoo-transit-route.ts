@@ -321,6 +321,24 @@ const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～]/;
  * （遅れたときに利用者が直せるよう、ボタンは隠さない）。時刻が前の駅より戻ったら日をまたいだと数える。
  */
 export function readYahooRouteStops(text: string): YahooRouteStop[] {
+  return readStopsFrom(text, 3, 1);
+}
+
+/**
+ * 再検索ボタンを置く駅（issue #1640）。出発駅から始まり、到着駅は含まない。
+ *
+ * `readYahooRouteStops()` は旧メモの判定・既定の開閉にも使われるため変えず、ボタンの置き場所だけを
+ * こちらで決める。出発駅は、直後に `↓ HH:MM〜` の発車時刻の行があるときだけ含める
+ * （■を2行書いただけの手書きメモに出さないため）。乗換の無い2駅の経路でも出発駅は返る。
+ */
+export function readYahooRouteRestartPoints(text: string): YahooRouteStop[] {
+  const stops = readStopsFrom(text, 2, 0);
+  const first = stops.at(0);
+  if (!first || first.departTime === null) return stops.slice(1);
+  return stops;
+}
+
+function readStopsFrom(text: string, minMarks: number, skip: number): YahooRouteStop[] {
   const lines = text.split(/\r?\n/);
   const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
   const body = end === -1 ? lines : lines.slice(0, end);
@@ -329,7 +347,7 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
     const trimmed = line.trim();
     return trimmed.startsWith("■") || trimmed.startsWith("▼") ? [index] : [];
   });
-  if (marks.length < 3) return [];
+  if (marks.length < minMarks) return [];
 
   let previous = -1;
   let dayOffset = 0;
@@ -352,7 +370,7 @@ export function readYahooRouteStops(text: string): YahooRouteStop[] {
       previous = minutes;
     }
 
-    if (order === 0) return;
+    if (order < skip) return;
     const station = yahooStationName(
       body[mark].trim().replace(/^[■▼]\s*/, "").replace(/^\[[^\]]*\]\s*/, ""),
     );
