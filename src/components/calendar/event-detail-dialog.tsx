@@ -704,6 +704,7 @@ export function EventDetailDialog({
               timeZone={timeZone}
               readOnly={readOnly}
               onChanged={() => onBringChanged?.()}
+              onOpenTask={openTask}
             />
           )}
 
