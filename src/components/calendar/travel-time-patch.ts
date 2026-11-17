@@ -17,7 +17,7 @@ export async function patchTravelTimes(
   travel: TravelItem,
   departAt: string,
   arriveAt: string,
-  /** 変更シート（issue #1466）が手段・メモ・出どころも変えるとき。省略した項目は手元の値のまま。 */
+  /** 手段・メモ・出どころも変えるとき。省略した項目は手元の値のまま。 */
   overrides: Partial<Pick<TravelItem, "mode" | "note" | "estimateSource" | "estimated">> = {},
 ): Promise<string | null> {
   try {

@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   parseYahooTransitRoute,
+  readYahooRouteRestartPoints,
   readYahooRouteStops,
+  truncateYahooRouteAt,
   yahooRouteFields,
   yahooSearchedDateKey,
+  yahooPlaceName,
   yahooStationName,
 } from "@/lib/yahoo-transit-route";
 
@@ -206,4 +209,129 @@ test("readYahooRouteStops: 途中駅が無い経路・経路でないメモは�
   const stops = readYahooRouteStops("■A\n↓ 10:00〜10:10\n■B\n↓ 徒歩\n■C");
   assert.equal(stops[0].station, "B");
   assert.equal(stops[0].departTime, null);
+});
+
+test("readYahooRouteStops: 途中駅への到着時刻を前の区間から読む（issue #1642）", () => {
+  const note = "■A\n↓ 23:00〜23:30\n▼B\n↓ 23:40〜00:10\n■C\n↓ 徒歩\n■D";
+  const stops = readYahooRouteStops(note);
+  assert.deepEqual(
+    stops.map((s) => [s.station, s.arriveTime, s.arriveDayOffset]),
+    [
+      ["B", "23:30", 0],
+      ["C", "00:10", 1],
+    ],
+  );
+  assert.equal(readYahooRouteStops("■A\n↓ 徒歩\n■B\n↓ 10:00〜10:10\n■C")[0].arriveTime, null);
+});
+
+test("truncateYahooRouteAt: 再検索駅までの詳細に切り詰める（issue #1642）", () => {
+  const note = `A ⇒ D
+10:00 ⇒ 11:00
+運賃 500円
+------------------------------
+■A
+↓ 10:00〜10:20
+↓ 線 行
+▼B
+↓ 10:25〜10:40
+■D
+
+[Yahoo!乗換案内]
+■広告`;
+  const stops = readYahooRouteStops(note);
+  assert.equal(truncateYahooRouteAt(note, stops[0].lineIndex, stops[0].station), "■A\n↓ 10:00〜10:20\n↓ 線 行\n■B");
+  assert.equal(truncateYahooRouteAt("普通のメモ", 1, "B"), null);
+});
+
+test("readYahooRouteRestartPoints: 出発駅から始まり到着駅は含まない（issue #1640）", () => {
+  const note = "■高槻市\n↓ 22:41〜22:50\n■南茨木(阪急線)\n↓ 22:52〜22:54\n■南茨木(大阪モノレール)\n↓ 23:04〜23:16\n■門真市";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(note).map((s) => [s.station, s.departTime]),
+    [
+      ["高槻市", "22:41"],
+      ["南茨木", "22:52"],
+      ["南茨木", "23:04"],
+    ],
+  );
+});
+
+test("readYahooRouteRestartPoints: 乗換なしの2駅でも出発駅を返し、時刻行の無い手書きメモには出さない", () => {
+  assert.deepEqual(
+    readYahooRouteRestartPoints("■草津\n↓ 20:58〜21:21\n■高槻").map((s) => s.station),
+    ["草津"],
+  );
+  assert.deepEqual(readYahooRouteRestartPoints("■自宅\n■会社"), []);
+  assert.deepEqual(readYahooRouteRestartPoints("普通のメモ"), []);
+});
+
+test("yahooPlaceName: 鉄道の駅には「駅」を補う（issue #1639）", () => {
+  assert.equal(yahooPlaceName("高槻", true), "高槻駅");
+  assert.equal(yahooPlaceName("草津(滋賀県)", true), "草津駅");
+});
+
+test("yahooPlaceName: すでに駅・空港などで終わる名前や鉄道でない起終点は触らない", () => {
+  assert.equal(yahooPlaceName("高槻駅", true), "高槻駅");
+  assert.equal(yahooPlaceName("関西空港", true), "関西空港");
+  assert.equal(yahooPlaceName("高槻", false), "高槻");
+});
+
+test("鉄道の起終点は railAtStart/railAtEnd が true、徒歩・バスは false（issue #1639）", () => {
+  const rail = parseYahooTransitRoute(SAMPLE);
+  assert.ok(rail);
+  assert.equal(rail.railAtStart, true);
+  assert.equal(rail.railAtEnd, true);
+
+  const bus = parseYahooTransitRoute(`自宅 ⇒ 高槻
+2026年8月28日(金)
+20:58 ⇒ 21:46
+------------------------------
+
+■自宅
+↓ 20:58〜21:10
+↓ 徒歩
+▼高槻
+↓ 21:12〜21:46
+↓ 京阪バス 高槻行
+■高槻駅前
+`);
+  assert.ok(bus);
+  assert.equal(bus.railAtStart, false);
+  assert.equal(bus.railAtEnd, false);
+});
+
+test("起終点が徒歩・区間を読めない・鉄道と確認できない手段のときは railAt* が false（issue #1639）", () => {
+  const unknown = parseYahooTransitRoute(`高槻 ⇒ 大阪
+20:58 ⇒ 21:46
+■高槻
+`);
+  assert.ok(unknown);
+  assert.equal(unknown.railAtStart, false);
+  assert.equal(unknown.railAtEnd, false);
+
+  const tram = parseYahooTransitRoute(`A ⇒ B
+20:58 ⇒ 21:46
+■A
+↓ 20:58〜21:10
+↓ ロープウェイ B行
+■B
+`);
+  assert.ok(tram);
+  assert.equal(tram.railAtStart, false);
+});
+
+test("isOrigin: 最初の印だけが出発駅で、発車時刻が無くて出発駅が外れても途中駅には立たない（issue #1645）", () => {
+  const note = "■草津\n↓ 20:58〜21:21\n▼[乗換不要] 京都\n↓ 21:24〜21:46\n■高槻";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(note).map((s) => [s.station, s.isOrigin]),
+    [
+      ["草津", true],
+      ["京都", false],
+    ],
+  );
+  // 出発駅に発車時刻の行が無いと出発駅は返らない。このとき先頭の途中駅を出発駅と誤認しない
+  const noTime = "■草津\n↓ 乗車\n▼京都\n↓ 21:24〜21:46\n■高槻";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(noTime).map((s) => [s.station, s.isOrigin]),
+    [["京都", false]],
+  );
 });

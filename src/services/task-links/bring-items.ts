@@ -73,7 +73,11 @@ export async function findBeforeTravelId(
 ): Promise<string | null> {
   if (!event) return null;
   const travels = await listLinkedTravels(userId, eventId);
-  const before = travels.filter(
+  // 再検索の続き（previousTravelId）は鎖の先頭と同じ1件として数える（issue #1642）。持ち物の期限は先頭の出発に置く
+  const ids = new Set(travels.map((travel) => travel.id));
+  const before = travels
+    .filter((travel) => !travel.previousTravelId || !ids.has(travel.previousTravelId))
+    .filter(
     (travel) =>
       travelRelation(
         { start: travel.departAt.toISOString(), end: travel.arriveAt.toISOString() },

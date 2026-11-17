@@ -116,6 +116,7 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
           }
         : null,
     followDismissedKey: plan.followDismissedKey,
+    previousTravelId: plan.previousTravelId,
     exported: Boolean(plan.googleEventId),
     color,
   };
@@ -234,6 +235,138 @@ export async function importSharedTravel(
   return { duplicate: false, result: await createTravel(userId, input) };
 }
 
+/** 再検索の続きとして登録するとき、元の移動をどこまでに切り詰めるか（issue #1642）。 */
+export type TravelContinuation = {
+  travelId: string;
+  /** 切り詰め後の目的地（再検索駅）と到着時刻（ISO 8601） */
+  destination: string;
+  arriveAt: string;
+  /** 切り詰め後の経路の詳細。読めなかったときは null（空にする） */
+  routeDetail: string | null;
+};
+
+export class TravelContinueError extends Error {}
+
+/**
+ * 再検索の続きの移動を作り、元の移動を再検索駅までに切り詰める（issue #1642）。
+ *
+ * 作成と切り詰めは1トランザクションで行い、途中で失敗して二重表示（元が全区間のまま・新しい移動が
+ * 重なる）が残らないようにする。元の移動の予定への紐づけは外さず、新しい移動へも同じ予定を引き継ぐ。
+ * 到着基準のタスクの紐づけ（到着まで・到着後）は新しい移動へ付け替え、出発基準と通知は元の移動に残す。
+ * Googleへの書き出しはコミット後に両方行い、失敗しても保存は成功のまま（もう一度保存で再試行できる）。
+ */
+export async function createContinuedTravel(
+  userId: string,
+  input: TravelWriteInput,
+  continuation: TravelContinuation,
+): Promise<TravelSaveResult> {
+  const original = await getTravel(userId, continuation.travelId);
+  if (!original) throw new TravelContinueError("元の移動が見つかりませんでした（削除された可能性があります）。");
+
+  const cutArriveAt = new Date(continuation.arriveAt);
+  if (Number.isNaN(cutArriveAt.getTime()) || cutArriveAt.getTime() <= original.departAt.getTime()) {
+    throw new TravelContinueError("元の移動の到着時刻を、出発時刻より後にしてください。");
+  }
+  const destination = continuation.destination.trim();
+  if (destination === "") throw new TravelContinueError("元の移動の目的地が空です。");
+
+  const data = {
+    ...toWriteData({
+      ...input,
+      linkedEventId: input.linkedEventId ?? original.linkedEventId,
+      linkedCalendarId: input.linkedCalendarId ?? original.linkedCalendarId,
+    }),
+    userId,
+    returnLeg: false,
+    previousTravelId: original.id,
+  };
+
+  // 再送・同時送信で同じ区間を複数作らない（issue #1667）。元の移動の `updatedAt` を版として
+  // 条件付き更新で「確保」し、確保できた1回だけが作成する。確保できなかったときは、同じ内容の
+  // 継続が作成済みなら（応答喪失後の再送）新しく作らずそれを返し、違う内容なら競合として断る。
+  const outcome = await db.$transaction(async (tx) => {
+    const findSame = () =>
+      tx.travelPlan.findFirst({
+        where: {
+          userId,
+          previousTravelId: original.id,
+          origin: data.origin,
+          destination: data.destination,
+          departAt: data.departAt,
+          arriveAt: data.arriveAt,
+        },
+      });
+    // 応答喪失後の再送: 確保より前に、同じ内容の継続が作成済みかを見る（確保後は元の updatedAt が
+    // 進んでいるため、再送は確保に成功して2件目を作ってしまう）。
+    const already = await findSame();
+    if (already) {
+      const current = await tx.travelPlan.findFirst({ where: { id: original.id, userId } });
+      if (current) return { replay: true as const, created: already, cut: current };
+    }
+    const claimed = await tx.travelPlan.updateMany({
+      where: { id: original.id, userId, updatedAt: original.updatedAt },
+      data: {
+        destination,
+        arriveAt: cutArriveAt,
+        // 経由地は切り詰め後の経路に当てはまるか分からないため空にする
+        via: null,
+        routeDetail: continuation.routeDetail?.trim() || null,
+      },
+    });
+    if (claimed.count === 0) {
+      // 同時送信で先に確保された場合。REPEATABLE READ ではこの tx のスナップショットに先行の作成が
+      // 見えないため、tx の外（コミット済みの状態）で読み直す。
+      const current = await db.travelPlan.findFirst({ where: { id: original.id, userId } });
+      const same = await db.travelPlan.findFirst({
+        where: {
+          userId,
+          previousTravelId: original.id,
+          origin: data.origin,
+          destination: data.destination,
+          departAt: data.departAt,
+          arriveAt: data.arriveAt,
+        },
+      });
+      if (current && same) return { replay: true as const, created: same, cut: current };
+      throw new TravelContinueError(
+        "元の移動が別の操作で変更されました。移動を開き直して、もう一度やり直してください。",
+      );
+    }
+    const cut = await tx.travelPlan.findUniqueOrThrow({ where: { id: original.id } });
+    const created = await tx.travelPlan.create({ data });
+    await tx.taskEventLink.updateMany({
+      where: { userId, travelId: original.id, stage: { in: ["BEFORE_END", "AFTER_END"] } },
+      data: { travelId: created.id },
+    });
+    return { replay: false as const, created, cut };
+  });
+  const { created, cut } = outcome;
+
+  for (const plan of [created, cut]) {
+    await syncLinksForTravel(userId, plan.id, plan).catch((error: unknown) => {
+      console.error(
+        "[dayspan] travel task link sync failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  }
+
+  const calendarId = await resolveTravelCalendarId(userId);
+  const timeZone = await getTimeZone(userId);
+  const results = [];
+  for (const plan of [created, cut]) {
+    const exported = await exportTravelToGoogle(userId, plan, calendarId, timeZone);
+    results.push({
+      plan:
+        exported.status === "exported"
+          ? { ...plan, googleCalendarId: exported.calendarId, googleEventId: exported.eventId }
+          : plan,
+      exported,
+    });
+  }
+  return { travels: results.map((r) => toTravelItem(r.plan)), exports: results.map((r) => r.exported) };
+}
+
 /** 移動を書き換え、Google側の予定も同じ内容へ揃える。 */
 export async function updateTravel(
   userId: string,
@@ -332,6 +465,11 @@ export async function deleteTravel(userId: string, travelId: string): Promise<bo
   // 紐づいたタスクの紐づけは外し、入っている日付は残す（予定を消したときと同じ扱い）。
   await dropLinksForTravel(userId, existing.id);
   await dropNotificationSettingForTravel(userId, existing.id);
+  // この移動を前の移動としていた続きの移動は、続きではなくなる（issue #1642）
+  await db.travelPlan.updateMany({
+    where: { userId, previousTravelId: existing.id },
+    data: { previousTravelId: null },
+  });
 
   return true;
 }

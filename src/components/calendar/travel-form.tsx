@@ -37,6 +37,7 @@ import {
   type EventNotificationOverride,
   type TravelEstimateSource,
   MAX_TRAVEL_SEARCH_MARGIN_MINUTES,
+  type TravelContinueFrom,
   type TravelItem,
   type TravelMode,
   type TravelSearchPurpose,
@@ -106,6 +107,8 @@ export type TravelDraft = {
    * 確かめ（調べたあとにまた変わった・消えたなら確認を求める）、更新は紐づけが変わっていないときだけにする。
    */
   adoptCheck?: boolean;
+  /** 移動メモの途中駅から再検索して戻った経路。保存すると元の移動を切り詰め、この移動をその続きにする（issue #1642） */
+  continueFrom?: TravelContinueFrom;
 };
 
 type AdoptCheck =
@@ -233,6 +236,18 @@ export function TravelForm({
       : null;
     return { condition, links };
   };
+  // 公共交通以外（車・徒歩・その他）は、同じ「検索する日時」でGoogleマップを日時・基準つきで開く（issue #1653）
+  const googleSearchFor = (side: TimeBasis) =>
+    mode === "PUBLIC_TRANSIT" || offline || !searchAt
+      ? null
+      : googleMapsDirectionsLink({
+          origin,
+          destination,
+          via,
+          mode,
+          places: placeCatalog.places,
+          schedule: { at: searchAt, basis: side },
+        });
   const transitDepart = transitSearchFor("depart");
   const transitArrive = transitSearchFor("arrive");
   // 戻した経路を採用する前の予定の確かめ（issue #1332）。調べたときの予定（下書き）と今の予定を比べる
@@ -561,18 +576,6 @@ export function TravelForm({
   };
   const editTime = (side: TimeBasis, value: string) =>
     side === "depart" ? editRange(value, arriveAt) : editRange(departAt, value);
-  /** 「出発日時から計算」「到着日時から計算」。押した側を固定し、反対側を所要時間から求める */
-  const calculateFrom = (side: TimeBasis) => {
-    touch("times");
-    touch("basis");
-    setBasis(side);
-    const fixed = side === "depart" ? departAt : arriveAt;
-    const other = deriveOtherSide(side, fixed, knownMinutes);
-    if (!other) return;
-    if (side === "depart") setArriveAt(other);
-    else setDepartAt(other);
-    if (routeMinutes !== null) setEstimateSource("GOOGLE_MAPS");
-  };
   const editDepartAt = (value: string) => editTime("depart", value);
   const editArriveAt = (value: string) => editTime("arrive", value);
 
@@ -834,6 +837,16 @@ export function TravelForm({
           : {}),
         // 戻した経路での更新は、紐づけが変わっていないときだけ（外れていたら409で断られる・issue #1332）
         ...(editing && adoptBase ? { expectLinkedEventId: adoptBase.id } : {}),
+        ...(!editing && draft.continueFrom
+          ? {
+              continueFrom: {
+                travelId: draft.continueFrom.travelId,
+                destination: draft.continueFrom.destination,
+                arriveAt: draft.continueFrom.arriveAt,
+                routeDetail: draft.continueFrom.routeDetail,
+              },
+            }
+          : {}),
         ...(editing
           ? {}
           : {
@@ -933,6 +946,113 @@ export function TravelForm({
       )}
 
       <div className="flex min-w-0 flex-col">
+        {/* 予定の前後の移動として、周辺の予定の場所と余裕分から検索条件を提案する（issue #1331）。
+            地点は候補から選ぶか欄で直す。提案は検索の基準で、実際の便はYahoo!で選んだものを採る。 */}
+        {suggestTarget && (
+          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            <span className="type-label-small text-on-surface-variant">「{suggestTarget.title}」の</span>
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="予定の前後どちらの移動か">
+              {(["BEFORE_EVENT", "AFTER_EVENT"] as const).map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={purpose === option}
+                  variant={purpose === option ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => choosePurpose(option)}
+                >
+                  {option === "BEFORE_EVENT" ? "予定前（行き）" : "予定後（帰り・次へ）"}
+                </Button>
+              ))}
+            </div>
+            {purpose && (
+              <div className="flex items-end gap-3">
+                <div className="relative w-1/2 shrink-0">
+                  <Input
+                    id="travel-search-margin"
+                    label={purpose === "BEFORE_EVENT" ? "予定の何分前に着くか" : "予定の終了から何分後に出るか"}
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_TRAVEL_SEARCH_MARGIN_MINUTES}
+                    value={marginText}
+                    onChange={(e) => changeMargin(e.target.value)}
+                  />
+                  <span aria-hidden className="type-body-small pointer-events-none absolute bottom-2 right-8 text-on-surface-variant">
+                    分
+                  </span>
+                </div>
+                {suggestion?.at && (
+                  <p className="type-body-small min-w-0 flex-1 text-on-surface-variant">
+                    {purpose === "BEFORE_EVENT"
+                      ? `おすすめの検索: ${formatClock(suggestion.at)} 到着（開始 ${formatClock(suggestTarget.start)} の${marginMinutes}分前${suggestion.walkMinutes ? `＋駅から徒歩${suggestion.walkMinutes}分` : ""}）`
+                      : `おすすめの検索: ${formatClock(suggestion.at)} 出発（終了 ${formatClock(suggestTarget.end)}${marginMinutes ? ` の${marginMinutes}分後` : ""}${suggestion.walkMinutes ? `＋駅まで徒歩${suggestion.walkMinutes}分` : ""}）`}
+                  </p>
+                )}
+              </div>
+            )}
+            {purpose && marginMinutes === null && (
+              <p className="type-body-small text-destructive">0〜{MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。</p>
+            )}
+            {suggestion?.nextEvent && (
+              <p className="type-body-small text-on-surface-variant">
+                次の予定「{suggestion.nextEvent.title}」は {formatClock(suggestion.nextEvent.start)} 開始です。
+              </p>
+            )}
+            {suggestion && suggestion.candidates.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="type-label-small text-on-surface-variant">
+                  {purpose === "BEFORE_EVENT" ? "出発地の候補" : "目的地の候補"}
+                </span>
+                <ul className="flex flex-col gap-1">
+                  {suggestion.candidates.map((candidate) => {
+                    const selected = (purpose === "BEFORE_EVENT" ? origin : destination).trim() === candidate.text;
+                    return (
+                      <li key={candidate.text}>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => chooseCandidate(candidate.text)}
+                          className={`flex w-full min-w-0 flex-col rounded-lg border px-3 py-1.5 text-left ${selected ? "border-primary bg-primary/10" : "border-outline-variant"}`}
+                        >
+                          <span className="type-label-large truncate">{placeDisplayName(candidate.text)}</span>
+                          <span className="type-body-small text-on-surface-variant">{candidate.reason}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {transitContext === "loading" && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+                <LoaderCircle className="size-4 animate-spin" />
+                前後の予定を確かめています…
+              </p>
+            )}
+            {transitContext === "error" && (
+              <p className="text-xs text-muted-foreground" role="status">
+                前後の予定を読めなかったため、自宅だけを候補にしています。地点を確かめてください。
+              </p>
+            )}
+            {loadedContext?.partial && (
+              <p className="text-xs text-muted-foreground">一部のカレンダーを読めなかったため、候補が欠けていることがあります。</p>
+            )}
+            {suggestion?.notes.map((note) => (
+              <p key={note} className="type-body-small text-on-surface-variant">
+                {note}
+              </p>
+            ))}
+            {routeWarnings.map((warning) => (
+              <p key={warning} className="flex items-start gap-1.5 type-body-small text-destructive" role="alert">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                {warning}
+              </p>
+            ))}
+          </div>
+        )}
+
         {/* 予定の入力画面と同じ、アイコン付きの行＋区切り線（issue #1582）。出発地・目的地は必須なので行として残す。 */}
         <FormRow icon={<CircleDot />} divider={false}>
           <LocationInput
@@ -1010,6 +1130,58 @@ export function TravelForm({
             ))}
           </div>
         </FormRow>
+
+        {/* 車・徒歩・その他は、公共交通と同じ「検索する日時」と出発/到着の2ボタンで、日時つきのGoogleマップを開く
+            （issue #1653）。素の <a> にするのはiOSがアプリを開けるようにするため。押したら入力を覚える（#1604）。
+            下の出発・到着欄・保存値には書き込まない。 */}
+        {mode !== "PUBLIC_TRANSIT" && !offline && (
+          <FormRow icon={<Search />}>
+            <div className="flex flex-col gap-2 py-1">
+              <DateTimeInput
+                id="travel-search-at-google"
+                label="検索する日時"
+                flat
+                value={searchAt}
+                onChange={(value) => setSearchAtEdited(value)}
+              />
+              <div className="flex gap-2">
+                {(["depart", "arrive"] as const).map((side) => {
+                  const href = googleSearchFor(side);
+                  const label = side === "depart" ? "出発時間で探す" : "到着時間で探す";
+                  const className =
+                    "type-label-large inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-primary px-3 py-2 text-primary";
+                  return href ? (
+                    <a
+                      key={side}
+                      href={href}
+                      onClick={rememberGoogleSearch}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={className}
+                    >
+                      <ExternalLink className="size-4" aria-hidden />
+                      {label}
+                    </a>
+                  ) : (
+                    <span key={side} aria-disabled className={`${className} opacity-38`}>
+                      <ExternalLink className="size-4" aria-hidden />
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+              {!googleMapsDirectionsLink({ origin, destination, mode, places: placeCatalog.places }) ? (
+                <p className="type-body-small text-on-surface-variant" role="status">
+                  Googleマップで探すには、目的地を入力してください。
+                </p>
+              ) : !searchAt ? (
+                <p className="type-body-small text-on-surface-variant" role="status">
+                  Googleマップで日時を指定して探すには、検索する日時を入力してください。
+                </p>
+              ) : null}
+            </div>
+          </FormRow>
+        )}
 
         {/* 公共交通は、駅（左＝出発地・右＝到着地）と検索する日時を決めて、押した側の基準でYahoo!乗換案内を開き、
             選んだ経路を共有で戻す（issue #1330・#1629）。実際の列車・発着時刻はYahoo!で選んだ結果を採る。
@@ -1094,106 +1266,6 @@ export function TravelForm({
           </FormRow>
         )}
 
-        {/* 予定の前後の移動として、周辺の予定の場所と余裕分から検索条件を提案する（issue #1331）。
-            地点は候補から選ぶか欄で直す。提案は検索の基準で、実際の便はYahoo!で選んだものを採る。 */}
-        {suggestTarget && (
-          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
-            <span className="type-label-small text-on-surface-variant">「{suggestTarget.title}」の</span>
-            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="予定の前後どちらの移動か">
-              {(["BEFORE_EVENT", "AFTER_EVENT"] as const).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  role="radio"
-                  aria-checked={purpose === option}
-                  variant={purpose === option ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => choosePurpose(option)}
-                >
-                  {option === "BEFORE_EVENT" ? "予定前（行き）" : "予定後（帰り・次へ）"}
-                </Button>
-              ))}
-            </div>
-            {purpose && (
-              <Input
-                id="travel-search-margin"
-                label={purpose === "BEFORE_EVENT" ? "予定の何分前に着くか（分）" : "予定の終了から何分後に出るか（分）"}
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={MAX_TRAVEL_SEARCH_MARGIN_MINUTES}
-                value={marginText}
-                onChange={(e) => changeMargin(e.target.value)}
-              />
-            )}
-            {purpose && marginMinutes === null && (
-              <p className="type-body-small text-destructive">0〜{MAX_TRAVEL_SEARCH_MARGIN_MINUTES}分で入力してください。</p>
-            )}
-            {suggestion?.at && (
-              <p className="type-body-small text-on-surface-variant">
-                {purpose === "BEFORE_EVENT"
-                  ? `おすすめの検索: ${formatClock(suggestion.at)} 到着（開始 ${formatClock(suggestTarget.start)} の${marginMinutes}分前${suggestion.walkMinutes ? `＋駅から徒歩${suggestion.walkMinutes}分` : ""}）`
-                  : `おすすめの検索: ${formatClock(suggestion.at)} 出発（終了 ${formatClock(suggestTarget.end)}${marginMinutes ? ` の${marginMinutes}分後` : ""}${suggestion.walkMinutes ? `＋駅まで徒歩${suggestion.walkMinutes}分` : ""}）`}
-              </p>
-            )}
-            {suggestion?.nextEvent && (
-              <p className="type-body-small text-on-surface-variant">
-                次の予定「{suggestion.nextEvent.title}」は {formatClock(suggestion.nextEvent.start)} 開始です。
-              </p>
-            )}
-            {suggestion && suggestion.candidates.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <span className="type-label-small text-on-surface-variant">
-                  {purpose === "BEFORE_EVENT" ? "出発地の候補" : "目的地の候補"}
-                </span>
-                <ul className="flex flex-col gap-1">
-                  {suggestion.candidates.map((candidate) => {
-                    const selected = (purpose === "BEFORE_EVENT" ? origin : destination).trim() === candidate.text;
-                    return (
-                      <li key={candidate.text}>
-                        <button
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => chooseCandidate(candidate.text)}
-                          className={`flex w-full min-w-0 flex-col rounded-lg border px-3 py-1.5 text-left ${selected ? "border-primary bg-primary/10" : "border-outline-variant"}`}
-                        >
-                          <span className="type-label-large truncate">{placeDisplayName(candidate.text)}</span>
-                          <span className="type-body-small text-on-surface-variant">{candidate.reason}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-            {transitContext === "loading" && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-                <LoaderCircle className="size-4 animate-spin" />
-                前後の予定を確かめています…
-              </p>
-            )}
-            {transitContext === "error" && (
-              <p className="text-xs text-muted-foreground" role="status">
-                前後の予定を読めなかったため、自宅だけを候補にしています。地点を確かめてください。
-              </p>
-            )}
-            {loadedContext?.partial && (
-              <p className="text-xs text-muted-foreground">一部のカレンダーを読めなかったため、候補が欠けていることがあります。</p>
-            )}
-            {suggestion?.notes.map((note) => (
-              <p key={note} className="type-body-small text-on-surface-variant">
-                {note}
-              </p>
-            ))}
-            {routeWarnings.map((warning) => (
-              <p key={warning} className="flex items-start gap-1.5 type-body-small text-destructive" role="alert">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                {warning}
-              </p>
-            ))}
-          </div>
-        )}
-
         <FormRow icon={<Clock />}>
           <div className="flex flex-col gap-1">
             {departAt && arriveAt ? (
@@ -1217,31 +1289,6 @@ export function TravelForm({
                 <DateTimeInput id="travel-arrive" label="到着" flat value={arriveAt} onChange={editArriveAt} />
               </>
             )}
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!departAt || knownMinutes === null}
-                onClick={() => calculateFrom("depart")}
-              >
-                出発日時から計算
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!arriveAt || knownMinutes === null}
-                onClick={() => calculateFrom("arrive")}
-              >
-                到着日時から計算
-              </Button>
-            </div>
-            <p className="type-label-small text-on-surface-variant">
-              {knownMinutes !== null
-                ? `所要時間 ${knownMinutes}分${routeMinutes !== null ? "（Googleマップの代表時間）" : ""}。片方の日時を入力して押すと、もう一方を求めます。時刻を直しても反対側は自動では変わりません。`
-                : "所要時間が分からないときは、出発・到着の両方を入力してください。"}
-            </p>
           </div>
         </FormRow>
 

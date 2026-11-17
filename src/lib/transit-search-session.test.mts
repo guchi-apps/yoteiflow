@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 
-import { applySharedRoute, isTransitSessionId, matchTransitSession, type TransitSearchSession } from "@/lib/transit-search-session";
+import { applySharedRoute, isTransitSessionId, originResearchDraft, matchTransitSession, type TransitSearchSession } from "@/lib/transit-search-session";
 import type { TravelItem } from "@/types/calendar";
 
 const session: TransitSearchSession = {
@@ -55,6 +55,22 @@ describe("applySharedRoute", () => {
     assert.match(draft.notice, /確かめてから保存/);
   });
 
+  it("再検索の続きは新規の移動のまま、元の移動の切り詰め情報を持ち回って案内する（issue #1642）", () => {
+    const continueFrom = {
+      travelId: "t0",
+      title: "大阪→門真市",
+      destination: "南茨木",
+      arriveAt: "2026-11-01T14:12:00.000Z",
+      routeDetail: "■大阪\n■南茨木",
+    };
+    const draft = applySharedRoute({ ...session, draft: { ...session.draft, continueFrom } }, route);
+    assert.deepEqual(draft.continueFrom, continueFrom);
+    assert.equal(draft.travel, undefined);
+    assert.equal(draft.adoptCheck, false);
+    assert.match(draft.notice, /「大阪→門真市」の続きとして登録/);
+    assert.match(draft.notice, /「南茨木」までに切り詰まります/);
+  });
+
   it("編集中の移動はそのまま持ち回り、同じ移動の更新になる", () => {
     const travel = { id: "t1", title: "自宅→本社" } as TravelItem;
     const draft = applySharedRoute({ ...session, draft: { ...session.draft, travel } }, route);
@@ -94,4 +110,36 @@ test("kind が違う印は取り出さない・旧い保存値は yahoo 扱い�
   const legacy = JSON.stringify({ id, label: "A→B", draft, expiresAt: 2_000 });
   assert.ok(matchTransitSession(legacy, id, 1_000));
   assert.equal(matchTransitSession(legacy, id, 1_000, "google"), null);
+});
+
+describe("出発駅からの再検索（issue #1645）", () => {
+  const route = { origin: "梅田", destination: "淀屋橋", departAt: "2026-11-01T13:20", arriveAt: "2026-11-01T13:38", note: "" };
+  const base = {
+    id: "t1",
+    title: "梅田 → 本社",
+    origin: "梅田",
+    destination: "本社",
+    via: [],
+    note: "手書きのメモ",
+    routeDetail: "■梅田\n↓ 13:00〜13:10\n■本社",
+    notification: null,
+  } as unknown as TravelItem;
+  const input = { departAt: "2026-11-01T13:00", arriveAt: "2026-11-01T13:10" };
+
+  it("今の移動を更新対象にし、新しい経路に詳細が無くても前の詳細を残さない", () => {
+    const draft = originResearchDraft(base, input);
+    assert.equal(draft.travel?.id, "t1");
+    const applied = applySharedRoute({ id: session.id, label: "x", draft, expiresAt: 1 }, route);
+    assert.equal(applied.routeDetail, "");
+    assert.equal(applied.note, "手書きのメモ");
+    const next = applySharedRoute({ id: session.id, label: "x", draft, expiresAt: 1 }, { ...route, note: "新しい経路" });
+    assert.equal(next.routeDetail, "新しい経路");
+  });
+
+  it("旧データでメモに入っている経路は、メモを空にして経路の詳細へ移す", () => {
+    const legacy = { ...base, note: "■梅田\n↓ 13:00〜13:10\n▼京都\n↓ 13:12〜13:20\n■本社", routeDetail: null } as unknown as TravelItem;
+    const draft = originResearchDraft(legacy, input);
+    assert.equal(draft.note, "");
+    assert.equal(draft.routeDetail, legacy.note);
+  });
 });
