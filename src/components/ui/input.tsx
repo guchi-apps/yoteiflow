@@ -19,6 +19,7 @@ function Input({
   className,
   type,
   label,
+  labelAside,
   id,
   variant = "filled",
   onClear,
@@ -26,6 +27,8 @@ function Input({
   ...props
 }: React.ComponentProps<"input"> & {
   label?: string
+  /** ラベルの右に小さく添える補足（住所など）。ラベルと同じ行で、幅が足りなければ末尾から切れる。 */
+  labelAside?: string
   /** M3のテキストフィールドは Filled と Outlined の2種類。ラベル付きの既定はFilled。 */
   variant?: "filled" | "outlined" | "flat"
   /**
@@ -67,12 +70,25 @@ function Input({
 
   if (!label) return inputEl
 
+  const labelRow = labelAside ? (
+    <div className="flex min-w-0 items-baseline gap-2">
+      <label htmlFor={inputId} className={cn(fieldLabel, "shrink-0")}>
+        {label}
+      </label>
+      <span className={cn(fieldLabel, "min-w-0 flex-1")} title={labelAside}>
+        {labelAside}
+      </span>
+    </div>
+  ) : (
+    <label htmlFor={inputId} className={fieldLabel}>
+      {label}
+    </label>
+  )
+
   if (onClear === undefined) {
     return (
       <div data-slot="field" className={fieldShell(variant, variant === "flat" ? "h-10" : "h-14")}>
-        <label htmlFor={inputId} className={fieldLabel}>
-          {label}
-        </label>
+        {labelRow}
         {inputEl}
       </div>
     )
@@ -86,9 +102,7 @@ function Input({
   return (
     <div data-slot="field" className={fieldShell(variant, variant === "flat" ? "h-10 items-center" : "h-14 items-center", "row")}>
       <div className={fieldStack}>
-        <label htmlFor={inputId} className={fieldLabel}>
-          {label}
-        </label>
+        {labelRow}
         {inputEl}
       </div>
       {showClear && (

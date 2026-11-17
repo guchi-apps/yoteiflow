@@ -161,6 +161,18 @@ export function placeDisplayName(text: string): string {
   return name.replace(POSTAL_CODE_TAIL, "").trim() || text.trim();
 }
 
+/**
+ * 場所欄の値を、入力欄に出す名前と、別に出す住所へ分ける（issue #1633）。
+ * 住所が読めない値・名前で始まらない値は分けず、全体を名前として返す（住所は空）。
+ */
+export function splitPlaceForDisplay(text: string): { name: string; address: string } {
+  const value = text.trim();
+  const name = placeDisplayName(value);
+  if (!name || name === value || !value.startsWith(name)) return { name: value, address: "" };
+  const address = value.slice(name.length).replace(/^[\s、,]+/, "").trim();
+  return address ? { name, address } : { name: value, address: "" };
+}
+
 /** 先頭の郵便番号（`〒` 付き・無しの両方）。 */
 const POSTAL_CODE_HEAD = /^(?:〒\s*)?\d{3}-?\d{4}[\s、,]+/;
 
