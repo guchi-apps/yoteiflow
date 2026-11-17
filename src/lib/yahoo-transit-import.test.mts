@@ -142,3 +142,11 @@ test("経路を読めないメモは足し直さない（#1471）", () => {
   const travel = { departAt: "2026-08-28T11:58:00.000Z", arriveAt: "2026-08-28T12:46:00.000Z", routeDetail: "メモ" };
   assert.equal(retargetYahooWalk(travel, { before: 5, after: 5 }), null);
 });
+
+test("鉄道と確認できる経路では出発地・目的地に「駅」を補う（issue #1639）", () => {
+  const rail = SAMPLE.replace("↓ 20:58〜21:21\n", "↓ 20:58〜21:21\n↓ ＪＲ琵琶湖線 姫路行\n");
+  const result = buildYahooTravelImport(rail, "Asia/Tokyo");
+  assert.ok(result.ok);
+  assert.equal(result.travel.origin, "草津駅");
+  assert.equal(result.travel.destination, "高槻駅");
+});
