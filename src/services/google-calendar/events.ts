@@ -248,8 +248,10 @@ function toRequestBody(input: EventWriteInput, { clearOther = false } = {}) {
     summary: input.title,
     start,
     end,
-    location: input.location ?? undefined,
-    description: input.description ?? undefined,
+    // 更新（clearOther）で null は「消す」意味。undefined にするとPATCHが項目を送らず、
+    // 消したはずの場所・説明が残る（issue #1650）。未指定（undefined）は従来どおり触らない。
+    location: input.location === null && clearOther ? "" : (input.location ?? undefined),
+    description: input.description === null && clearOther ? "" : (input.description ?? undefined),
     attendees: input.attendees?.length ? input.attendees.map((email) => ({ email })) : undefined,
     recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
     extendedProperties: input.privateProperties ? { private: input.privateProperties } : undefined,
