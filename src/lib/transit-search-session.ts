@@ -12,6 +12,7 @@
  * 別の日の共有を黙ってこの下書きへの反映に化けさせない。保持するのは直近の1件だけ。
  */
 
+import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import type { EventNotificationOverride, TravelContinueFrom, TravelItem, TravelMode, TravelSearchPurpose } from "@/types/calendar";
 
 const STORAGE_KEY = "dayspan_transit_search_session";
@@ -31,6 +32,11 @@ export type TransitSearchDraft = {
   note?: string;
   /** Yahoo!から取り込んだ経路の詳細（メモとは別・issue #1634） */
   routeDetail?: string;
+  /**
+   * 出発駅からの再検索で、今の移動の経路を選び直すとき（issue #1645）。戻った経路の詳細で前の詳細を
+   * 必ず置き換える（新しい経路に詳細が無ければ空にし、前の経路の乗換情報を残さない）。
+   */
+  replaceRouteDetail?: boolean;
   linkedEvent?: {
     id: string;
     calendarId: string;
@@ -119,6 +125,37 @@ export function rememberTransitSession(
   return session;
 }
 
+/**
+ * 出発駅からの再検索（issue #1645）で覚える下書き。今の移動を更新対象にし、戻った経路で置き換える（純粋関数・テスト用）。
+ *
+ * - 経路の詳細は戻った経路のもので必ず置き換える（`replaceRouteDetail`）
+ * - 旧データはメモに途中駅つきの経路が入っている（`TravelDetailDialog` がそれを経路の詳細として扱う）ため、
+ *   メモを空にして経路の詳細へ移す。残すと、更新後に古い経路がメモに二重に残る
+ * - 発着時刻は入力欄の形式（`YYYY-MM-DDTHH:mm`）で受ける。変換は呼び出し側（設定タイムゾーン）が行う
+ */
+export function originResearchDraft(
+  travel: TravelItem,
+  input: { departAt: string; arriveAt: string },
+): TransitSearchDraft {
+  const legacyRouteInNote = !travel.routeDetail && readYahooRouteStops(travel.note ?? "").length > 0;
+  return {
+    travel,
+    origin: travel.origin,
+    destination: travel.destination,
+    via: travel.via,
+    mode: "PUBLIC_TRANSIT",
+    departAt: input.departAt,
+    arriveAt: input.arriveAt,
+    note: legacyRouteInNote ? "" : (travel.note ?? ""),
+    routeDetail: travel.routeDetail || (legacyRouteInNote ? (travel.note ?? "") : ""),
+    replaceRouteDetail: true,
+    linkedEvent: null,
+    notification: travel.notification ?? null,
+    searchPurpose: travel.searchPurpose ?? null,
+    searchMarginMinutes: travel.searchMarginMinutes ?? null,
+  };
+}
+
 /** 共有で戻ってきたIDが一致したときだけ取り出し、取り出したら消す（同じ共有で2回反映しない）。 */
 export function takeTransitSession(id: string, now = Date.now(), kind: TransitSearchKind = "yahoo"): TransitSearchSession | null {
   try {
@@ -159,7 +196,7 @@ export function applySharedRoute(
 ): TransitSearchDraft & { notice: string; adoptCheck: boolean } {
   const { draft } = session;
   // 経路の詳細はメモとは別の項目へ入れる。選び直したら新しい経路の詳細で置き換える（issue #1634）
-  const routeDetail = route.note.trim() || (draft.routeDetail ?? "");
+  const routeDetail = draft.replaceRouteDetail ? route.note.trim() : route.note.trim() || (draft.routeDetail ?? "");
   const searchedDate = (draft.arriveAt || draft.departAt).slice(0, 10);
   const dateDiffers = searchedDate !== "" && route.arriveAt.slice(0, 10) !== searchedDate && route.departAt.slice(0, 10) !== searchedDate;
   const notice = [

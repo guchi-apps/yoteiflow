@@ -17,12 +17,12 @@ import { LinkifiedText } from "@/components/ui/linkified-text";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
-import { rememberTransitSession } from "@/lib/transit-search-session";
+import { originResearchDraft, rememberTransitSession } from "@/lib/transit-search-session";
 import { readYahooRouteRestartPoints, truncateYahooRouteAt, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TravelContinueFrom, TravelItem } from "@/types/calendar";
 
-import { localInputToIso } from "./datetime-fields";
+import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 
 type Segment = { kind: "text"; text: string } | { kind: "stop"; text: string; stop: YahooRouteStop };
 
@@ -51,8 +51,8 @@ export function TravelNote({
   /** オフライン中。Yahoo!乗換案内は通信が要るためボタンを出さない。 */
   readOnly: boolean;
   /**
-   * この経路を持つ移動。渡すと、再検索で選んだ経路を元の移動の続きとして登録できる（issue #1642）。
-   * 渡さない（移動に紐づかないメモ）なら従来どおり。
+   * この経路を持つ移動。渡すと、出発駅からの再検索はこの移動を更新し（issue #1645）、途中駅からの再検索は
+   * 選んだ経路を元の移動の続きとして登録できる（issue #1642）。渡さない（移動に紐づかないメモ）なら従来どおり。
    */
   travel?: TravelItem;
 }) {
@@ -172,8 +172,28 @@ function ResearchSheet({
   const [opened, setOpened] = useState<NativeTransitOpened | null>(null);
 
   /** アプリ内: Yahoo!アプリを開く。開けなければアプリが同じ条件のWeb版を開く */
+  const updatesTravel = Boolean(travel && stop.isOrigin);
   const openInNativeApp = async () => {
-    // 移動の再検索は、共有で戻した経路を「元の移動の続き」として登録する下書きを置く（issue #1642）。
+    if (travel && stop.isOrigin) {
+      // 出発駅からの再検索は、今の移動を更新対象として覚える。共有で戻った経路で移動の編集画面を開き、
+      // 経路の詳細も置き換える（保存は利用者が確かめてから・issue #1645）
+      const session = rememberTransitSession(
+        `${stop.station}→${target?.name ?? destination}`,
+        originResearchDraft(travel, {
+          departAt: isoToLocalInput(travel.start, timeZone),
+          arriveAt: isoToLocalInput(travel.end, timeZone),
+        }),
+      );
+      setOpened(
+        await openTransitInNativeApp({
+          appUrl: appHref ?? "",
+          webUrl: href,
+          session: { id: session.id, label: session.label, expiresAt: session.expiresAt },
+        }),
+      );
+      return;
+    }
+    // 途中駅からの再検索は、共有で戻した経路を「元の移動の続き」として登録する下書きを置く（issue #1642）。
     // 続きにできない（移動に紐づかない・駅への到着が読めない）ときは下書きを持たず、移動の入力画面で
     // 置いた印が残っていると別の移動の下書きへ反映されうるため、開く前に消す。
     const continueFrom = travel ? buildContinuation(travel, stop, noteText, timeZone, startIso, date, time) : null;
@@ -220,6 +240,11 @@ function ResearchSheet({
             <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
+          {nativeTransit && updatesTravel && (
+            <p className="text-xs text-on-surface-variant">
+              出発駅からの再検索は、この移動を選んだ経路で更新します（保存の前に確かめられます）。
+            </p>
+          )}
           {opened && opened !== "app" && (
             <p className="text-xs text-on-surface-variant" role="status">
               {opened === "web" ? "アプリを開けなかったため、Web版で開きました。" : "Yahoo!乗換案内を開けませんでした。"}

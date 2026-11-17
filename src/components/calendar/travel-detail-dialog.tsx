@@ -28,13 +28,11 @@ import {
   type TaskItem,
   type TaskLinkTarget,
   type TravelItem,
-  type TravelMode,
 } from "@/types/calendar";
 
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
-import { TravelChangeSheet } from "./travel-change-sheet";
 import { TravelNote } from "./travel-note";
 import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
@@ -56,7 +54,6 @@ export function TravelDetailDialog({
   readOnly = false,
   onClose,
   onEdit,
-  onEditWithMode,
   onDeleted,
   linkedTasks = [],
   onOpenTask,
@@ -78,8 +75,6 @@ export function TravelDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
-  /** 変更シートから、選んだ移動方法で編集画面を開く（issue #1466）。 */
-  onEditWithMode?: (mode: TravelMode, times?: { departAt: string; arriveAt: string }) => void;
   onDeleted: (touched: TouchedRange[] | null) => void;
   /** この移動に紐づいているタスク（issue #914）。出発前に確かめるタスクなどを置く。 */
   linkedTasks?: TaskItem[];
@@ -114,7 +109,6 @@ export function TravelDetailDialog({
   const [open, setOpen] = useState(true);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [changing, setChanging] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -152,22 +146,6 @@ export function TravelDetailDialog({
     1,
     Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000),
   );
-
-  if (changing) {
-    return (
-      <TravelChangeSheet
-        travel={travel}
-        timeZone={timeZone}
-        // ×・閉じるは全体を閉じず、移動の詳細へ戻す（issue #1598）
-        onCancel={() => {
-          setChanging(false);
-          setOpen(true);
-        }}
-        onSaved={(touched) => onLinked?.(touched)}
-        onSearch={(mode, times) => onEditWithMode?.(mode, times)}
-      />
-    );
-  }
 
   if (linkingEvent) {
     return (
@@ -410,20 +388,9 @@ export function TravelDetailDialog({
           {/* 操作は既定で閉じたアコーディオンの中にカードで置く（予定の表示画面と同じ・issue #1573）。 */}
           <Accordion
             title="移動の操作"
-            description={travel.linkedEventId ? "変更・付け替え・タスク" : "変更・紐づけ・タスク"}
+            description={travel.linkedEventId ? "付け替え・タスク" : "紐づけ・タスク"}
             flat
           >
-            <ActionCard
-              icon={<Route className="size-4" />}
-              iconClassName="bg-travel-container text-on-travel-container"
-              title="移動方法・時間を変更"
-              description="手段や所要時間を直す"
-              disabled={readOnly}
-              onClick={() => {
-                setOpen(false);
-                setTimeout(() => setChanging(true), 150);
-              }}
-            />
             <ActionCard
               icon={<Link2 className="size-4" />}
               iconClassName="bg-surface-container-high text-primary"

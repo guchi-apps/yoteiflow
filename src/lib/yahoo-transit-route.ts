@@ -313,6 +313,11 @@ export type YahooRouteStop = {
   arriveTime: string | null;
   /** 到着時刻の日数（`dayOffset` と同じ基準）。 */
   arriveDayOffset: number;
+  /**
+   * 経路の最初の印（出発駅）かどうか（issue #1645）。出発駅から再検索すると今の移動を更新し、
+   * 途中駅からは新しい移動を足す。返却配列の先頭とは限らない（途中駅だけを返す読み方がある）ため、印の順で決める。
+   */
+  isOrigin: boolean;
 };
 
 const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～](?:\s*(\d{1,2}):(\d{2}))?/;
@@ -401,6 +406,7 @@ function readStopsFrom(text: string, minMarks: number, skip: number): YahooRoute
       dayOffset,
       arriveTime: arrivedHere?.time ?? null,
       arriveDayOffset: arrivedHere?.dayOffset ?? dayOffset,
+      isOrigin: order === 0,
     });
   });
 

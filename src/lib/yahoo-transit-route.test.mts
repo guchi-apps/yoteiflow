@@ -318,3 +318,20 @@ test("起終点が徒歩・区間を読めない・鉄道と確認できない�
   assert.ok(tram);
   assert.equal(tram.railAtStart, false);
 });
+
+test("isOrigin: 最初の印だけが出発駅で、発車時刻が無くて出発駅が外れても途中駅には立たない（issue #1645）", () => {
+  const note = "■草津\n↓ 20:58〜21:21\n▼[乗換不要] 京都\n↓ 21:24〜21:46\n■高槻";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(note).map((s) => [s.station, s.isOrigin]),
+    [
+      ["草津", true],
+      ["京都", false],
+    ],
+  );
+  // 出発駅に発車時刻の行が無いと出発駅は返らない。このとき先頭の途中駅を出発駅と誤認しない
+  const noTime = "■草津\n↓ 乗車\n▼京都\n↓ 21:24〜21:46\n■高槻";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(noTime).map((s) => [s.station, s.isOrigin]),
+    [["京都", false]],
+  );
+});
