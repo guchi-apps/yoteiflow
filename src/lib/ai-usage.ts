@@ -11,7 +11,7 @@
  * Anthropic API を呼ぶ機能の識別子。`AiUsageLog.feature` に保存する。
  * 新しい呼び出し箇所を足したら、ここと `AI_FEATURE_LABELS` の両方へ足す。
  */
-export const AI_FEATURES = ["place-suggest", "travel-estimate", "shopping-category-suggest"] as const;
+export const AI_FEATURES = ["place-suggest", "travel-estimate", "shopping-category-suggest", "task-tag-suggest"] as const;
 
 export type AiFeature = (typeof AI_FEATURES)[number];
 
@@ -20,6 +20,7 @@ export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   "place-suggest": "場所の候補の提案",
   "travel-estimate": "Googleマップ経路の解析",
   "shopping-category-suggest": "買い物のカテゴリの判定",
+  "task-tag-suggest": "タスクのタグの判定",
 };
 
 /** 機能名の表示。識別子を変えて古い行が残っている場合は、識別子のまま出す（黙って捨てない）。 */

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { AlignLeft, CalendarClock, ExternalLink, Flag, Repeat, Tag } from "lucide-react";
 
+import { shouldAutoPickTag } from "@/lib/ai-task-tag";
 import { shouldQueueWrite, submitWrite } from "@/lib/offline-queue/flush";
 import { isPendingTaskId, isQueuedRecurringCompletion } from "@/lib/offline-queue/ops";
 import type { TaskWriteInput } from "@/services/notion/tasks";
@@ -159,6 +160,39 @@ export function TaskForm({
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
+
+  // タイトルの入力が終わったとき、タグが未選択なら既存のタグから合うものを自動で選ぶ（issue #1666）。
+  const lastAskedTitle = useRef<string | null>(null);
+  const autoPickTag = async () => {
+    const trimmed = title.trim();
+    if (
+      !shouldAutoPickTag({
+        title,
+        selectedCount: tags.length,
+        lastAskedTitle: lastAskedTitle.current,
+        tagCount: tagOptions.length,
+        offline,
+      })
+    ) {
+      return;
+    }
+    lastAskedTitle.current = trimmed;
+    try {
+      const response = await fetch("/api/tasks/tag-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed, tags: tagOptions.map((option) => option.name) }),
+      });
+      // 手で選べば済むので、失敗はエラー帯に出さない。
+      if (!response.ok) return;
+      const result = (await response.json()) as { tag?: string | null };
+      const picked = result.tag;
+      // 待っている間に利用者が選んだタグは上書きしない。
+      if (picked) setTags((prev) => (prev.length === 0 ? [picked] : prev));
+    } catch {
+      // 通信できないときも手動選択のまま続ける
+    }
+  };
 
   // 日付を選ぶモードなのに空欄のままだと、保存時の日時変換で失敗する。先に画面で知らせる。
   const missingDateError = (label: string, mode: DueMode, value: string): string | null => {
@@ -458,6 +492,7 @@ export function TaskForm({
           placeholder="タイトルを追加"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
+          onBlur={() => void autoPickTag()}
           autoFocus={autoFocusTitle}
           className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
