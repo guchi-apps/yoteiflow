@@ -4,6 +4,9 @@ import { useState, type ReactNode } from "react";
 
 import {
   AlertTriangle,
+  Ban,
+  Check,
+  ChevronDown,
   CalendarClock,
   CalendarDays,
   ExternalLink,
@@ -17,7 +20,12 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +35,6 @@ import {
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { TagChipList } from "@/components/tags/tag-chip";
-import { TagPicker } from "@/components/tags/tag-picker";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -48,7 +55,6 @@ import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 export function TaskDetailDialog({
   task,
   tagOptions,
-  progressOptions = null,
   timeZone,
   readOnly = false,
   offlineEditable = false,
@@ -61,8 +67,6 @@ export function TaskDetailDialog({
   task: TaskItem;
   /** 登録済みのタグ。色を引くために渡す。取得できていないときは空でよい。 */
   tagOptions: TagOption[];
-  /** 進捗（「承認待ち」など。issue #873）の選択肢。取得できていないときは null。 */
-  progressOptions?: TagOption[] | null;
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
@@ -88,8 +92,6 @@ export function TaskDetailDialog({
   // 別の項目に現れるため。編集画面まで往復させると何が変わったのか追いにくい。
   // 行き先ごとに1件のため、多くても期限と予定日の2件が並ぶ。
   const [links, setLinks] = useState(task.links);
-  // 進捗は保存を挟まずその場で切り替える（「承認待ちにした」を1タップで残すため）。
-  const [progress, setProgress] = useState(task.progress ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 削除は押した直後には実行せず、確認を挟む。
@@ -197,32 +199,6 @@ export function TaskDetailDialog({
     }
   };
 
-  const changeProgress = async (next: string | null) => {
-    const before = progress;
-    setProgress(next);
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progress: next }),
-      });
-      if (!response.ok) {
-        setProgress(before);
-        setError(await readErrorMessage(response, "進捗を更新できませんでした。"));
-        return;
-      }
-      // 期限・予定日は動かないため、いまの枠だけ取り直せばよい。
-      onChanged(taskRanges(task));
-    } catch (cause) {
-      setProgress(before);
-      setError(cause instanceof Error ? cause.message : "進捗を更新できませんでした。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const toggleDone = async (value: boolean) => {
     const wasSkipped = skipped;
     setDone(value);
@@ -280,47 +256,75 @@ export function TaskDetailDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3 text-sm">
-          <div className="-my-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-base select-none md:text-sm">
-            <label className="flex min-h-11 items-center gap-3">
-              <Checkbox
-                checked={done && !skipped}
+          {/*
+            完了と対応しないは1つの分割ボタンにまとめる（issue #1660）。左は完了のトグル、
+            右の▾から「対応しない」へ切り替える。完了の切り替えだけオフラインでも受け、
+            対応しないは従来どおりオンラインのみ（issue #750・#1242）。
+          */}
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "inline-flex overflow-hidden rounded-md border text-base select-none md:text-sm",
+                skipped
+                  ? "border-transparent bg-surface-container-highest text-on-surface-variant"
+                  : done
+                    ? "border-transparent bg-secondary-container text-on-secondary-container"
+                    : "border-outline text-on-surface",
+              )}
+            >
+              <button
+                type="button"
+                className="flex min-h-11 items-center gap-2 px-4 outline-none hover:bg-on-surface/8 disabled:pointer-events-none disabled:opacity-38"
                 disabled={busy || (readOnly && !offlineEditable)}
-                onCheckedChange={(v) => toggleDone(v === true)}
-              />
-              完了
-            </label>
+                onClick={() => (skipped ? toggleDone(false) : toggleDone(!done))}
+              >
+                {skipped ? (
+                  <Ban className="size-4" aria-hidden />
+                ) : done ? (
+                  <Check className="size-4" aria-hidden />
+                ) : (
+                  <span className="size-4 rounded-[3px] border-2 border-current" aria-hidden />
+                )}
+                {skipped ? "対応しない" : done ? "完了" : "完了にする"}
+              </button>
 
-            {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
-            {(task.canSkip || skipped) && (
-              <label className="flex min-h-11 items-center gap-3">
-                <Checkbox
-                  checked={skipped}
-                  disabled={busy || readOnly}
-                  onCheckedChange={(v) => toggleSkipped(v === true)}
-                />
-                対応しない
-              </label>
-            )}
+              {(task.canSkip || skipped) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="状態を選ぶ"
+                      className="flex min-h-11 items-center border-l border-current/30 px-2.5 outline-none hover:bg-on-surface/8 disabled:pointer-events-none disabled:opacity-38"
+                      disabled={busy || readOnly}
+                    >
+                      <ChevronDown className="size-4" aria-hidden />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {(done || skipped) && (
+                      <DropdownMenuItem onSelect={() => void toggleDone(false)}>
+                        未完了に戻す
+                      </DropdownMenuItem>
+                    )}
+                    {!(done && !skipped) && (
+                      <DropdownMenuItem onSelect={() => void toggleDone(true)}>
+                        <Check aria-hidden />
+                        完了
+                      </DropdownMenuItem>
+                    )}
+                    {!skipped && (
+                      <DropdownMenuItem onSelect={() => void toggleSkipped(true)}>
+                        <Ban aria-hidden />
+                        対応しない
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
-
-          {/* 完了・対応しないでは進捗の意味が無いため、切り替えを出さない（Notionの値は残る）。 */}
-          {(task.canProgress || progressOptions !== null) && !done && (
-            <div>
-              <TagPicker
-                label="進捗"
-                options={progressOptions ?? []}
-                value={progress ? [progress] : []}
-                multiple={false}
-                allowAdd={false}
-                onChange={(next) => {
-                  if (busy || readOnly) return;
-                  void changeProgress(next[0] ?? null);
-                }}
-              />
-            </div>
-          )}
 
           {task.due && (
             <DetailField

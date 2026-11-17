@@ -98,6 +98,35 @@ async function linkToDeparture(userId: string, taskId: string, travelId: string)
   });
 }
 
+/**
+ * 移動が決まらない間の期限。予定そのものの開始へ直接紐づける（issue #1659）。
+ * 行き先は移動のときと同じ期限で、段階は開始まで。終日は開始日、時刻ありは開始時刻が入る。
+ * 予定の取得（Google 1回）に失敗しても例外を投げず false を返す（持ち物は残し、あとで付け直せる）。
+ */
+async function linkToEventStart(
+  userId: string,
+  taskId: string,
+  calendarId: string,
+  eventId: string,
+): Promise<boolean> {
+  try {
+    await linkTaskToEvent(userId, {
+      taskId,
+      calendarId,
+      eventId,
+      stage: "BEFORE_START",
+      target: "DUE",
+    });
+    return true;
+  } catch (error) {
+    console.error(
+      "[dayspan] bring item event link failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
+}
+
 export type BringItemInput = {
   calendarId: string;
   eventId: string;
@@ -134,7 +163,11 @@ export async function addBringItem(
   });
 
   const travelId = await findBeforeTravelId(userId, input.eventId, input.event ?? null);
-  if (!travelId) return { taskId: created.id, linked: false };
+  if (!travelId) {
+    // 移動が無い・決まらない間は予定の開始を期限にする（移動ができたら出発へ付け替わる）
+    const linked = await linkToEventStart(userId, created.id, input.calendarId, input.eventId);
+    return { taskId: created.id, linked };
+  }
 
   try {
     await linkToDeparture(userId, created.id, travelId);
@@ -159,7 +192,7 @@ export type BringTravelCandidate = {
 };
 
 /** 持ち物ごとの期限の状態。`reselect` は対象の移動を選び直す必要があること。 */
-export type BringDueState = "set" | "unset" | "reselect";
+export type BringDueState = "set" | "direct" | "unset" | "reselect";
 export type BringReselectReason = "unlinked" | "not-before";
 
 /**
@@ -192,7 +225,6 @@ export async function attachBringItemsForEvent(
   } else {
     target = await findBeforeTravelId(userId, eventId, event);
   }
-  if (!target) return { linked: 0, failed: 0 };
 
   const links = await db.taskEventLink.findMany({
     where: { userId, taskId: { in: items.map((item) => item.taskId) }, target: "DUE" },
@@ -204,7 +236,24 @@ export async function attachBringItemsForEvent(
   let failed = 0;
   for (const item of items) {
     const link = linkByTask.get(item.taskId);
+    if (!target) {
+      // 移動が決まらないときは、期限が未設定の持ち物だけ予定の開始へ直接紐づける
+      if (link) continue;
+      if (await linkToEventStart(userId, item.taskId, item.calendarId, item.eventId)) ok += 1;
+      else failed += 1;
+      continue;
+    }
     if (link) {
+      // 予定の開始への直接紐づけは自動の仮の期限なので、移動が決まれば出発へ付け替える。
+      if (!link.travelId) {
+        try {
+          await linkToDeparture(userId, item.taskId, target);
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+        continue;
+      }
       // 明示の選択のときだけ、リンク先がこの予定の移動でなくなった持ち物を付け直せる。
       const stale = Boolean(link.travelId) && !eventTravelIds.has(link.travelId!);
       const staleByTime =
@@ -304,7 +353,8 @@ export async function loadBringItemsForEvent(
   for (const task of tasks) {
     const departure = task.links.find((link) => link.target === "DUE" && link.travelId);
     if (!departure) {
-      states[task.id] = { state: "unset" };
+      const direct = task.links.some((link) => link.target === "DUE" && !link.travelId);
+      states[task.id] = { state: direct ? "direct" : "unset" };
       continue;
     }
     const candidate = byId.get(departure.travelId!);
