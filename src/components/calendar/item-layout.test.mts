@@ -3,6 +3,10 @@ import test from "node:test";
 
 import {
   createCalendarDateUtils,
+  eventHeaderBand,
+  MARK_ROW_HEIGHT,
+  mergeMarkAvoidBands,
+  stackMarkTops,
   taskOccurrenceCalendarDate,
   taskOccurrences,
   type TaskOccurrence,
@@ -89,5 +93,55 @@ test("時間が重なる予定と移動は別の列になり、隣接するだ�
   assert.deepEqual(adjacent.map((x) => [x.event.id, x.column, x.columns]), [
     ["t", 0, 1],
     ["e", 0, 1],
+  ]);
+});
+
+test("stackMarkTops: 近い時刻の印は行の高さぶん下へ積む", () => {
+  const tops = stackMarkTops([
+    { key: "a", top: 100 },
+    { key: "b", top: 105 },
+  ]);
+  assert.equal(tops.get("a"), 100);
+  assert.equal(tops.get("b"), 100 + MARK_ROW_HEIGHT);
+});
+
+test("stackMarkTops: 下限を超える印は上へ返す", () => {
+  const tops = stackMarkTops([{ key: "a", top: 990 }], 980);
+  assert.equal(tops.get("a"), 980);
+});
+
+test("stackMarkTops: 予定の見出し帯にかかる印は帯の下へ送る（issue #1675）", () => {
+  const band = eventHeaderBand(100, 150);
+  const tops = stackMarkTops([{ key: "a", top: 105 }], undefined, [band]);
+  assert.equal(tops.get("a"), band.bottom + MARK_ROW_HEIGHT / 2);
+});
+
+test("stackMarkTops: 帯から離れた印は動かさない", () => {
+  const tops = stackMarkTops([{ key: "a", top: 300 }], undefined, [eventHeaderBand(100, 150)]);
+  assert.equal(tops.get("a"), 300);
+});
+
+test("stackMarkTops: 下限で戻すときも見出し帯へ入れず帯の上へ置く", () => {
+  // 下限 980 の近くに予定の帯（970〜）がある。印は帯の上へ置く。
+  const band = eventHeaderBand(970, 150);
+  const tops = stackMarkTops([{ key: "a", top: 975 }], 980, [band]);
+  const top = tops.get("a")!;
+  assert.ok(top + MARK_ROW_HEIGHT / 2 <= band.top);
+});
+
+test("eventHeaderBand: 短い予定は実際の高さで頭打ちにする", () => {
+  assert.equal(eventHeaderBand(50, 16).bottom, 66);
+  assert.equal(eventHeaderBand(50, 500).bottom, 50 + 32);
+});
+
+test("mergeMarkAvoidBands: 重なる・接する帯を結合する", () => {
+  const merged = mergeMarkAvoidBands([
+    { top: 50, bottom: 80 },
+    { top: 10, bottom: 30 },
+    { top: 30, bottom: 40 },
+  ]);
+  assert.deepEqual(merged, [
+    { top: 10, bottom: 40 },
+    { top: 50, bottom: 80 },
   ]);
 });

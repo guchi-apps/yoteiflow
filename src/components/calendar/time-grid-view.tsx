@@ -34,6 +34,8 @@ import {
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
   stackMarkTops,
+  eventHeaderBand,
+  MARK_LABEL_MAX_WIDTH,
   taskOccurrenceCalendarDate,
   taskOccurrenceKey,
   taskFieldsInFrame,
@@ -807,6 +809,36 @@ function DayColumn({
     // ラベルの下半分まで一日ぶんの高さに収める。時間グリッドの外は切り落とされるため、
     // 深夜の印を下へ送り続けると、重なりの代わりにラベルそのものが消える。
     gridHeight - MARK_ROW_HEIGHT / 2,
+    // 予定・移動の見出し（タイトル・時刻）を覆わないよう、その帯を避けて下へ送る（issue #1675）。
+    // 掴んでいる項目は動かした先の位置で、日をまたぐ予定は列の端に切り詰めた範囲で数える。
+    [
+      ...positioned
+        .filter(({ event }) => !isDraggedAway(event.id))
+        .map(({ event }) => {
+        const range = previewFor(event.id) ?? utils.eventRange(event, dateKey);
+        return eventHeaderBand(
+          offsetOf(range.startMinutes),
+          Math.max(offsetOf(range.endMinutes - range.startMinutes), MIN_EVENT_HEIGHT),
+        );
+      }),
+      ...positionedTravels
+        .filter(({ travel }) => !isDraggedAway(travelDragKey(travel.id)))
+        .map(({ travel }) => {
+        const travelPreview = previewFor(travelDragKey(travel.id));
+        const start =
+          travelPreview?.startMinutes ??
+          (utils.itemDateKey(travel.start) === dateKey ? utils.minutesFromMidnight(travel.start) : 0);
+        const end =
+          travelPreview?.endMinutes ??
+          (utils.itemDateKey(travel.end) === dateKey
+            ? utils.minutesFromMidnight(travel.end)
+            : MINUTES_PER_DAY);
+        return eventHeaderBand(
+          offsetOf(start),
+          Math.max(offsetOf(end - start), MIN_EVENT_HEIGHT),
+        );
+      }),
+    ],
   );
 
   /**
@@ -1262,10 +1294,11 @@ function DayColumn({
             />
             <span
               className={cn(
-                "type-label-small clip-nowrap max-w-[78%] rounded-item border border-outline bg-surface-container-lowest px-1",
+                "type-label-small clip-nowrap rounded-item border border-outline bg-surface-container-lowest px-1",
                 planned && "border-dashed",
                 task.done && "text-muted-foreground line-through",
               )}
+              style={{ maxWidth: MARK_LABEL_MAX_WIDTH }}
             >
               {/* 段階のラベルは項目名と同じ1つの文字列として流す。別の要素にすると、枠が狭いときに
                   削られるのが項目名の側になり、「終了後」だけが残って何のタスクか読めなくなる。 */}
@@ -1464,7 +1497,10 @@ function ReminderMarker({
         style={{ transform: `translateY(${shift}px)` }}
       />
       <MarkLeader shift={shift} className="border-tertiary/45" />
-      <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1">
+      <span
+        className="type-label-small clip-nowrap flex items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1"
+        style={{ maxWidth: MARK_LABEL_MAX_WIDTH }}
+      >
         <ReminderMark source={reminder.source} />
         <span className="clip-nowrap">
           {reminder.title}
