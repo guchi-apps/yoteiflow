@@ -191,6 +191,11 @@ export function TravelDetailDialog({
     );
   }
 
+  // 経路の詳細は専用項目から。旧データはメモに途中駅つきの経路が入っているため、そのときはメモを経路の詳細として扱う（issue #1634）
+  const legacyRouteInNote = !travel.routeDetail && readYahooRouteStops(travel.note ?? "").length > 0;
+  const routeDetailText = travel.routeDetail || (legacyRouteInNote ? travel.note : null);
+  const noteText = legacyRouteInNote ? null : travel.note;
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
@@ -259,11 +264,25 @@ export function TravelDetailDialog({
             </span>
           </DetailRow>
 
-          {travel.note && (
-            // 途中駅が読める経路メモは「ここから再検索」の導線を保つため既定で開く（issue #1581・#1515）
-            <CollapsibleNote defaultOpen={readYahooRouteStops(travel.note).length > 0}>
+          {noteText && (
+            <CollapsibleNote>
               <TravelNote
-                note={travel.note}
+                note={noteText}
+                startIso={travel.start}
+                timeZone={timeZone}
+                destination={travel.destination}
+                places={places}
+                readOnly={readOnly}
+              />
+            </CollapsibleNote>
+          )}
+
+          {/* 経路の詳細（Yahoo!乗換案内の取り込み）はメモと別の欄。旧データはメモに入っているためそちらから読む。
+              途中駅が読める経路は「ここから再検索」の導線を保つため既定で開く（issue #1581・#1515・#1634） */}
+          {routeDetailText && (
+            <CollapsibleNote defaultOpen={readYahooRouteStops(routeDetailText).length > 0}>
+              <TravelNote
+                note={routeDetailText}
                 startIso={travel.start}
                 timeZone={timeZone}
                 destination={travel.destination}

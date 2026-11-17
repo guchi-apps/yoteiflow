@@ -68,6 +68,7 @@ export async function POST(request: Request) {
       departAt: body.departAt!,
       arriveAt: body.arriveAt!,
       note: body.note ?? null,
+      routeDetail: body.routeDetail,
       estimated: body.estimated ?? false,
       estimateSource: body.estimateSource,
       searchPurpose: body.searchPurpose,

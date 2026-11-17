@@ -122,12 +122,12 @@ function StationColumn({
       : registered
         ? "最寄り駅が設定されていません"
         : label
-          ? `${POINT_LABEL}（未登録の場所）`
+          ? `${POINT_LABEL}\n（未登録の場所）`
           : "場所が未入力です";
     return (
       <div className="min-w-0">
         {title}
-        <p className="type-body-small rounded-md border border-dashed border-outline-variant px-2.5 py-2 text-on-surface-variant">
+        <p className="type-body-small whitespace-pre-line rounded-md border border-dashed border-outline-variant px-2.5 py-2 text-on-surface-variant">
           {message}
         </p>
       </div>

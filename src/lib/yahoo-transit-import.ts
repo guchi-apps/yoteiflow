@@ -3,7 +3,7 @@
  * （issue #1026・docs/spec.md §29）。iOSの共有拡張 → `/api/shortcuts/travel/import` が使う。
  *
  * 読み方は移動の入力欄への貼り付け（`applyYahooRoute`）と同じ規則: 日付は検索日を採用し、
- * 乗車駅・降車駅を出発地・目的地にし、メモは案内文を除いた生テキストをそのまま使う。
+ * 乗車駅・降車駅を出発地・目的地にし、案内文を除いた生テキストは経路の詳細（`routeDetail`）として使う（メモには入れない）。
  * 画面と違い確かめる相手がいないため、検索日・発着時刻が読めなければ作らずに断る。
  */
 
@@ -22,7 +22,8 @@ export type YahooTravelImport = {
   /** ISO 8601（設定タイムゾーンの壁時計をUTCへ直した値） */
   departAt: string;
   arriveAt: string;
-  note: string;
+  /** 経路の全文（メモとは別に保存する・issue #1634） */
+  routeDetail: string;
   estimateSource: "YAHOO";
 };
 
@@ -33,7 +34,7 @@ export type YahooTravelImportResult =
 /** 電車の前後に足す徒歩の分（設定 ▸ 移動・issue #1463）。 */
 export type YahooTravelWalk = { before: number; after: number };
 
-/** メモ末尾の「電車の発着 … ／ 徒歩 前N分・後M分を含む」行を付ける（徒歩が無ければ付けない）。 */
+/** 経路の詳細の末尾の「電車の発着 … ／ 徒歩 前N分・後M分を含む」行を付ける（徒歩が無ければ付けない）。 */
 function withWalkNote(noteText: string, departTime: string, arriveTime: string, before: number, after: number): string {
   const walkParts = [before > 0 ? `前${before}分` : null, after > 0 ? `後${after}分` : null].filter(Boolean);
   return walkParts.length > 0
@@ -51,12 +52,12 @@ const WALK_NOTE_LINE = /\n\n電車の発着 [^\n]+ ／ 徒歩 ([^\n]+)を含む$
  * 経路を読めなければ null（呼び出し元は手を付けない）。
  */
 export function retargetYahooWalk(
-  travel: { departAt: string; arriveAt: string; note: string },
+  travel: { departAt: string; arriveAt: string; routeDetail: string },
   walk: YahooTravelWalk,
-): { departAt: string; arriveAt: string; note: string } | null {
-  const route = parseYahooTransitRoute(travel.note);
+): { departAt: string; arriveAt: string; routeDetail: string } | null {
+  const route = parseYahooTransitRoute(travel.routeDetail);
   if (!route) return null;
-  const line = WALK_NOTE_LINE.exec(travel.note);
+  const line = WALK_NOTE_LINE.exec(travel.routeDetail);
   const addedBefore = Number(/前(\d+)分/.exec(line?.[1] ?? "")?.[1] ?? 0);
   const addedAfter = Number(/後(\d+)分/.exec(line?.[1] ?? "")?.[1] ?? 0);
   const before = route.walkAtStart ? 0 : Math.max(0, walk.before);
@@ -65,7 +66,7 @@ export function retargetYahooWalk(
   return {
     departAt: shifted(travel.departAt, addedBefore - before),
     arriveAt: shifted(travel.arriveAt, after - addedAfter),
-    note: withWalkNote(route.noteText.replace(WALK_NOTE_LINE, ""), route.departTime, route.arriveTime, before, after),
+    routeDetail: withWalkNote(route.noteText.replace(WALK_NOTE_LINE, ""), route.departTime, route.arriveTime, before, after),
   };
 }
 
@@ -109,8 +110,8 @@ export function buildYahooTravelImport(
   const trainArriveIso = localInputToIso(fields.arriveAt, timeZone);
   const shifted = (iso: string, minutes: number) => new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 
-  // 時刻を広げたあとも電車の発着が分かるよう、メモの末尾に残す。
-  const note = withWalkNote(route.noteText, route.departTime, route.arriveTime, before, after);
+  // 時刻を広げたあとも電車の発着が分かるよう、経路の詳細の末尾に残す。
+  const routeDetail = withWalkNote(route.noteText, route.departTime, route.arriveTime, before, after);
 
   return {
     ok: true,
@@ -120,7 +121,7 @@ export function buildYahooTravelImport(
       mode: "PUBLIC_TRANSIT",
       departAt: shifted(trainDepartIso, -before),
       arriveAt: shifted(trainArriveIso, after),
-      note,
+      routeDetail,
       estimateSource: "YAHOO",
     },
   };

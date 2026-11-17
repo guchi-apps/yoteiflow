@@ -417,6 +417,8 @@ model TravelPlan {
   arriveAt DateTime
 
   note           String?              @db.Text
+  // Yahoo!乗換案内から取り込んだ経路の詳細（路線・途中駅など）。メモとは別に持つ（issue #1634）。null＝無い・旧データ
+  routeDetail    String?              @db.Text
   estimateSource TravelEstimateSource @default(MANUAL)
 
   // 検索したときの意図と余裕分（issue #1331）。実際に選んだ便の早着とは区別する。null＝不明（旧データ・手入力）

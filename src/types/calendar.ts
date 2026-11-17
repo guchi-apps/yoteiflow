@@ -386,6 +386,8 @@ export type TravelItem = {
   start: string;
   end: string;
   note: string | null;
+  /** Yahoo!乗換案内から取り込んだ経路の詳細。メモとは別（issue #1634）。無ければ null */
+  routeDetail: string | null;
   /**
    * 所要時間が手入力でないかどうか。「（目安）」を出す条件に使う。
    * どこから来た値かは estimateSource が持つ。

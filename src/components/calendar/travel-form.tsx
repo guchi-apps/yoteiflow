@@ -5,6 +5,7 @@ import { AlignLeft, ArrowUpDown, Car, CheckCircle2, CircleAlert, CircleDot, Cloc
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,8 @@ export type TravelDraft = {
   departAt: string;
   arriveAt: string;
   note?: string;
+  /** Yahoo!から取り込んだ経路の詳細。メモとは別に持つ（issue #1634） */
+  routeDetail?: string;
   /**
    * 元になった予定。移動と予定の紐づけに使う。時刻は持ち物の期限を予定前の移動へ自動で付けるかの
    * 判断に渡す（issue #1137）。「＋」から作った移動には無い。
@@ -150,6 +153,8 @@ export function TravelForm({
   const [departAt, setDepartAt] = useState(draft.departAt);
   const [arriveAt, setArriveAt] = useState(draft.arriveAt);
   const [note, setNote] = useState(draft.note ?? "");
+  // Yahoo!から取り込んだ経路の詳細。メモとは別に持つ（issue #1634）
+  const [routeDetail, setRouteDetail] = useState(draft.routeDetail ?? "");
   // 時刻の基準（利用者が固定する側）。出発基準は到着＝出発＋所要時間、到着基準は出発＝到着−所要時間（issue #1203）
   // 予定前の移動として開いたときは、到着を基準にする（issue #1331）
   const [basis, setBasis] = useState<TimeBasis>(draft.searchPurpose === "BEFORE_EVENT" ? "arrive" : "depart");
@@ -460,6 +465,7 @@ export function TravelForm({
       departAt,
       arriveAt,
       note,
+      routeDetail,
       linkedEvent: draft.linkedEvent ?? null,
       notification,
       searchPurpose: purpose,
@@ -494,6 +500,7 @@ export function TravelForm({
         departAt,
         arriveAt,
         note,
+        routeDetail,
         linkedEvent: draft.linkedEvent ?? null,
         notification,
         searchPurpose: purpose,
@@ -814,6 +821,7 @@ export function TravelForm({
         departAt: departIso,
         arriveAt: arriveIso,
         note: note.trim() || null,
+        routeDetail: routeDetail.trim() || null,
         estimateSource,
         // 予定の前後として探した移動だけ、その意図と余裕分を残す（#1332 の再提案が使う・issue #1331）
         // 探したときの予定の状態も残し、あとで予定が変わったら再提案する（issue #1332）
@@ -931,6 +939,7 @@ export function TravelForm({
             id="travel-origin"
             label="出発地"
             variant="flat"
+            splitAddress
             value={origin}
             onChange={editOrigin}
             places={placeCatalog.places}
@@ -983,6 +992,7 @@ export function TravelForm({
             id="travel-destination"
             label="目的地"
             variant="flat"
+            splitAddress
             value={destination}
             onChange={editDestination}
             places={placeCatalog.places}
@@ -1075,7 +1085,9 @@ export function TravelForm({
                 <p className="text-xs text-muted-foreground" role={transitStatus ? "status" : undefined}>
                   {transitStatus === "failed"
                     ? "Yahoo!乗換案内を開けませんでした。"
-                    : `${transitStatus === "web" ? "アプリを開けなかったため、Web版で開きました。" : ""}経路を選んで共有ボタンからYoteiFlowを選び、「…に反映」を押すと、下の出発・到着へ戻ります（30分以内）。戻した経路は確かめてから保存してください。`}
+                    : transitStatus === "web"
+                      ? "アプリを開けなかったため、Web版で開きました。"
+                      : null}
                 </p>
               )}
             </div>
@@ -1268,6 +1280,22 @@ export function TravelForm({
           />
         </FormRow>
 
+        {/* Yahoo!乗換案内から取り込んだ経路の詳細は、メモと別に持つ（メモを経路全文で埋めない・issue #1634）。
+            既定は閉じる。 */}
+        {routeDetail && (
+          <Accordion title="経路の詳細" description="Yahoo!乗換案内から取り込み" flat>
+            <Textarea
+              id="travel-route-detail"
+              label="経路の詳細"
+              variant="flat"
+              rows={6}
+              value={routeDetail}
+              onChange={(e) => setRouteDetail(e.target.value)}
+              onClear={() => setRouteDetail("")}
+            />
+          </Accordion>
+        )}
+
         {/* Googleマップの共有URLは、現在選んでいる交通手段によらず貼り付けられる。
             読めた交通手段へ切り替えるため、公共交通から車の経路を貼る場合も入口を隠さない。 */}
         <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
@@ -1454,5 +1482,6 @@ export function toTravelDraft(travel: TravelItem, timeZone: string): TravelDraft
     departAt: isoToLocalInput(travel.start, timeZone),
     arriveAt: isoToLocalInput(travel.end, timeZone),
     note: travel.note ?? "",
+    routeDetail: travel.routeDetail ?? "",
   };
 }

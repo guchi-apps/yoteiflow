@@ -27,7 +27,7 @@ test("検索日・駅名・時刻を設定タイムゾーンのISOへ直して�
   assert.equal(result.travel.estimateSource, "YAHOO");
   assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
   assert.equal(result.travel.arriveAt, "2026-08-28T12:46:00.000Z");
-  assert.ok(!result.travel.note.includes("Yahoo!乗換案内]"));
+  assert.ok(!result.travel.routeDetail.includes("Yahoo!乗換案内]"));
 });
 
 test("Asia/Tokyoの08:10は前日の23:10Zになる", () => {
@@ -71,14 +71,14 @@ test("徒歩の設定を電車の発着の前後へ足し、メモに電車の�
   assert.ok(result.ok);
   assert.equal(result.travel.departAt, "2026-08-28T11:53:00.000Z");
   assert.equal(result.travel.arriveAt, "2026-08-28T12:53:00.000Z");
-  assert.ok(result.travel.note.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前5分・後7分を含む"));
+  assert.ok(result.travel.routeDetail.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前5分・後7分を含む"));
 });
 
 test("徒歩が0・未指定なら時刻もメモも変えない", () => {
   const result = buildYahooTravelImport(SAMPLE, "Asia/Tokyo");
   assert.ok(result.ok);
   assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
-  assert.ok(!result.travel.note.includes("徒歩"));
+  assert.ok(!result.travel.routeDetail.includes("徒歩"));
 });
 
 test("始点が徒歩から始まるドアtoドア経路は、その側へ足さない（二重加算の回避）", () => {
@@ -87,7 +87,7 @@ test("始点が徒歩から始まるドアtoドア経路は、その側へ足さ
   assert.ok(result.ok);
   assert.equal(result.travel.departAt, "2026-08-28T11:58:00.000Z");
   assert.equal(result.travel.arriveAt, "2026-08-28T12:53:00.000Z");
-  assert.ok(result.travel.note.endsWith("徒歩 後7分を含む"));
+  assert.ok(result.travel.routeDetail.endsWith("徒歩 後7分を含む"));
 });
 
 test("終点が徒歩で終わる経路は、その側へ足さない", () => {
@@ -111,8 +111,8 @@ test("共通の徒歩を足し済みの取り込みを、勤務場所の徒歩�
   assert.ok(result);
   assert.equal(result.departAt, "2026-08-28T11:50:00.000Z");
   assert.equal(result.arriveAt, "2026-08-28T12:58:00.000Z");
-  assert.ok(result.note.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前8分・後12分を含む"));
-  assert.equal(result.note.match(/電車の発着/g)?.length, 1);
+  assert.ok(result.routeDetail.endsWith("電車の発着 20:58〜21:46 ／ 徒歩 前8分・後12分を含む"));
+  assert.equal(result.routeDetail.match(/電車の発着/g)?.length, 1);
 });
 
 test("共通の徒歩が0の取り込みも足し直せ、0にすればメモの行も消える（#1471）", () => {
@@ -125,7 +125,7 @@ test("共通の徒歩が0の取り込みも足し直せ、0にすればメモの
   const removed = retargetYahooWalk({ ...built.travel, ...added }, { before: 0, after: 0 });
   assert.ok(removed);
   assert.equal(removed.departAt, built.travel.departAt);
-  assert.equal(removed.note, built.travel.note);
+  assert.equal(removed.routeDetail, built.travel.routeDetail);
 });
 
 test("足し直しでもドアtoドア経路の徒歩側は足さない（#1471）", () => {
@@ -139,6 +139,6 @@ test("足し直しでもドアtoドア経路の徒歩側は足さない（#1471�
 });
 
 test("経路を読めないメモは足し直さない（#1471）", () => {
-  const travel = { departAt: "2026-08-28T11:58:00.000Z", arriveAt: "2026-08-28T12:46:00.000Z", note: "メモ" };
+  const travel = { departAt: "2026-08-28T11:58:00.000Z", arriveAt: "2026-08-28T12:46:00.000Z", routeDetail: "メモ" };
   assert.equal(retargetYahooWalk(travel, { before: 5, after: 5 }), null);
 });
