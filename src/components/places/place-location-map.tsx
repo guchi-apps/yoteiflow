@@ -55,6 +55,11 @@ export function PlaceLocationMap({
   const [notice, setNotice] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seqRef = useRef(0);
+  // 検索の応答時に「いまの住所」と照合するため、最新の住所を保持する（issue #1692）。
+  const addressRef = useRef(address);
+  useEffect(() => {
+    addressRef.current = address;
+  }, [address]);
   const { location: currentLocation, locating, locate } = useCurrentLocation();
 
   // 地点なしで開いたときだけ、住所から中心を引く（座標としては保存しない）。
@@ -83,8 +88,12 @@ export function PlaceLocationMap({
     setCenter(next);
     setNotice(null);
     onPointChange(next);
-    if (!canAddress || offline) return;
+    // 進行中の住所検索は無効にする（古い結果で地点を上書きしない）。
+    seqRef.current++;
+    setSearching(false);
+    setLooking(false);
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (!canAddress || offline) return;
     const seq = ++seqRef.current;
     timerRef.current = setTimeout(async () => {
       setLooking(true);
@@ -101,12 +110,19 @@ export function PlaceLocationMap({
     if (!text || offline) return;
     // 検索で動かした地点は住所そのものから出たもの。逆引きで住所を書き換えない。
     if (timerRef.current) clearTimeout(timerRef.current);
-    seqRef.current++;
+    const seq = ++seqRef.current;
     setLooking(false);
     setNotice(null);
     setSearching(true);
     const found = await searchAddressPoint(text);
+    // 応答前に住所が書き換えられた・地図が動かされた・別の検索が始まったなら捨てる。
+    // 反映すると、画面の住所と別の住所から出た地点が一緒に保存される。
+    if (seq !== seqRef.current) return;
     setSearching(false);
+    if (addressRef.current.trim() !== text) {
+      setNotice("住所が変わったため、検索結果は反映しませんでした。もう一度検索してください。");
+      return;
+    }
     if (!found) {
       setNotice("この住所では地点が見つかりませんでした。番地を除くなど短くして試してください。");
       return;
