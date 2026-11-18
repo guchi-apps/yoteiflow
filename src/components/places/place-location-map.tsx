@@ -92,8 +92,8 @@ export function PlaceLocationMap({
     seqRef.current++;
     setSearching(false);
     setLooking(false);
-    if (!canAddress || offline) return;
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (!canAddress || offline) return;
     const seq = ++seqRef.current;
     timerRef.current = setTimeout(async () => {
       setLooking(true);
