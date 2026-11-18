@@ -2,13 +2,15 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useOffline } from "next/offline";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { AlignLeft, CalendarDays, Flag, Plus, ShoppingCart, Sparkles, Tag, Trash2 } from "lucide-react";
 
+import { FormRow } from "@/components/calendar/event-form-row";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { tagChipClass } from "@/components/tags/tag-color";
+import { TaskPriorityBadges } from "@/components/calendar/task-priority-badges";
 import { ChoiceChip } from "@/components/shopping/choice-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { shouldAutoPickCategory } from "@/lib/ai-shopping-category";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import type { TagOption } from "@/services/notion/tag-options";
-import { SHOPPING_PRIORITIES, type ShoppingItem, type ShoppingPriority } from "@/types/shopping";
+import { type ShoppingItem, type ShoppingPriority } from "@/types/shopping";
 
 /** 開くときに渡す下書き。新規は選んでいるカテゴリから、編集は既存の項目から始める。 */
 export type ShoppingDraft =
@@ -279,7 +281,7 @@ export function ShoppingItemDialog({
         }
       >
         <DialogTitle>
-          {existing ? (wishlisted ? "欲しいもの" : "買うもの") : wishlisted ? "欲しいものを追加" : "買うものを追加"}
+          {existing ? (wishlisted ? "欲しいものを編集" : "買うものを編集") : wishlisted ? "欲しいものを追加" : "買うものを追加"}
         </DialogTitle>
         <DialogDescription className="sr-only">
           アイテム名・メモ・カテゴリ・優先度を入力します。買うものでは購入予定日も入力できます。
@@ -291,20 +293,10 @@ export function ShoppingItemDialog({
           </p>
         )}
 
-        <div className="flex flex-col gap-2">
-          <span className="type-label-large text-on-surface-variant">分類</span>
-          <div className="flex flex-wrap gap-1.5">
-            <ChoiceChip selected={!wishlisted} onClick={() => setWishlisted(false)}>
-              買うもの
-            </ChoiceChip>
-            <ChoiceChip selected={wishlisted} onClick={() => setWishlisted(true)}>
-              欲しいもの
-            </ChoiceChip>
-          </div>
-        </div>
-
-        <Input
-          label="アイテム名"
+        {/* タスクの入力画面と同じ、枠も面も持たない文字のタイトル（issue #1695）。 */}
+        <input
+          aria-label="アイテム名"
+          placeholder="アイテム名を追加"
           value={name}
           autoFocus={!existing}
           onChange={(event) => {
@@ -313,17 +305,23 @@ export function ShoppingItemDialog({
             setName(event.target.value);
           }}
           onBlur={autoPickCategory}
+          className="min-h-10 w-full min-w-0 bg-transparent px-0 text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
         />
 
-        <Textarea
-          label="メモ"
-          rows={2}
-          placeholder="2本・低脂肪じゃないほう"
-          value={memo}
-          onChange={(event) => setMemo(event.target.value)}
-        />
+        <div className="flex min-w-0 flex-col">
+        <FormRow icon={<ShoppingCart />} divider>
+          <div role="radiogroup" aria-label="分類" className="flex flex-wrap gap-1.5 py-1">
+            <ChoiceChip selected={!wishlisted} onClick={() => setWishlisted(false)}>
+              買うもの
+            </ChoiceChip>
+            <ChoiceChip selected={wishlisted} onClick={() => setWishlisted(true)}>
+              欲しいもの
+            </ChoiceChip>
+          </div>
+        </FormRow>
 
-        <div className="flex flex-col gap-2">
+        <FormRow icon={<Tag />}>
+        <div className="flex flex-col gap-2 py-1">
           <div className="flex items-center gap-2">
             <span className="type-label-large text-on-surface-variant">カテゴリ</span>
             {picking && (
@@ -405,6 +403,7 @@ export function ShoppingItemDialog({
             </div>
           )}
         </div>
+        </FormRow>
 
         {!wishlisted && (
           <>
@@ -412,7 +411,8 @@ export function ShoppingItemDialog({
             そこはチップ1つで済ませる。それ以外の日は「日付を指定」を押したときだけ日付の欄を出す
             （未定のときに空の欄が常に並ぶと、入力が要るように見えるため・issue #726）。
             チップと欄はどちらも同じ値を指しており、押した値と保存される値が食い違わない。 */}
-        <div className="flex flex-col gap-2">
+        <FormRow icon={<CalendarDays />}>
+        <div className="flex flex-col gap-2 py-1">
           <span className="type-label-large text-on-surface-variant">購入予定日</span>
           <div className="flex flex-wrap gap-1.5">
             <ChoiceChip
@@ -457,25 +457,29 @@ export function ShoppingItemDialog({
             />
           )}
         </div>
+        </FormRow>
           </>
         )}
 
-        <div className="flex flex-col gap-2">
-          <span className="type-label-large text-on-surface-variant">優先度</span>
-          <div className="flex flex-wrap gap-1.5">
-            <ChoiceChip selected={priority === null} onClick={() => setPriority(null)}>
-              未設定
-            </ChoiceChip>
-            {SHOPPING_PRIORITIES.map((value) => (
-              <ChoiceChip
-                key={value}
-                selected={priority === value}
-                onClick={() => setPriority(value)}
-              >
-                {value}
-              </ChoiceChip>
-            ))}
-          </div>
+        <FormRow icon={<Flag />}>
+          <TaskPriorityBadges
+            value={priority}
+            onChange={(next) => setPriority(next as ShoppingPriority)}
+            disabled={busy}
+          />
+        </FormRow>
+
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            label="メモ"
+            variant="flat"
+            rows={2}
+            placeholder="2本・低脂肪じゃないほう"
+            value={memo}
+            onChange={(event) => setMemo(event.target.value)}
+            onClear={() => setMemo("")}
+          />
+        </FormRow>
         </div>
 
         {/* 削除は必ず確認を挟む（docs/spec.md §7）。押し間違えても画面上に戻す手立てが無い。
