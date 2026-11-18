@@ -274,7 +274,7 @@ function DrawerItem({
       )}
     >
       <Icon className={cn("size-5 shrink-0", active ? undefined : "text-on-surface-variant")} />
-      <span className="type-body-large flex-1">{label}</span>
+      <span className="type-body-medium flex-1">{label}</span>
       {running && <RunningDot />}
       {badge != null && (
         <span className="type-label-medium rounded-full bg-error-container px-2 py-0.5 tabular-nums text-on-error-container">
