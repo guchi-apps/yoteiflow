@@ -91,6 +91,7 @@ export function PlaceLocationMap({
     // 進行中の住所検索は無効にする（古い結果で地点を上書きしない）。
     seqRef.current++;
     setSearching(false);
+    setLooking(false);
     if (!canAddress || offline) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     const seq = ++seqRef.current;
