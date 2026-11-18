@@ -1,5 +1,5 @@
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
-import { parseYahooTransitRoute } from "@/lib/yahoo-transit-route";
+import { parseYahooTransitRoute, readYahooRouteEndpoints, readYahooRouteStops } from "@/lib/yahoo-transit-route";
 
 /**
  * 「よく使う電車」（`WorkTrain`・issue #1347）の入力検証と表示用の計算。DBにも外部APIにも触らない。
@@ -119,4 +119,59 @@ export function lateByForOutbound(train: WorkTrainItem, workStartMinutes: number
 /** 復路の電車が勤務終了より前に出るか。出発が勤務終了より前なら早すぎる。戻り値は早い分。 */
 export function earlyByForReturn(train: WorkTrainItem, workEndMinutes: number): number | null {
   return train.departMinutes < workEndMinutes ? workEndMinutes - train.departMinutes : null;
+}
+
+export type CommuteTravelSource = {
+  /** ISO 8601 */
+  start: string;
+  end: string;
+  title: string;
+  routeDetail: string | null;
+  note: string | null;
+};
+
+/** 日付をまたいでも使える、設定タイムゾーンの0時からの分。 */
+function minutesOfDay(iso: string, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return get("hour") * 60 + get("minute");
+}
+
+/**
+ * 勤務に紐づく移動の詳細から「よく使う電車」を登録する値を作る（issue #1701）。
+ * 出発地・行き先は移動の文字列（`名前 住所`）ではなく、勤務同期のキー（生の場所名）を呼び出し側が渡す。
+ * 名前は経路の最初に乗る路線の行、読めなければ「出発駅 → 到着駅」、それも無ければ移動の見出し。
+ */
+export function trainFromTravel(
+  travel: CommuteTravelSource,
+  keys: { origin: string; destination: string },
+  timeZone: string,
+): TrainInput | null {
+  const detail = (travel.routeDetail || travel.note || "").trim();
+  const departMinutes = minutesOfDay(travel.start, timeZone);
+  const duration = Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000);
+  if (!Number.isFinite(duration) || duration < 1 || duration > MAX_DURATION) return null;
+  const line = detail
+    .split(/\r?\n/)
+    .map((row) => row.trim())
+    .filter((row) => row.startsWith("↓"))
+    .map((row) => row.replace(/^↓\s*/, ""))
+    .find((row) => row !== "" && !/^\d{1,2}:\d{2}/.test(row) && !/番線|号車/.test(row));
+  const stations = readYahooRouteEndpoints(detail);
+  const label =
+    line ?? (stations.origin && stations.destination ? `${stations.origin} → ${stations.destination}` : travel.title);
+  return {
+    origin: keys.origin,
+    destination: keys.destination,
+    label: label.slice(0, 191),
+    departMinutes,
+    durationMinutes: duration,
+    isDefault: false,
+    note: detail && readYahooRouteStops(detail).length > 0 ? detail.slice(0, MAX_NOTE) : null,
+  };
 }
