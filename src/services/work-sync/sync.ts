@@ -160,8 +160,11 @@ function travelInput(item: ExpectedItem) {
     mode: item.mode ?? "PUBLIC_TRANSIT",
     departAt: iso(item.start),
     arriveAt: iso(item.end),
-    // 電車の詳細があれば経路をメモに残し、出どころをYahoo!乗換案内にする（issue #1465）。
-    note: item.trainNote ? `${item.trainNote}\n\n${GENERATED_NOTE}` : GENERATED_NOTE,
+    // 電車の詳細があれば経路の詳細（専用項目）へ入れ、出どころをYahoo!乗換案内にする（issue #1465・#1701）。
+    // メモには入れない。駅名間の経路表示・ここから再検索は経路の詳細から読む。電車が無い回は
+    // 利用者が取り込んだ経路の詳細を消さないよう、項目ごと送らない。
+    note: GENERATED_NOTE,
+    ...(item.trainNote ? { routeDetail: item.trainNote } : {}),
     estimateSource: item.trainNote ? ("YAHOO" as const) : ("MANUAL" as const),
     returnLeg: item.kind === "RETURN",
   };
