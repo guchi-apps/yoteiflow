@@ -37,7 +37,7 @@ export function ChoiceChip({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        "type-label-large flex items-center gap-1 rounded-md border px-3 py-1 transition-colors",
+        "type-label-large flex min-h-10 items-center gap-1 rounded-md border px-3 py-1 transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
         selected
           ? cn(

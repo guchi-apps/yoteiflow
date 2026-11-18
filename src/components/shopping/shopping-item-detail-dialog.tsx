@@ -2,12 +2,24 @@
 
 import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
-import { ArrowRight, ExternalLink, Heart, Pencil, Trash2 } from "lucide-react";
+import {
+  AlignLeft,
+  ArrowRight,
+  CalendarDays,
+  ExternalLink,
+  Flag,
+  Heart,
+  Pencil,
+  ShoppingCart,
+  Tag,
+  Trash2,
+} from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import { ChoiceChip } from "@/components/shopping/choice-chip";
+import { FormRow } from "@/components/calendar/event-form-row";
+import { TaskPriorityIcon } from "@/components/calendar/task-priority-badges";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -18,11 +30,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import { SHOPPING_PRIORITIES, type ShoppingItem, type ShoppingPriority } from "@/types/shopping";
+import { type ShoppingItem } from "@/types/shopping";
 
 /** 買い物項目の表示画面。行を押したときは、入力画面へ直行させずここで内容を確認する。 */
 export function ShoppingItemDetailDialog({
@@ -56,14 +67,6 @@ export function ShoppingItemDetailDialog({
     const today = createCalendarDateUtils(timeZone).todayKey();
     return { todayKey: today, tomorrowKey: toDateKey(addDays(parseDateKey(today), 1)) };
   }, [timeZone]);
-  // 「今日」「明日」以外の日付が入っているときは、日付欄を最初から出す。
-  const [pickingDate, setPickingDate] = useState(
-    () =>
-      initialItem.plannedDate != null &&
-      initialItem.plannedDate !== todayKey &&
-      initialItem.plannedDate !== tomorrowKey,
-  );
-
   // 開いたままアンマウントするとRadixの後始末が走らないことがあるため、閉じ切ってから返す。
   const closeThen = (callback: () => void) => {
     setOpen(false);
@@ -118,21 +121,6 @@ export function ShoppingItemDetailDialog({
         : "買うものへ変更できませんでした。",
     );
 
-  // 保存中・オフライン中は押しても何も起きないよう、変更は patch() 側で止める。
-  const changePlannedDate = async (plannedDate: string | null, keepPicker = false) => {
-    if (writesDisabled || busy) return;
-    if (plannedDate === item.plannedDate) {
-      if (!keepPicker) setPickingDate(false);
-      return;
-    }
-    const ok = await patch({ plannedDate }, "購入予定日を変更できませんでした。");
-    if (ok && !keepPicker) setPickingDate(false);
-  };
-  const changePriority = (priority: ShoppingPriority) => {
-    if (writesDisabled || busy || priority === item.priority) return;
-    void patch({ priority }, "優先度を変更できませんでした。");
-  };
-
   const remove = async () => {
     if (writesDisabled) {
       setError(OFFLINE_WRITE_MESSAGE);
@@ -161,7 +149,7 @@ export function ShoppingItemDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-x-hidden overflow-y-auto">
         {confirmingDelete ? (
           <>
             <DialogHeader>
@@ -228,7 +216,7 @@ export function ShoppingItemDetailDialog({
 
             <div className="flex min-w-0 flex-col gap-4 text-sm">
               {!item.wishlisted && (
-                <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+                <label className="flex min-h-11 items-center gap-3 text-base select-none md:text-sm">
                   <Checkbox
                     checked={item.bought}
                     disabled={busy || writesDisabled}
@@ -240,88 +228,45 @@ export function ShoppingItemDetailDialog({
                 </label>
               )}
               {writesDisabled && (
-                <p className="px-4 text-xs text-on-surface-variant">
+                <p className="text-xs text-on-surface-variant">
                   {OFFLINE_WRITE_MESSAGE}
                 </p>
               )}
-              <DetailField
-                label="分類"
-                value={item.wishlisted ? "欲しいもの" : "買うもの"}
-              />
-              {item.category && (
-                <DetailField label="カテゴリ" value={item.category} />
-              )}
-              {/* 購入予定日・優先度は編集画面へ入らずその場で変える（issue #1457）。
-                  押した時点で保存し、選択肢は編集画面と同じ。 */}
-              {!item.wishlisted && (
-                <div className="flex flex-col gap-1.5 px-4">
-                  <span className="text-xs text-muted-foreground">
-                    購入予定日
-                  </span>
-                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="購入予定日">
-                    <ChoiceChip
-                      selected={!pickingDate && item.plannedDate === null}
-                      onClick={() => changePlannedDate(null)}
-                    >
-                      未定
-                    </ChoiceChip>
-                    <ChoiceChip
-                      selected={!pickingDate && item.plannedDate === todayKey}
-                      onClick={() => changePlannedDate(todayKey)}
-                    >
-                      今日
-                    </ChoiceChip>
-                    <ChoiceChip
-                      selected={!pickingDate && item.plannedDate === tomorrowKey}
-                      onClick={() => changePlannedDate(tomorrowKey)}
-                    >
-                      明日
-                    </ChoiceChip>
-                    <ChoiceChip
-                      selected={pickingDate}
-                      onClick={() => setPickingDate(true)}
-                    >
-                      日付を指定
-                    </ChoiceChip>
-                  </div>
-                  {pickingDate && (
-                    <Input
-                      label="日付"
-                      type="date"
-                      value={item.plannedDate ?? ""}
-                      disabled={busy || writesDisabled}
-                      onChange={(event) =>
-                        event.target.value &&
-                        void changePlannedDate(event.target.value, true)
-                      }
+              {/* 購入予定日・優先度は表示のみ。変えるのは編集画面で行う（issue #1695。
+                  issue #1457 の詳細画面での即時変更は撤去）。 */}
+              <div className="flex min-w-0 flex-col">
+                <FormRow icon={<ShoppingCart />} divider={false}>
+                  <DetailText value={item.wishlisted ? "欲しいもの" : "買うもの"} />
+                </FormRow>
+                {item.category && (
+                  <FormRow icon={<Tag />}>
+                    <DetailText value={item.category} />
+                  </FormRow>
+                )}
+                {!item.wishlisted && (
+                  <FormRow icon={<CalendarDays />}>
+                    <DetailText
+                      value={`購入予定日: ${item.plannedDate ? formatPlannedDate(item.plannedDate, todayKey, tomorrowKey) : "未定"}`}
                     />
-                  )}
-                </div>
-              )}
-              <div className="flex flex-col gap-1.5 px-4">
-                <span className="text-xs text-muted-foreground">優先度</span>
-                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="優先度">
-                  <ChoiceChip
-                    selected={item.priority === null}
-                    onClick={() => changePriority(null)}
-                  >
-                    未設定
-                  </ChoiceChip>
-                  {SHOPPING_PRIORITIES.map((value) => (
-                    <ChoiceChip
-                      key={value}
-                      selected={item.priority === value}
-                      onClick={() => changePriority(value)}
-                    >
-                      {value}
-                    </ChoiceChip>
-                  ))}
-                </div>
+                  </FormRow>
+                )}
+                {item.priority && (
+                  <FormRow icon={<Flag />}>
+                    <div className="flex min-h-10 items-center gap-2">
+                      <TaskPriorityIcon priority={item.priority} />
+                      <span>優先度: {item.priority}</span>
+                    </div>
+                  </FormRow>
+                )}
+                {item.memo && (
+                  <FormRow icon={<AlignLeft />}>
+                    <DetailText value={item.memo} />
+                  </FormRow>
+                )}
               </div>
-              {item.memo && <DetailField label="メモ" value={item.memo} />}
               <Button
                 variant="outline"
-                className="mx-4 w-fit"
+                className="w-fit"
                 disabled={busy || writesDisabled}
                 onClick={() => void changeClassification(!item.wishlisted)}
               >
@@ -337,18 +282,29 @@ export function ShoppingItemDetailDialog({
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-4 text-xs text-muted-foreground hover:underline"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
                 >
                   <ExternalLink className="size-3" />
                   Notionで開く
                 </a>
               )}
               {error && (
-                <p className="px-4 text-sm text-destructive">{error}</p>
+                <p className="text-sm text-destructive">{error}</p>
               )}
             </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={close}>
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              {/* 右上の鉛筆だけでは押しにくいため、閉じるの上にも置く。枠付きにして
+                  枠なしの「閉じる」と見分ける（issue #1695）。 */}
+              <Button
+                variant="outline"
+                className="min-h-11 w-full"
+                disabled={busy || writesDisabled}
+                onClick={edit}
+              >
+                <Pencil className="size-4" />
+                編集する
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={close}>
                 閉じる
               </Button>
             </DialogFooter>
@@ -359,10 +315,17 @@ export function ShoppingItemDetailDialog({
   );
 }
 
-function DetailField({ label, value }: { label: string; value: string }) {
+/** 「今日」「明日」はそのまま、ほかは「11月19日」の形で出す。 */
+function formatPlannedDate(dateKey: string, todayKey: string, tomorrowKey: string): string {
+  if (dateKey === todayKey) return "今日";
+  if (dateKey === tomorrowKey) return "明日";
+  const [, month, day] = dateKey.split("-").map(Number);
+  return month && day ? `${month}月${day}日` : dateKey;
+}
+
+function DetailText({ value }: { value: string }) {
   return (
-    <div className="flex flex-col gap-0.5 px-4">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="flex min-h-10 min-w-0 items-center">
       <LinkifiedText as="span" text={value} />
     </div>
   );
