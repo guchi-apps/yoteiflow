@@ -16,7 +16,11 @@ export function DateTimeInput({
   defaultTime,
   dateOnly,
   flat,
+  autoOpen,
+  initialPanel,
 }: {
+  autoOpen?: boolean;
+  initialPanel?: "calendar" | "time";
   id: string;
   label: string;
   /** `YYYY-MM-DDTHH:mm`（時刻なしを許す欄は `YYYY-MM-DD` も可）。未入力は空文字。 */
@@ -39,6 +43,8 @@ export function DateTimeInput({
       defaultTime={defaultTime}
       dateOnly={dateOnly}
       flat={flat}
+      autoOpen={autoOpen}
+      initialPanel={initialPanel}
     />
   );
 }

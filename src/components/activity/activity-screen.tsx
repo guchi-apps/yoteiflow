@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Clock3, Moon, Settings2, Square, Timer } from "lucide-react";
+import { ArrowRight, Clock3, Moon, Settings2, Square, Timer } from "lucide-react";
 
 import {
   invalidEnd,
@@ -364,6 +364,7 @@ export function ActivityScreen({
             {running ? (
               <RunningCard
                 running={running}
+                preset={presets.find((item) => item.name === running.title) ?? null}
                 timeZone={timeZone}
                 disabled={disabled}
                 editingStart={editingStart}
@@ -516,6 +517,7 @@ export function ActivityScreen({
  */
 function RunningCard({
   running,
+  preset,
   timeZone,
   disabled,
   editingStart,
@@ -535,6 +537,8 @@ function RunningCard({
   onDiscard,
 }: {
   running: RunningActivityItem;
+  /** 記録中の項目（アイコンを出すため）。一覧に無ければ null。 */
+  preset: ActivityPresetItem | null;
   timeZone: string;
   disabled: boolean;
   editingStart: boolean;
@@ -563,12 +567,15 @@ function RunningCard({
   // 経過時間だけ1秒刻みで進める（issue #1124）。他の表示は分単位のまま。
   const secondNowIso = useSecondNowIso();
 
+  const startLabel = startTimeLabel(running.startedAt, nowInput, timeZone);
+
   return (
     <Card className="bg-primary-container text-on-primary-container">
       <CardContent className="flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-2">
           {/* 動いていることを形でも示す。色だけでは、止め忘れているかどうかが分からない。 */}
           <span aria-hidden className="size-2.5 shrink-0 animate-pulse rounded-full bg-primary" />
+          {preset && <PresetIcon preset={preset} />}
           <span className="type-title-medium clip-nowrap flex-1">{running.title}</span>
         </div>
 
@@ -576,18 +583,21 @@ function RunningCard({
             経過時間は画面で最も大きい字にする（M3 Expressive へ更新したとき〈issue #705〉に
             display-small を足し、headline-small から上げた）。 */}
         {secondNowIso && (
-          <div className="type-display-small tabular-nums">
+          <div className="type-display-small text-center tabular-nums">
             {formatElapsed(running.startedAt, secondNowIso, true)}
           </div>
         )}
 
-        {editingStart ? (
+        {editingStart && (
           <div className="flex flex-col gap-2">
+            {/* 押した先がこのモーダル。時刻がメインのため、時刻ホイールを開いた状態で始める（issue #1709）。 */}
             <DateTimeInput
               id="activity-started-at"
               label="開始"
               value={startInput}
               onChange={onStartInputChange}
+              autoOpen
+              initialPanel="time"
             />
             {/* 入力が揃って止まったら自動で保存する。成功時の表示は出さない。 */}
             {startError && (
@@ -601,25 +611,17 @@ function RunningCard({
               </Button>
             </div>
           </div>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="type-body-medium">
-              {isoToLocalInput(running.startedAt, timeZone).replace("T", " ")} から
-            </span>
-            {/* 押し忘れて後から始めることが多い。開始時刻をここで直せるようにする。 */}
-            <Button variant="ghost" size="sm" disabled={disabled} onClick={onBeginEditStart}>
-              開始時刻を直す
-            </Button>
-          </div>
         )}
 
-        {editingEnd ? (
+        {editingEnd && (
           <div className="flex flex-col gap-2">
             <DateTimeInput
               id="activity-ended-at"
               label="終了"
               value={endInput}
               onChange={onEndInputChange}
+              autoOpen
+              initialPanel="time"
             />
             {/* 保存される時間帯と長さを先に出す。指定するのは終わりの時刻だけで、
                 結果として記録が何時間になるのかは、開始と見比べないと分からない。 */}
@@ -639,35 +641,74 @@ function RunningCard({
               </Button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {!editingEnd && (
           <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              {/* 押し忘れて後から始めることが多い。開始時刻そのものを押して直す（issue #1709）。 */}
+              {editingStart ? (
+                <span className="flex-1" />
+              ) : (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={onBeginEditStart}
+                  aria-label={`開始時刻 ${startLabel}。押して直す`}
+                  className="flex shrink-0 items-baseline gap-1 whitespace-nowrap rounded-md py-1 underline underline-offset-4 disabled:opacity-60"
+                >
+                  <span className="type-title-large tabular-nums">{startLabel}</span>
+                  <span className="type-body-small">から</span>
+                </button>
+              )}
+              {!editingStart && (
+                <ArrowRight aria-hidden className="mx-auto size-5 shrink-0 opacity-55" />
+              )}
+              <Button size="lg" className="shrink-0" disabled={disabled} onClick={() => onStop()}>
+                <Square className="fill-current" />
+                停止して保存
+              </Button>
+            </div>
             <div className="flex items-center justify-between gap-2">
               {/* 押し間違えて始めた記録まで予定にすると、消しにいく手間のほうが大きい。 */}
               <Button variant="destructive" size="sm" disabled={disabled} onClick={onDiscard}>
                 取り消す
               </Button>
-              <Button size="lg" disabled={disabled} onClick={() => onStop()}>
-                <Square className="fill-current" />
-                停止して保存
+              {/* 止め忘れて後から気付くこともある。押した時点で止める道は上に残したまま、
+                  終わりの時刻を決めて止める道を足す。 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="whitespace-nowrap"
+                disabled={disabled}
+                onClick={onBeginEditEnd}
+              >
+                <Clock3 className="size-4" />
+                終了時刻を指定して停止
               </Button>
             </div>
-            {/* 止め忘れて後から気付くこともある。押した時点で止める道は上に残したまま、
-                終わりの時刻を決めて止める道を足す。 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-end"
-              disabled={disabled}
-              onClick={onBeginEditEnd}
-            >
-              <Clock3 className="size-4" />
-              終了時刻を指定して停止
-            </Button>
           </div>
         )}
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * 記録中カードの開始時刻の表示。年月日は出さず時刻だけにし、今日の開始でないときだけ
+ * 「昨日」「M/D」を添える（issue #1709）。
+ */
+function startTimeLabel(startedAt: string, nowInput: string | null, timeZone: string): string {
+  const local = isoToLocalInput(startedAt, timeZone);
+  const date = local.slice(0, 10);
+  const time = local.slice(11, 16);
+  if (!nowInput) return time;
+  const today = nowInput.slice(0, 10);
+  if (date === today) return time;
+  const yesterday = new Date(`${today}T00:00:00Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  if (date === yesterday.toISOString().slice(0, 10)) return `昨日 ${time}`;
+  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} ${time}`;
 }
 
 /**
