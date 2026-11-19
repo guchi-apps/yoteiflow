@@ -98,6 +98,19 @@ export function trainFromYahooText(text: string): TrainFromText | null {
   };
 }
 
+/** 取り込みで経路の詳細の末尾に付く「電車の発着 … ／ 徒歩 …を含む」行（`yahoo-transit-import.ts`）。 */
+const WALK_NOTE_LINE = /\n*電車の発着 [^\n]+ ／ 徒歩 [^\n]+を含む\s*$/;
+
+/**
+ * Yahoo!乗換案内の共有で戻った経路の詳細から、電車の登録値を作る（issue #1716）。
+ *
+ * 共有で戻る発着時刻（`departAt`/`arriveAt`）はサーバー・勤務場所の徒歩を足した値なので使わない。
+ * 電車の発着は経路の詳細の本文から読み、徒歩の注記行は詳細から外す（徒歩は勤務先の「徒歩（前後の合計）」で別に足す）。
+ */
+export function trainFromSharedRoute(detail: string): TrainFromText | null {
+  return trainFromYahooText(detail.replace(WALK_NOTE_LINE, "").trim());
+}
+
 /** 往路・復路の初期選択に使うデフォルトの電車。複数あっても出発時刻順の先頭に固定する。 */
 export function defaultTrain(trains: WorkTrainItem[]): WorkTrainItem | null {
   return (

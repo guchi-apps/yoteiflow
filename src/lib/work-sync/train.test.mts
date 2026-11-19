@@ -122,3 +122,19 @@ test("trainFromTravel: 所要時間が読めなければ null", () => {
   );
   assert.equal(result, null);
 });
+
+import { trainFromSharedRoute } from "@/lib/work-sync/train";
+
+test("trainFromSharedRoute: 共有の経路の詳細から電車そのものの発着を読む（徒歩の注記は外す・issue #1716）", () => {
+  const detail = YAHOO.split("[Yahoo!乗換案内]")[0].trim();
+  const withWalk = `${detail}\n\n電車の発着 20:58〜21:46 ／ 徒歩 前5分・後10分を含む`;
+  for (const text of [detail, withWalk]) {
+    const result = trainFromSharedRoute(text);
+    assert.ok(result);
+    assert.equal(result.departMinutes, 20 * 60 + 58);
+    assert.equal(result.durationMinutes, 48);
+    assert.equal(result.label, "ＪＲ琵琶湖線 姫路行");
+    assert.ok(!result.note.includes("徒歩 前5分"));
+  }
+  assert.equal(trainFromSharedRoute(""), null);
+});
