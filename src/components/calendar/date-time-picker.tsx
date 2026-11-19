@@ -43,7 +43,13 @@ export function DateTimePickerField({
   defaultTime = "09:00",
   dateOnly = false,
   flat = false,
+  autoOpen = false,
+  initialPanel = "calendar",
 }: {
+  /** マウントと同時にモーダルを開く（記録中の時刻の直し〈issue #1709〉など、押した先がこのモーダルのとき）。 */
+  autoOpen?: boolean;
+  /** モーダルを開いたときの面。"time" なら時刻ホイールを開いた状態で始める。 */
+  initialPanel?: "calendar" | "time";
   id: string;
   label: string;
   value: string;
@@ -55,7 +61,7 @@ export function DateTimePickerField({
   /** 終日の欄用。日付だけを選び、`YYYY-MM-DD` を返す（時刻の行・表示を出さない）。 */
   dateOnly?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const parsed = parsePickerValue(value);
 
   return (
@@ -89,6 +95,7 @@ export function DateTimePickerField({
           allowNoTime={allowNoTime}
           defaultTime={defaultTime}
           dateOnly={dateOnly}
+          initialPanel={initialPanel}
           onCancel={() => setOpen(false)}
           onDone={(next) => {
             setOpen(false);
@@ -106,9 +113,11 @@ function PickerDialog({
   allowNoTime,
   defaultTime,
   dateOnly,
+  initialPanel,
   onCancel,
   onDone,
 }: {
+  initialPanel: "calendar" | "time";
   title: string;
   initial: PickerValue;
   allowNoTime: boolean;
@@ -132,7 +141,9 @@ function PickerDialog({
     year: Number(date.slice(0, 4)),
     month: Number(date.slice(5, 7)),
   });
-  const [panel, setPanel] = useState<"calendar" | "time">("calendar");
+  const [panel, setPanel] = useState<"calendar" | "time">(
+    dateOnly ? "calendar" : initialPanel,
+  );
 
   const grid = monthGrid(view.year, view.month);
   const baseYear = Number(date.slice(0, 4));
