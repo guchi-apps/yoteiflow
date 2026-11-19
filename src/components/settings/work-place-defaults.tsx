@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ChevronDown, Clock, ExternalLink, Footprints, Route } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Clock, Footprints, Route } from "lucide-react";
 
 import { FormRow, ToggleCard } from "@/components/calendar/event-form-row";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { matchPlaceByText } from "@/lib/place-text";
-import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
+import { resolveYahooPlace } from "@/lib/yahoo-transit-link";
 import {
   initialLegWalkText,
   initialWalkText,
-  nearestStationName,
   nearestStationWalk,
   placeForWorkPlace,
 } from "@/lib/work-sync/place-walk";
-import { WorkTrains } from "@/components/settings/work-trains";
+import { LegTrains } from "@/components/settings/work-trains";
+import type { TrainFromText } from "@/lib/work-sync/train";
+import { takeWorkTrainImport } from "@/lib/work-train-import";
 import { fromTime, toTime } from "@/lib/work-sync/form";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
@@ -185,8 +186,25 @@ export function PlaceDefaultFields({
     importWalkHome: initialWalkText(row?.walkHomeMinutes, homeWalk),
     importWalkPlace: initialWalkText(row?.walkPlaceMinutes, placeWalk),
   });
+  // Yahoo!乗換案内の共有から取り込んだが、まだ登録していない電車（issue #1716）
+  const [imported, setImported] = useState<{ leg: Leg; train: TrainFromText } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  // 共有から戻ってこの画面へ移ったとき、取り込み待ちを取り出して該当区間の公共交通に出す（issue #1716）。
+  // 同期でsetStateしない（react-hooks/set-state-in-effect）。取り出しはタイマー内で1回だけ行う
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (remote) return;
+      const found = takeWorkTrainImport(entry.key, extra);
+      if (!found) return;
+      setImported({ leg: found.leg, train: found.train });
+      setLegOpen((current) => ({ ...current, [found.leg]: true }));
+      const modesKey = found.leg === "out" ? "outModes" : "backModes";
+      setForm((current) => ({ ...current, [modesKey]: { ...current[modesKey], PUBLIC_TRANSIT: true } }));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [entry.key, extra, remote]);
 
   const patch = (next: Partial<EntryForm>) => {
     setForm((current) => ({ ...current, ...next }));
@@ -348,20 +366,9 @@ export function PlaceDefaultFields({
     }
   };
 
-  const homeStation = nearestStationName(homePlace);
-  const placeStation = nearestStationName(workPlace);
-
-  /** 公共交通のYahoo!乗換案内を開くリンク（日時なし）。地点の決め方は移動の入力と同じ resolveYahooPlace。 */
-  const yahooLink = (kind: Leg) => {
-    const homeSide = home ? resolveYahooPlace(home, linkablePlaces) : null;
-    const placeSide = resolveYahooPlace(workPlace?.name ?? entry.key, linkablePlaces);
-    return yahooTransitLink({
-      origin: kind === "out" ? homeSide : placeSide,
-      destination: kind === "out" ? placeSide : homeSide,
-      departAt: "",
-      arriveAt: "",
-    });
-  };
+  /** Yahoo!乗換案内に渡す地点。地点の決め方は移動の入力と同じ resolveYahooPlace（最寄り駅 → 座標 → 住所）。 */
+  const homeSide = home ? resolveYahooPlace(home, linkablePlaces) : null;
+  const placeSide = resolveYahooPlace(workPlace?.name ?? entry.key, linkablePlaces);
 
   /** 方法ごとの所要時間（分）。電車を登録済みの公共交通は電車＋徒歩。 */
   const legMinutes = (kind: Leg, mode: TravelMode): number | null => {
@@ -410,27 +417,27 @@ export function PlaceDefaultFields({
               デフォルト
             </span>
           )}
+          {!on && legTrains.length > 0 && (
+            <span className="type-body-small text-on-surface-variant">登録した電車 {legTrains.length}本</span>
+          )}
         </div>
         {on && (
           <div className="flex flex-col gap-3 pb-3 pl-8">
-            {mode === "PUBLIC_TRANSIT" && (
-              <div className="flex flex-col gap-1">
-                <a
-                  href={yahooLink(kind)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="type-label-large inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-md bg-primary px-4 text-on-primary"
-                >
-                  <ExternalLink className="size-4" />
-                  Yahoo!乗換案内で調べる
-                </a>
-                <p className="type-body-small text-on-surface-variant">
-                  {(kind === "out" ? homeStation : placeStation) && (kind === "out" ? placeStation : homeStation)
-                    ? `${kind === "out" ? homeStation : placeStation} → ${kind === "out" ? placeStation : homeStation}で検索します。`
-                    : "最寄り駅が未登録の側は、住所・座標で検索します。"}
-                  調べた経路は下の「よく使う電車」へ貼り付けて登録します。
-                </p>
-              </div>
+            {mode === "PUBLIC_TRANSIT" && home && (
+              <LegTrains
+                leg={kind}
+                place={entry.key}
+                extra={extra}
+                origin={kind === "out" ? home : entry.key}
+                destination={kind === "out" ? entry.key : home}
+                originPlace={kind === "out" ? homeSide : placeSide}
+                destinationPlace={kind === "out" ? placeSide : homeSide}
+                searchMinutes={kind === "out" ? (fromTime(form.start) ?? commonStart) : (fromTime(form.end) ?? commonEnd)}
+                trains={legTrains}
+                imported={imported?.leg === kind ? imported.train : null}
+                onImported={(train) => setImported(train ? { leg: kind, train } : null)}
+                onChange={onTrainsChanged}
+              />
             )}
             {base ? (
               <div className="flex min-w-0 flex-col gap-1">
@@ -620,12 +627,6 @@ export function PlaceDefaultFields({
             </div>
           </div>
         </FormRow>
-      )}
-
-      {!remote && (
-        <div className="border-t border-outline-variant pt-3">
-          <WorkTrains trains={trains} home={home} place={entry.key} canAdd onChange={onTrainsChanged} />
-        </div>
       )}
 
       <div className="flex items-center gap-3 pt-4">

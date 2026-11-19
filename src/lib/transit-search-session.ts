@@ -13,6 +13,7 @@
  */
 
 import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
+import type { WorkTrainTarget } from "@/lib/work-train-import";
 import type { EventNotificationOverride, TravelContinueFrom, TravelItem, TravelMode, TravelSearchPurpose } from "@/types/calendar";
 
 const STORAGE_KEY = "dayspan_transit_search_session";
@@ -53,6 +54,11 @@ export type TransitSearchDraft = {
   home?: string | null;
   /** 移動メモの途中駅から再検索したとき。戻った経路を元の移動の続きとして登録する（issue #1642） */
   continueFrom?: TravelContinueFrom;
+  /**
+   * 勤務先の登録の公共交通から調べたとき（issue #1716）。戻った経路は移動ではなく、この勤務先・区間の
+   * 「よく使う電車」の取り込みとして扱う（`work-train-import.ts`）。
+   */
+  workTrain?: WorkTrainTarget;
 };
 
 /** 下書きを待たせている検索の種類。共有の取り込み元と一致するときだけ反映する（issue #1604）。旧い保存値は yahoo。 */
