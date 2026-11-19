@@ -2,11 +2,24 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ChevronDown, Clock, ExternalLink, Footprints, Route } from "lucide-react";
 
+import { FormRow, ToggleCard } from "@/components/calendar/event-form-row";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import { matchPlaceByText } from "@/lib/place-text";
+import { resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
+import {
+  initialLegWalkText,
+  initialWalkText,
+  nearestStationName,
+  nearestStationWalk,
+  placeForWorkPlace,
+} from "@/lib/work-sync/place-walk";
 import { WorkTrains } from "@/components/settings/work-trains";
 import { fromTime, toTime } from "@/lib/work-sync/form";
 import type { WorkTrainItem } from "@/lib/work-sync/plan";
@@ -64,6 +77,9 @@ type EntryForm = {
   /** Yahoo!取り込みで電車の前後に足す徒歩（入力途中の文字列。空は共通値・issue #1471） */
   importWalkHome: string;
   importWalkPlace: string;
+  /** 方法ごとの「使う」チェック（issue #1707）。オフの方法は保存時に登録なしになる。入力値はオフ中も保持する。 */
+  outModes: Record<TravelMode, boolean>;
+  backModes: Record<TravelMode, boolean>;
 };
 
 type Leg = "out" | "back";
@@ -75,10 +91,12 @@ const minutesByMode = (rows: WorkRouteRow[]): Record<TravelMode, string> => ({
   OTHER: String(rows.find((row) => row.mode === "OTHER")?.minutes ?? ""),
 });
 
-const walkOf = (rows: WorkRouteRow[]): string => {
-  const walk = rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.walkMinutes ?? 0;
-  return walk > 0 ? String(walk) : "";
-};
+/**
+ * 保存済みの公共交通行の徒歩分。電車が無い区間の行は walkMinutes が常に0で保存される（手入力が合計のため）ので、
+ * 保存済みの値として扱うのは電車登録済みの区間だけ。それ以外は null（最寄り駅の値を初期値にする）。0分は有効値。
+ */
+const walkOf = (rows: WorkRouteRow[], hasTrains: boolean): number | null =>
+  hasTrains ? (rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.walkMinutes ?? null) : null;
 
 const defaultModeOf = (rows: WorkRouteRow[]): TravelMode =>
   pickDefaultRoute(rows)?.mode ?? "PUBLIC_TRANSIT";
@@ -127,7 +145,32 @@ export function PlaceDefaultFields({
   onSavedDefaults: (rows: WorkPlaceDefaultRow[]) => void;
   onSavedRoutes: (pairs: SavedRoutePair[]) => void;
 }) {
+  // 最寄り駅の徒歩分は、保存済みの値が無い欄の初期値にだけ使う（issue #1707）。
+  const homePlace = home ? matchPlaceByText(home, linkablePlaces) : null;
+  const workPlace = placeForWorkPlace(entry.key, link?.placeId ?? null, linkablePlaces);
+  const homeWalk = nearestStationWalk(homePlace);
+  const placeWalk = nearestStationWalk(workPlace);
+  const legHasTrains = (kind: Leg) =>
+    !!home &&
+    trains.some((train) =>
+      kind === "out"
+        ? train.origin === home && train.destination === entry.key
+        : train.origin === entry.key && train.destination === home,
+    );
+  const initialModes = (rows: WorkRouteRow[], kind: Leg): Record<TravelMode, boolean> => {
+    const minutes = minutesByMode(rows);
+    const hasTrains = legHasTrains(kind);
+    return {
+      CAR: minutes.CAR !== "",
+      PUBLIC_TRANSIT: minutes.PUBLIC_TRANSIT !== "" || hasTrains,
+      WALK: minutes.WALK !== "",
+      OTHER: minutes.OTHER !== "",
+    };
+  };
+  const [legOpen, setLegOpen] = useState<Record<Leg, boolean>>({ out: false, back: false });
   const [form, setForm] = useState<EntryForm>({
+    outModes: initialModes(outRoutes, "out"),
+    backModes: initialModes(backRoutes, "back"),
     workEnabled: row?.workEnabled ?? true,
     start: row?.startMinutes != null ? toTime(row.startMinutes) : "",
     end: row?.endMinutes != null ? toTime(row.endMinutes) : "",
@@ -137,10 +180,10 @@ export function PlaceDefaultFields({
     backMinutes: minutesByMode(backRoutes),
     outDefault: defaultModeOf(outRoutes),
     backDefault: defaultModeOf(backRoutes),
-    outWalk: walkOf(outRoutes),
-    backWalk: walkOf(backRoutes),
-    importWalkHome: row?.walkHomeMinutes != null ? String(row.walkHomeMinutes) : "",
-    importWalkPlace: row?.walkPlaceMinutes != null ? String(row.walkPlaceMinutes) : "",
+    outWalk: initialLegWalkText(walkOf(outRoutes, legHasTrains("out")), homeWalk, placeWalk),
+    backWalk: initialLegWalkText(walkOf(backRoutes, legHasTrains("back")), homeWalk, placeWalk),
+    importWalkHome: initialWalkText(row?.walkHomeMinutes, homeWalk),
+    importWalkPlace: initialWalkText(row?.walkPlaceMinutes, placeWalk),
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -211,7 +254,10 @@ export function PlaceDefaultFields({
             if (!Number.isInteger(walk) || walk < 0 || walk > 720) {
               throw new Error(`${leg.label}の徒歩は0〜720分で入力してください。`);
             }
+            const enabledModes = leg.kind === "out" ? form.outModes : form.backModes;
             const wanted = TRAVEL_MODES.flatMap((mode) => {
+              // チェックを外した方法は登録なし（入力値は画面に残すが保存しない。電車の登録は消さない）。
+              if (!enabledModes[mode]) return [];
               // 電車が登録済みの区間の公共交通は、電車＋徒歩で決まる（所要時間の入力は要らない）。
               if (mode === "PUBLIC_TRANSIT" && legTrains.length > 0) {
                 return [{ mode, minutes: transitMinutes(legTrains, walk) ?? 1, walk }];
@@ -302,180 +348,223 @@ export function PlaceDefaultFields({
     }
   };
 
-  return (
-    <div className="flex flex-col gap-3">
-      <h3 className="type-title-small">勤務時間</h3>
-      <label className="flex items-center gap-3">
-        <Switch
-          checked={form.workEnabled}
-          onCheckedChange={(checked) => patch({ workEnabled: checked })}
-        />
-        <span className="type-body-medium">勤務時間をカレンダーへ反映</span>
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor={`start-${entry.key}`}>勤務開始（空＝共通 {toTime(commonStart)}）</Label>
-          <Input
-            id={`start-${entry.key}`}
-            type="time"
-            value={form.start}
-            onChange={(event) => patch({ start: event.target.value })}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor={`end-${entry.key}`}>勤務終了（空＝共通 {toTime(commonEnd)}）</Label>
-          <Input
-            id={`end-${entry.key}`}
-            type="time"
-            value={form.end}
-            onChange={(event) => patch({ end: event.target.value })}
-          />
-        </div>
-      </div>
+  const homeStation = nearestStationName(homePlace);
+  const placeStation = nearestStationName(workPlace);
 
-      {!remote && (
-        <>
-          <h3 className="type-title-small">移動{home ? `（出発地: ${home}）` : ""}</h3>
-          {!home && (
-            <p className="type-body-small text-on-surface-variant">
-              移動を反映するには、先に
-              <Link href="/settings/travel" className="underline">
-                設定の「移動」
-              </Link>
-              で既定の出発地を入れてください。
-            </p>
+  /** 公共交通のYahoo!乗換案内を開くリンク（日時なし）。地点の決め方は移動の入力と同じ resolveYahooPlace。 */
+  const yahooLink = (kind: Leg) => {
+    const homeSide = home ? resolveYahooPlace(home, linkablePlaces) : null;
+    const placeSide = resolveYahooPlace(workPlace?.name ?? entry.key, linkablePlaces);
+    return yahooTransitLink({
+      origin: kind === "out" ? homeSide : placeSide,
+      destination: kind === "out" ? placeSide : homeSide,
+      departAt: "",
+      arriveAt: "",
+    });
+  };
+
+  /** 方法ごとの所要時間（分）。電車を登録済みの公共交通は電車＋徒歩。 */
+  const legMinutes = (kind: Leg, mode: TravelMode): number | null => {
+    const legTrains = mode === "PUBLIC_TRANSIT" ? trainsOf(kind) : [];
+    if (legTrains.length > 0) {
+      return transitMinutes(legTrains, Number(kind === "out" ? form.outWalk : form.backWalk) || 0);
+    }
+    const text = (kind === "out" ? form.outMinutes : form.backMinutes)[mode].trim();
+    return text === "" || !Number.isFinite(Number(text)) ? null : Number(text);
+  };
+
+  /** 見出しに添える要約（デフォルトの方法と所要時間）。 */
+  const legSummary = (kind: Leg): string => {
+    const enabled = kind === "out" ? form.outModes : form.backModes;
+    const chosen = kind === "out" ? form.outDefault : form.backDefault;
+    const mode = enabled[chosen] ? chosen : MODE_RANK_ORDER.find((candidate) => enabled[candidate]);
+    if (!mode) return "未登録";
+    const minutes = legMinutes(kind, mode);
+    return `${TRAVEL_MODE_LABELS[mode]}${minutes !== null ? ` ${minutes}分` : ""}`;
+  };
+
+  const renderMode = (kind: Leg, mode: TravelMode) => {
+    const modesKey = kind === "out" ? "outModes" : "backModes";
+    const minutesKey = kind === "out" ? "outMinutes" : "backMinutes";
+    const defaultKey = kind === "out" ? "outDefault" : "backDefault";
+    const walkKey = kind === "out" ? "outWalk" : "backWalk";
+    const label = kind === "out" ? "往路" : "復路";
+    const on = form[modesKey][mode];
+    const legTrains = mode === "PUBLIC_TRANSIT" ? trainsOf(kind) : [];
+    const base = transitBaseTrain(legTrains);
+    const walkText = form[walkKey];
+    const modeName = TRAVEL_MODE_LABELS[mode];
+    const isDefault = on && form[defaultKey] === mode;
+    return (
+      <div key={mode} className="border-t border-outline-variant">
+        <div className="flex min-h-12 items-center gap-3">
+          <Checkbox
+            aria-label={`${label}で${modeName}を使う`}
+            checked={on}
+            disabled={!home}
+            onCheckedChange={(checked) => patch({ [modesKey]: { ...form[modesKey], [mode]: checked === true } })}
+          />
+          <span className="type-label-large">{modeName}</span>
+          {isDefault && (
+            <span className="type-label-small rounded-md bg-secondary-container px-2 py-0.5 text-on-secondary-container">
+              デフォルト
+            </span>
           )}
-          {(
-            [
-              ["往路", "outEnabled", "outMinutes", "outDefault"],
-              ["復路", "backEnabled", "backMinutes", "backDefault"],
-            ] as const
-          ).map(([label, enabledKey, minutesKey, defaultKey]) => (
-            <div key={label} className="flex flex-col gap-2 border-t border-outline-variant pt-3">
-              <label className="flex items-center gap-3">
-                <Switch
-                  aria-label={`${label}をカレンダーへ反映`}
-                  checked={form[enabledKey]}
-                  onCheckedChange={(checked) => patch({ [enabledKey]: checked })}
-                />
-                <span className="type-body-medium">{label}をカレンダーへ反映</span>
-              </label>
-              <div className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2">
-                <span className="type-label-small text-on-surface-variant">方法</span>
-                <span className="type-label-small text-on-surface-variant">所要時間（分）</span>
-                <span className="type-label-small text-on-surface-variant">デフォルト</span>
-                {TRAVEL_MODES.map((mode) => {
-                  const value = form[minutesKey][mode];
-                  const isDefault = form[defaultKey] === mode;
-                  const kind: Leg = minutesKey === "outMinutes" ? "out" : "back";
-                  const legTrains = mode === "PUBLIC_TRANSIT" ? trainsOf(kind) : [];
-                  const base = transitBaseTrain(legTrains);
-                  if (base) {
-                    const walkKey = kind === "out" ? "outWalk" : "backWalk";
-                    const walkText = form[walkKey];
-                    const total = transitMinutes(legTrains, Number(walkText) || 0);
-                    return (
-                      <div key={mode} className="contents">
-                        <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <p className="type-body-small text-on-surface-variant">
-                            電車 {base.durationMinutes}分（{base.label || "名前なし"}）＋ 徒歩（前後の合計）
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              aria-label={`${label}の徒歩（分）`}
-                              inputMode="numeric"
-                              placeholder="0"
-                              disabled={!home}
-                              value={walkText}
-                              onChange={(event) => patch({ [walkKey]: event.target.value })}
-                            />
-                            <span className="type-body-medium shrink-0 tabular-nums">＝ {total ?? "—"}分</span>
-                          </div>
-                          <p className="type-body-small text-on-surface-variant">
-                            勤務の自動生成で使う前後の合計です。Yahoo!の経路取り込みで電車の前後に足す徒歩は、下の「Yahoo!取り込み時の徒歩」で登録します。
-                          </p>
-                        </div>
-                        <input
-                          type="radio"
-                          name={`${entry.key}-${label}-default`}
-                          aria-label={`${label}のデフォルトを${TRAVEL_MODE_LABELS[mode]}にする`}
-                          className="size-5 justify-self-center accent-primary disabled:opacity-38"
-                          disabled={!home}
-                          checked={isDefault}
-                          onChange={() => patch({ [defaultKey]: mode })}
-                        />
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={mode} className="contents">
-                      <span className="type-body-medium">{TRAVEL_MODE_LABELS[mode]}</span>
-                      <Input
-                        aria-label={`${label}の所要時間（${TRAVEL_MODE_LABELS[mode]}・分）`}
-                        inputMode="numeric"
-                        placeholder="未登録"
-                        disabled={!home}
-                        value={value}
-                        onChange={(event) =>
-                          patch({ [minutesKey]: { ...form[minutesKey], [mode]: event.target.value } })
-                        }
-                      />
-                      <input
-                        type="radio"
-                        name={`${entry.key}-${label}-default`}
-                        aria-label={`${label}のデフォルトを${TRAVEL_MODE_LABELS[mode]}にする`}
-                        className="size-5 justify-self-center accent-primary disabled:opacity-38"
-                        disabled={!home || value.trim() === ""}
-                        checked={isDefault && value.trim() !== ""}
-                        onChange={() => patch({ [defaultKey]: mode })}
-                      />
-                    </div>
-                  );
-                })}
+        </div>
+        {on && (
+          <div className="flex flex-col gap-3 pb-3 pl-8">
+            {mode === "PUBLIC_TRANSIT" && (
+              <div className="flex flex-col gap-1">
+                <a
+                  href={yahooLink(kind)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="type-label-large inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-md bg-primary px-4 text-on-primary"
+                >
+                  <ExternalLink className="size-4" />
+                  Yahoo!乗換案内で調べる
+                </a>
+                <p className="type-body-small text-on-surface-variant">
+                  {(kind === "out" ? homeStation : placeStation) && (kind === "out" ? placeStation : homeStation)
+                    ? `${kind === "out" ? homeStation : placeStation} → ${kind === "out" ? placeStation : homeStation}で検索します。`
+                    : "最寄り駅が未登録の側は、住所・座標で検索します。"}
+                  調べた経路は下の「よく使う電車」へ貼り付けて登録します。
+                </p>
               </div>
-            </div>
-          ))}
-          <p className="type-body-small text-on-surface-variant">
-            勤務入力で最初に選ばれるのはデフォルトの方法です。日ごとに別の方法へ変えられます。空の方法は登録なしとして扱います。公共交通は、下の「電車」を登録すると、デフォルトの電車（★、無ければ出発が最も早い電車）の所要時間に徒歩を足した時間になります。
-          </p>
-        </>
-      )}
-
-      {!remote && !extra && (
-        <div className="flex flex-col gap-2">
-          <h3 className="type-title-small">Yahoo!取り込み時の徒歩</h3>
-          <p className="type-body-small text-on-surface-variant">
-            Yahoo!乗換案内で調べた経路を移動に反映するとき、電車の発着の前後に足す徒歩です。往路・復路とも使います。空欄は設定 ▸ 移動の共通値になります。
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            {(
-              [
-                ["自宅側（自宅と駅のあいだ）", "importWalkHome"],
-                [entry.isTrip ? "出張先側（駅と出張先のあいだ）" : "勤務先側（駅と勤務場所のあいだ）", "importWalkPlace"],
-              ] as const
-            ).map(([label, key]) => (
-              <div key={key} className="flex flex-col gap-1">
-                <Label htmlFor={`${key}-${entry.key}`}>{label}</Label>
+            )}
+            {base ? (
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="type-body-small text-on-surface-variant">
+                  電車 {base.durationMinutes}分（{base.label || "名前なし"}）＋ 徒歩（前後の合計）
+                </p>
                 <div className="flex items-center gap-2">
                   <Input
-                    id={`${key}-${entry.key}`}
+                    variant="flat"
+                    aria-label={`${label}の徒歩（分）`}
                     inputMode="numeric"
-                    placeholder="共通値"
-                    value={form[key]}
-                    onChange={(event) => patch({ [key]: event.target.value })}
+                    placeholder="0"
+                    disabled={!home}
+                    value={walkText}
+                    onChange={(event) => patch({ [walkKey]: event.target.value })}
                   />
-                  <span className="type-body-medium shrink-0">分</span>
+                  <span className="type-body-medium shrink-0 tabular-nums">
+                    ＝ {transitMinutes(legTrains, Number(walkText) || 0) ?? "—"}分
+                  </span>
                 </div>
+                <p className="type-body-small text-on-surface-variant">
+                  勤務の自動生成で使う前後の合計です。最寄り駅の徒歩分が登録済みなら初期値に入っています。
+                </p>
               </div>
-            ))}
+            ) : (
+              <div className="flex flex-col gap-1">
+                <Label htmlFor={`${kind}-${mode}-${entry.key}`}>所要時間（分）</Label>
+                <Input
+                  id={`${kind}-${mode}-${entry.key}`}
+                  variant="flat"
+                  aria-label={`${label}の所要時間（${modeName}・分）`}
+                  inputMode="numeric"
+                  placeholder="分"
+                  disabled={!home}
+                  value={form[minutesKey][mode]}
+                  onChange={(event) => patch({ [minutesKey]: { ...form[minutesKey], [mode]: event.target.value } })}
+                />
+              </div>
+            )}
+            <div>
+              <ToggleCard pressed={isDefault} onToggle={() => patch({ [defaultKey]: mode })}>
+                {`${label}のデフォルトにする`}
+              </ToggleCard>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderLeg = (kind: Leg) => {
+    const enabledKey = kind === "out" ? "outEnabled" : "backEnabled";
+    const label = kind === "out" ? "往路" : "復路";
+    const open = legOpen[kind];
+    return (
+      <div key={kind} className="border-t border-outline-variant">
+        <div className="flex min-h-12 items-center gap-2">
+          <button
+            type="button"
+            aria-expanded={open}
+            className="type-label-large flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left"
+            onClick={() => setLegOpen((current) => ({ ...current, [kind]: !current[kind] }))}
+          >
+            <span>{label}</span>
+            <span className="type-body-small truncate font-normal text-on-surface-variant">
+              {kind === "out" ? "自宅 → " : ""}
+              {entry.key}
+              {kind === "back" ? " → 自宅" : ""}
+            </span>
+            <span className="type-label-small shrink-0 rounded-md bg-surface-container-high px-2 py-0.5 font-normal">
+              {legSummary(kind)}
+            </span>
+          </button>
+          <Switch
+            aria-label={`${label}をカレンダーへ反映`}
+            checked={form[enabledKey]}
+            onCheckedChange={(checked) => patch({ [enabledKey]: checked })}
+          />
+          <button
+            type="button"
+            aria-label={open ? `${label}を閉じる` : `${label}を開く`}
+            className="flex size-9 shrink-0 items-center justify-center"
+            onClick={() => setLegOpen((current) => ({ ...current, [kind]: !current[kind] }))}
+          >
+            <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+          </button>
+        </div>
+        {open && (
+          <div className="flex flex-col pb-2 pl-3">
+            <p className="type-body-small pb-1 text-on-surface-variant">
+              右のスイッチがカレンダーへの反映です。使う移動方法にチェックを入れると詳細が開きます。
+            </p>
+            {TRAVEL_MODES.map((mode) => renderMode(kind, mode))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col">
+      <FormRow icon={<Clock />} divider={false}>
+        <div className="flex flex-col gap-2">
+          <span className="type-label-medium text-on-surface-variant">勤務時間</span>
+          <div>
+            <ToggleCard pressed={form.workEnabled} onToggle={() => patch({ workEnabled: !form.workEnabled })}>
+              カレンダーへ反映
+            </ToggleCard>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor={`start-${entry.key}`}>開始（空＝共通 {toTime(commonStart)}）</Label>
+              <Input
+                id={`start-${entry.key}`}
+                variant="flat"
+                type="time"
+                value={form.start}
+                onChange={(event) => patch({ start: event.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor={`end-${entry.key}`}>終了（空＝共通 {toTime(commonEnd)}）</Label>
+              <Input
+                id={`end-${entry.key}`}
+                variant="flat"
+                type="time"
+                value={form.end}
+                onChange={(event) => patch({ end: event.target.value })}
+              />
+            </div>
           </div>
         </div>
-      )}
+      </FormRow>
 
-      {!remote && (
-        <WorkTrains trains={trains} home={home} place={entry.key} canAdd onChange={onTrainsChanged} />
-      )}
       {!extra && (
         <WorkPlaceLinkFields
           workPlace={entry.key}
@@ -485,7 +574,70 @@ export function PlaceDefaultFields({
         />
       )}
 
-      <div className="flex items-center gap-3">
+      {!remote && (
+        <FormRow icon={<Route />}>
+          <div className="flex flex-col">
+            <span className="type-label-medium text-on-surface-variant">
+              移動{home ? `（出発地: ${home}）` : ""}
+            </span>
+            {!home && (
+              <p className="type-body-small text-on-surface-variant">
+                移動を反映するには、先に
+                <Link href="/settings/travel" className="underline">
+                  設定の「移動」
+                </Link>
+                で既定の出発地を入れてください。
+              </p>
+            )}
+            {(["out", "back"] as const).map(renderLeg)}
+            <p className="type-body-small pt-2 text-on-surface-variant">
+              勤務入力で最初に選ばれるのはデフォルトの方法です。チェックを外した方法は登録なしになります（入力した値は保存するまで画面に残ります）。公共交通は、下の「よく使う電車」を登録すると、デフォルトの電車（★、無ければ出発が最も早い電車）の所要時間に徒歩を足した時間になります。
+            </p>
+          </div>
+        </FormRow>
+      )}
+
+      {!remote && !extra && (
+        <FormRow icon={<Footprints />}>
+          <div className="flex flex-col gap-2">
+            <span className="type-label-medium text-on-surface-variant">Yahoo!取り込み時の徒歩</span>
+            <p className="type-body-small text-on-surface-variant">
+              Yahoo!乗換案内で調べた経路を移動に反映するとき、電車の発着の前後に足す徒歩です。往路・復路とも使います。最寄り駅の徒歩分が登録済みなら初期値に入っています。空欄は設定 ▸ 移動の共通値になります。
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  ["自宅側（自宅と駅のあいだ）", "importWalkHome"],
+                  [entry.isTrip ? "出張先側（駅と出張先のあいだ）" : "勤務先側（駅と勤務場所のあいだ）", "importWalkPlace"],
+                ] as const
+              ).map(([label, key]) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <Label htmlFor={`${key}-${entry.key}`}>{label}</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id={`${key}-${entry.key}`}
+                      variant="flat"
+                      inputMode="numeric"
+                      placeholder="共通値"
+                      value={form[key]}
+                      onChange={(event) => patch({ [key]: event.target.value })}
+                    />
+                    <span className="type-body-medium shrink-0">分</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </FormRow>
+      )}
+
+      {!remote && (
+        <div className="border-t border-outline-variant pt-3">
+          <WorkTrains trains={trains} home={home} place={entry.key} canAdd onChange={onTrainsChanged} />
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 pt-4">
         <Button type="button" size="sm" disabled={busy} onClick={save}>
           保存
         </Button>
