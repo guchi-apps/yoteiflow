@@ -39,8 +39,9 @@ export function initialWalkText(saved: number | null | undefined, station: numbe
 }
 
 /** 往路・復路の徒歩（電車の前後の合計）の初期値。自宅側と勤務先側のわかる分を足す。 */
-export function initialLegWalkText(savedWalk: number, homeWalk: number | null, placeWalk: number | null): string {
-  if (savedWalk > 0) return String(savedWalk);
+export function initialLegWalkText(savedWalk: number | null | undefined, homeWalk: number | null, placeWalk: number | null): string {
+  // 保存済みの行があれば0分も有効値としてそのまま使う（最寄り駅で置き換えない）。
+  if (savedWalk !== null && savedWalk !== undefined) return savedWalk > 0 ? String(savedWalk) : "0";
   if (homeWalk === null && placeWalk === null) return "";
   return String((homeWalk ?? 0) + (placeWalk ?? 0));
 }

@@ -91,10 +91,9 @@ const minutesByMode = (rows: WorkRouteRow[]): Record<TravelMode, string> => ({
   OTHER: String(rows.find((row) => row.mode === "OTHER")?.minutes ?? ""),
 });
 
-const walkOf = (rows: WorkRouteRow[]): string => {
-  const walk = rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.walkMinutes ?? 0;
-  return walk > 0 ? String(walk) : "";
-};
+/** 保存済みの公共交通行の徒歩分。行が無ければ null（0分は保存済みの有効値として返す）。 */
+const walkOf = (rows: WorkRouteRow[]): number | null =>
+  rows.find((row) => row.mode === "PUBLIC_TRANSIT")?.walkMinutes ?? null;
 
 const defaultModeOf = (rows: WorkRouteRow[]): TravelMode =>
   pickDefaultRoute(rows)?.mode ?? "PUBLIC_TRANSIT";
@@ -177,8 +176,8 @@ export function PlaceDefaultFields({
     backMinutes: minutesByMode(backRoutes),
     outDefault: defaultModeOf(outRoutes),
     backDefault: defaultModeOf(backRoutes),
-    outWalk: walkOf(outRoutes) || initialLegWalkText(0, homeWalk, placeWalk),
-    backWalk: walkOf(backRoutes) || initialLegWalkText(0, homeWalk, placeWalk),
+    outWalk: initialLegWalkText(walkOf(outRoutes), homeWalk, placeWalk),
+    backWalk: initialLegWalkText(walkOf(backRoutes), homeWalk, placeWalk),
     importWalkHome: initialWalkText(row?.walkHomeMinutes, homeWalk),
     importWalkPlace: initialWalkText(row?.walkPlaceMinutes, placeWalk),
   });
