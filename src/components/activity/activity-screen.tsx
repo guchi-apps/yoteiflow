@@ -589,8 +589,8 @@ function RunningCard({
         )}
 
         {editingStart && (
-          <div className="flex flex-col gap-2">
-            {/* 押した先がこのモーダル。時刻がメインのため、時刻ホイールを開いた状態で始める（issue #1709）。 */}
+          <>
+            {/* 時刻ホイールで「決定」すると保存してカードへ戻る（issue #1717）。 */}
             <DateTimeInput
               id="activity-started-at"
               label="開始"
@@ -598,19 +598,15 @@ function RunningCard({
               onChange={onStartInputChange}
               autoOpen
               initialPanel="time"
+              timeOnly
+              onClose={onCloseEditStart}
             />
-            {/* 入力が揃って止まったら自動で保存する。成功時の表示は出さない。 */}
             {startError && (
               <p className="type-body-small text-destructive" role="alert">
                 {startError}
               </p>
             )}
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" disabled={disabled} onClick={onCloseEditStart}>
-                閉じる
-              </Button>
-            </div>
-          </div>
+          </>
         )}
 
         {editingEnd && (
@@ -622,6 +618,7 @@ function RunningCard({
               onChange={onEndInputChange}
               autoOpen
               initialPanel="time"
+              timeOnly
             />
             {/* 保存される時間帯と長さを先に出す。指定するのは終わりの時刻だけで、
                 結果として記録が何時間になるのかは、開始と見比べないと分からない。 */}
@@ -647,23 +644,17 @@ function RunningCard({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               {/* 押し忘れて後から始めることが多い。開始時刻そのものを押して直す（issue #1709）。 */}
-              {editingStart ? (
-                <span className="flex-1" />
-              ) : (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={onBeginEditStart}
-                  aria-label={`開始時刻 ${startLabel}。押して直す`}
-                  className="flex shrink-0 items-baseline gap-1 whitespace-nowrap rounded-md py-1 underline underline-offset-4 disabled:opacity-60"
-                >
-                  <span className="type-title-large tabular-nums">{startLabel}</span>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onBeginEditStart}
+                aria-label={`開始時刻 ${startLabel}。押して直す`}
+                className="flex shrink-0 items-baseline gap-1 whitespace-nowrap rounded-md py-1 underline underline-offset-4 disabled:opacity-60"
+              >
+                <span className="type-title-large tabular-nums">{startLabel}</span>
                   <span className="type-body-small">から</span>
-                </button>
-              )}
-              {!editingStart && (
-                <ArrowRight aria-hidden className="mx-auto size-5 shrink-0 opacity-55" />
-              )}
+              </button>
+              <ArrowRight aria-hidden className="mx-auto size-5 shrink-0 opacity-55" />
               <Button size="lg" className="shrink-0" disabled={disabled} onClick={() => onStop()}>
                 <Square className="fill-current" />
                 停止して保存

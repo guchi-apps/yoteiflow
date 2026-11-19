@@ -18,7 +18,11 @@ export function DateTimeInput({
   flat,
   autoOpen,
   initialPanel,
+  timeOnly,
+  onClose,
 }: {
+  timeOnly?: boolean;
+  onClose?: () => void;
   autoOpen?: boolean;
   initialPanel?: "calendar" | "time";
   id: string;
@@ -45,6 +49,8 @@ export function DateTimeInput({
       flat={flat}
       autoOpen={autoOpen}
       initialPanel={initialPanel}
+      timeOnly={timeOnly}
+      onClose={onClose}
     />
   );
 }
