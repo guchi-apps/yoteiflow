@@ -92,6 +92,8 @@ function expectedSnapshot(item: ExpectedItem): Snapshot {
     : {
         start: iso(item.start),
         end: iso(item.end),
+        // 生の場所名の見出し。通勤経路の登録キー（WorkTrain・WorkRouteDefault）の取得元（issue #1704）。
+        title: item.title,
         origin: item.origin,
         destination: item.destination,
         mode: item.mode ?? "PUBLIC_TRANSIT",
@@ -132,6 +134,8 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
   return {
     start: iso(plan.departAt),
     end: iso(plan.arriveAt),
+    // タイトルは利用者が直す対象ではなく控えの値を引き継ぐ（旧い控えは無く、次回同期で補う）。
+    title: (row.snapshot as Snapshot | null)?.title,
     origin: plan.origin,
     destination: plan.destination,
     mode: plan.mode,
@@ -160,8 +164,11 @@ function travelInput(item: ExpectedItem) {
     mode: item.mode ?? "PUBLIC_TRANSIT",
     departAt: iso(item.start),
     arriveAt: iso(item.end),
-    // 電車の詳細があれば経路をメモに残し、出どころをYahoo!乗換案内にする（issue #1465）。
-    note: item.trainNote ? `${item.trainNote}\n\n${GENERATED_NOTE}` : GENERATED_NOTE,
+    // 電車の詳細があれば経路の詳細（専用項目）へ入れ、出どころをYahoo!乗換案内にする（issue #1465・#1701）。
+    // メモには入れない。駅名間の経路表示・ここから再検索は経路の詳細から読む。電車が無い回は
+    // 利用者が取り込んだ経路の詳細を消さないよう、項目ごと送らない。
+    note: GENERATED_NOTE,
+    ...(item.trainNote ? { routeDetail: item.trainNote } : {}),
     estimateSource: item.trainNote ? ("YAHOO" as const) : ("MANUAL" as const),
     returnLeg: item.kind === "RETURN",
   };

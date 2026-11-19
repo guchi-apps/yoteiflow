@@ -34,6 +34,7 @@ import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelNote } from "./travel-note";
+import { WorkCommuteSection } from "./work-commute-section";
 import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
 import { readYahooRouteEndpoints, readYahooRouteStops } from "@/lib/yahoo-transit-route";
@@ -261,6 +262,8 @@ export function TravelDetailDialog({
               </span>
             </DetailRow>
           )}
+
+          <WorkCommuteSection travel={travel} timeZone={timeZone} readOnly={readOnly} />
 
           {noteText && (
             <CollapsibleNote>

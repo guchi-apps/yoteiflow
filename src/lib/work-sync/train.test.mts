@@ -96,3 +96,29 @@ test("デフォルトが複数あっても出発時刻順の先頭に決まる",
   assert.equal(defaultTrain([a, b, c])?.id, "b");
   assert.equal(defaultTrain([c]), null);
 });
+
+import { trainFromTravel } from "@/lib/work-sync/train";
+
+test("trainFromTravel: 移動から電車の登録値を作る（キーは渡した生の場所名・時刻は設定タイムゾーン）", () => {
+  const detail = "■高槻市(大阪府)\n｜ 06:32発\n↓ ＪＲ京都線 普通 東西線直通\n｜ 06:49着\n▼大日(大阪府)";
+  const result = trainFromTravel(
+    { start: "2026-11-17T21:32:00Z", end: "2026-11-17T21:49:00Z", title: "自宅 → 門真", routeDetail: detail, note: null },
+    { origin: "自宅", destination: "門真" },
+    "Asia/Tokyo",
+  );
+  assert.ok(result);
+  assert.equal(result.origin, "自宅");
+  assert.equal(result.destination, "門真");
+  assert.equal(result.departMinutes, 6 * 60 + 32);
+  assert.equal(result.durationMinutes, 17);
+  assert.equal(result.label, "ＪＲ京都線 普通 東西線直通");
+});
+
+test("trainFromTravel: 所要時間が読めなければ null", () => {
+  const result = trainFromTravel(
+    { start: "2026-11-17T21:32:00Z", end: "2026-11-17T21:32:00Z", title: "t", routeDetail: null, note: null },
+    { origin: "自宅", destination: "門真" },
+    "Asia/Tokyo",
+  );
+  assert.equal(result, null);
+});
