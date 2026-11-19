@@ -520,9 +520,6 @@ export function PlaceDefaultFields({
         </div>
         {open && (
           <div className="flex flex-col pb-2 pl-3">
-            <p className="type-body-small pb-1 text-on-surface-variant">
-              右のスイッチがカレンダーへの反映です。使う移動方法にチェックを入れると詳細が開きます。
-            </p>
             {TRAVEL_MODES.map((mode) => renderMode(kind, mode))}
           </div>
         )}
@@ -590,9 +587,6 @@ export function PlaceDefaultFields({
               </p>
             )}
             {(["out", "back"] as const).map(renderLeg)}
-            <p className="type-body-small pt-2 text-on-surface-variant">
-              勤務入力で最初に選ばれるのはデフォルトの方法です。チェックを外した方法は登録なしになります（入力した値は保存するまで画面に残ります）。公共交通は、下の「よく使う電車」を登録すると、デフォルトの電車（★、無ければ出発が最も早い電車）の所要時間に徒歩を足した時間になります。
-            </p>
           </div>
         </FormRow>
       )}
@@ -601,9 +595,6 @@ export function PlaceDefaultFields({
         <FormRow icon={<Footprints />}>
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">Yahoo!取り込み時の徒歩</span>
-            <p className="type-body-small text-on-surface-variant">
-              Yahoo!乗換案内で調べた経路を移動に反映するとき、電車の発着の前後に足す徒歩です。往路・復路とも使います。最寄り駅の徒歩分が登録済みなら初期値に入っています。空欄は設定 ▸ 移動の共通値になります。
-            </p>
             <div className="grid grid-cols-2 gap-3">
               {(
                 [

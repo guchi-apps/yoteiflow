@@ -442,13 +442,14 @@ export function WorkPlacesPanel({
       outMinutes: outOf(entry)?.minutes ?? null,
       backMinutes: backOf(entry)?.minutes ?? null,
     });
+    const index = entry.option && options ? options.findIndex((item) => item.id === entry.option?.id) : -1;
     return (
-      <li key={`${entry.extra}:${entry.key}`}>
+      <li key={`${entry.extra}:${entry.key}`} className="flex min-w-0 items-stretch gap-1">
         <button
           type="button"
           onClick={() => select({ key: entry.key, extra: entry.extra })}
           aria-current={isSelected(entry) ? "true" : undefined}
-          className={`flex w-full min-w-0 flex-col gap-2 rounded-xl border p-3 text-left transition-colors hover:bg-surface-container ${
+          className={`flex min-w-0 flex-1 flex-col gap-2 rounded-xl border p-3 text-left transition-colors hover:bg-surface-container ${
             isSelected(entry) ? "border-primary bg-surface-container" : "border-outline-variant"
           }`}
         >
@@ -494,16 +495,36 @@ export function WorkPlacesPanel({
             ))}
           </span>
         </button>
+        {entry.option && (
+          <div className="flex shrink-0 flex-col justify-center">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`${entry.key} を上へ`}
+              disabled={busy || index <= 0}
+              onClick={() => move(index, -1)}
+            >
+              <ArrowUp className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`${entry.key} を下へ`}
+              disabled={busy || index < 0 || index === (options?.length ?? 0) - 1}
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDown className="size-4" />
+            </Button>
+          </div>
+        )}
       </li>
     );
   };
 
   const renderDetail = (entry: PanelEntry) => {
     const remote = !entry.isTrip && remotePlaces.includes(entry.key);
-    const index = entry.option && options ? options.findIndex((item) => item.id === entry.option?.id) : -1;
     return (
-      <Card>
-        <CardContent className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4 px-1">
           <Button variant="ghost" size="sm" className="-ml-2 self-start @3xl/main:hidden" onClick={() => select(null)}>
             <ArrowLeft className="size-4" />
             勤務場所
@@ -522,24 +543,6 @@ export function WorkPlacesPanel({
             {entry.option && (
               <>
                 <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`${entry.key} を上へ`}
-                  disabled={busy || index <= 0}
-                  onClick={() => move(index, -1)}
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`${entry.key} を下へ`}
-                  disabled={busy || index < 0 || index === (options?.length ?? 0) - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  <ArrowDown className="size-4" />
-                </Button>
-                <Button
                   variant="destructive"
                   size="icon-sm"
                   aria-label={`${entry.key} を削除`}
@@ -554,7 +557,7 @@ export function WorkPlacesPanel({
 
           {entry.option && (
             <div className="flex flex-col">
-              <FormRow icon={<Type />} divider={false}>
+              <FormRow icon={<Type />} divider={false} className="py-3">
                 <span className="type-label-medium text-on-surface-variant">名前</span>
                 <InlineEdit display={entry.key} editLabel={`${entry.key} の名前を編集`}>
                   {(close) => (
@@ -577,12 +580,8 @@ export function WorkPlacesPanel({
                     />
                   )}
                 </InlineEdit>
-                <p className="type-body-small text-on-surface-variant">
-                  名前を変えても移るのは、Notionの記録・出張扱い・月表示の1文字までです。在宅扱い・勤務時間などの
-                  既定値・正式名称は、変更後の名前で入れ直してください。
-                </p>
               </FormRow>
-              <FormRow icon={<Tag />}>
+              <FormRow icon={<Tag />} className="py-4">
                 <span className="type-label-medium text-on-surface-variant">スマホの月表示に出す1文字</span>
                 <InlineEdit
                   key={`short:${entry.key}:${shortLabels[entry.key] ?? ""}`}
@@ -606,11 +605,8 @@ export function WorkPlacesPanel({
                     />
                   )}
                 </InlineEdit>
-                <p className="type-body-small text-on-surface-variant">
-                  名前の先頭1文字が自動で入ります。変えたいときは鉛筆から。空にして確定すると自動に戻ります。
-                </p>
               </FormRow>
-              <FormRow icon={<Briefcase />}>
+              <FormRow icon={<Briefcase />} className="py-4">
                 {tripAvailable ? (
                   <div className="flex flex-wrap gap-2">
                     <ToggleCard pressed={entry.isTrip} onToggle={() => toggleTrip(entry.key, !entry.isTrip)}>
@@ -622,18 +618,14 @@ export function WorkPlacesPanel({
                     勤務記録DBに出張（チェックボックス）のプロパティがないため、出張扱いは決められません。
                   </p>
                 )}
-                {tripAvailable && (
-                  <p className="type-body-small pt-1 text-on-surface-variant">行き先はこの場所の名前になります。</p>
-                )}
               </FormRow>
               {!entry.isTrip && (
-                <FormRow icon={<House />}>
+                <FormRow icon={<House />} className="py-4">
                   <div className="flex flex-wrap gap-2">
                     <ToggleCard pressed={remote} onToggle={() => toggleRemote(entry.key, !remote)}>
                       在宅として扱う
                     </ToggleCard>
                   </div>
-                  <p className="type-body-small pt-1 text-on-surface-variant">通勤の移動を作りません。</p>
                 </FormRow>
               )}
             </div>
@@ -675,8 +667,7 @@ export function WorkPlacesPanel({
               ])
             }
           />
-        </CardContent>
-      </Card>
+      </div>
     );
   };
 
