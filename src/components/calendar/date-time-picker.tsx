@@ -45,7 +45,14 @@ export function DateTimePickerField({
   flat = false,
   autoOpen = false,
   initialPanel = "calendar",
+  timeOnly = false,
+  onClose,
 }: {
+  /** 時刻ホイールだけで完結させる。「決定」で確定してモーダルを閉じる（カレンダー面へ戻らない）。 */
+  timeOnly?: boolean;
+  /** モーダルが閉じたとき（決定・キャンセルのどちらでも）に呼ぶ。 */
+  onClose?: () => void;
+
   /** マウントと同時にモーダルを開く（記録中の時刻の直し〈issue #1709〉など、押した先がこのモーダルのとき）。 */
   autoOpen?: boolean;
   /** モーダルを開いたときの面。"time" なら時刻ホイールを開いた状態で始める。 */
@@ -96,10 +103,15 @@ export function DateTimePickerField({
           defaultTime={defaultTime}
           dateOnly={dateOnly}
           initialPanel={initialPanel}
-          onCancel={() => setOpen(false)}
+          timeOnly={timeOnly}
+          onCancel={() => {
+            setOpen(false);
+            onClose?.();
+          }}
           onDone={(next) => {
             setOpen(false);
             onChange(dateOnly ? next.date : joinPickerValue(next, { allowNoTime, defaultTime }));
+            onClose?.();
           }}
         />
       )}
@@ -114,9 +126,11 @@ function PickerDialog({
   defaultTime,
   dateOnly,
   initialPanel,
+  timeOnly,
   onCancel,
   onDone,
 }: {
+  timeOnly: boolean;
   initialPanel: "calendar" | "time";
   title: string;
   initial: PickerValue;
@@ -268,7 +282,11 @@ function PickerDialog({
               上下にスクロールして時と分を選びます
             </p>
             <div className="flex gap-2">
-              {allowNoTime ? (
+              {timeOnly ? (
+                <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+                  キャンセル
+                </Button>
+              ) : allowNoTime ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -285,7 +303,11 @@ function PickerDialog({
                   戻る
                 </Button>
               )}
-              <Button type="button" className="flex-1" onClick={() => setPanel("calendar")}>
+              <Button
+                type="button"
+                className="flex-1"
+                onClick={() => (timeOnly ? onDone({ date, time }) : setPanel("calendar"))}
+              >
                 決定
               </Button>
             </div>

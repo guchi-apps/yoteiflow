@@ -48,7 +48,6 @@ export default async function WorkPlacesPage({
   return (
     <SettingsShell
       title="勤務先の登録"
-      description="勤務先ごとに、自宅からの往復の経路・所要時間を登録します。登録した区間だけ、勤務記録から移動をカレンダーへ自動で作ります（未登録の区間は作りません）。"
       wide
     >
       <WorkPlacesPanel
