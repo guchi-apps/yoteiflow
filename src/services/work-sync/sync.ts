@@ -92,6 +92,8 @@ function expectedSnapshot(item: ExpectedItem): Snapshot {
     : {
         start: iso(item.start),
         end: iso(item.end),
+        // 生の場所名の見出し。通勤経路の登録キー（WorkTrain・WorkRouteDefault）の取得元（issue #1704）。
+        title: item.title,
         origin: item.origin,
         destination: item.destination,
         mode: item.mode ?? "PUBLIC_TRANSIT",
@@ -132,6 +134,8 @@ async function readCurrent(userId: string, row: WorkGenerated): Promise<Snapshot
   return {
     start: iso(plan.departAt),
     end: iso(plan.arriveAt),
+    // タイトルは利用者が直す対象ではなく控えの値を引き継ぐ（旧い控えは無く、次回同期で補う）。
+    title: (row.snapshot as Snapshot | null)?.title,
     origin: plan.origin,
     destination: plan.destination,
     mode: plan.mode,
