@@ -49,9 +49,10 @@ test("保存済みの値を最寄り駅より優先する", () => {
   assert.equal(initialWalkText(undefined, null), "");
 });
 
-test("往路・復路の徒歩は保存済み→最寄り駅の合計→空の順", () => {
+test("往路・復路の徒歩は保存済み（0分含む）→最寄り駅の合計→空の順", () => {
   assert.equal(initialLegWalkText(12, 20, 8), "12");
-  assert.equal(initialLegWalkText(0, 20, 8), "28");
-  assert.equal(initialLegWalkText(0, 20, null), "20");
-  assert.equal(initialLegWalkText(0, null, null), "");
+  assert.equal(initialLegWalkText(null, 20, 8), "28");
+  assert.equal(initialLegWalkText(0, 20, 8), "0");
+  assert.equal(initialLegWalkText(null, 20, null), "20");
+  assert.equal(initialLegWalkText(null, null, null), "");
 });
