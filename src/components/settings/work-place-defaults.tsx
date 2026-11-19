@@ -91,7 +91,6 @@ const minutesByMode = (rows: WorkRouteRow[]): Record<TravelMode, string> => ({
   OTHER: String(rows.find((row) => row.mode === "OTHER")?.minutes ?? ""),
 });
 
-/** 保存済みの公共交通行の徒歩分。行が無ければ null（0分は保存済みの有効値として返す）。 */
 /**
  * 保存済みの公共交通行の徒歩分。電車が無い区間の行は walkMinutes が常に0で保存される（手入力が合計のため）ので、
  * 保存済みの値として扱うのは電車登録済みの区間だけ。それ以外は null（最寄り駅の値を初期値にする）。0分は有効値。
