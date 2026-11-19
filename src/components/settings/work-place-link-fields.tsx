@@ -2,10 +2,15 @@
 
 import { useState } from "react";
 
+import { MapPin } from "lucide-react";
+
+import { FormRow } from "@/components/calendar/event-form-row";
 import { Label } from "@/components/ui/label";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
+import type { PlaceItem } from "@/services/notion/places";
 
-export type LinkablePlace = { id: string; name: string; address: string | null };
+/** 正式名称に選べる場所。最寄り駅・座標も持つ（徒歩の初期値・Yahoo!乗換案内の検索に使う・issue #1707）。 */
+export type LinkablePlace = PlaceItem;
 
 /**
  * 勤務場所の正式名称の場所と省略名（issue #1382・docs/spec.md §46）。
@@ -56,7 +61,7 @@ export function WorkPlaceLinkFields({
   };
 
   return (
-    <div className="flex flex-col gap-2 border-t border-outline-variant pt-3">
+    <FormRow icon={<MapPin />}>
       <div className="flex flex-col gap-1">
         <Label htmlFor={`link-${workPlace}`}>正式名称（場所に登録済みの場所）</Label>
         <select
@@ -83,6 +88,6 @@ export function WorkPlaceLinkFields({
           {message.text}
         </span>
       )}
-    </div>
+    </FormRow>
   );
 }
