@@ -79,3 +79,19 @@ test("移動の交通手段（issue #1453）: 所要時間が同じでも手段�
   // 利用者が手段を直した生成物は手動調整扱い。
   assert.equal(decide(travel("PUBLIC_TRANSIT"), active(travel("PUBLIC_TRANSIT")), travel("WALK")), "markManual");
 });
+
+test("移動の控えにtitleを足しても手動調整とは見なさず、旧い控え（titleなし）は1回だけ更新して補う（issue #1704）", () => {
+  const base = {
+    start: "2026-10-06T00:00:00.000Z",
+    end: "2026-10-06T01:00:00.000Z",
+    origin: "自宅 住所",
+    destination: "勤務先 住所",
+    mode: "PUBLIC_TRANSIT",
+    description: "",
+  };
+  const withTitle = { ...base, title: "自宅 → 勤務先" };
+  // 新しい控え: 現在値は控えのtitleを引き継ぐため変化なし
+  assert.equal(decide(withTitle, { status: "ACTIVE", snapshot: withTitle }, withTitle), "keep");
+  // 旧い控え: titleが無いまま期待値だけtitleを持つ → 更新して補う（手動扱いにしない）
+  assert.equal(decide(withTitle, { status: "ACTIVE", snapshot: base }, base), "update");
+});
