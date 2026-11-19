@@ -42,7 +42,6 @@ export default async function WorkPlacesPage({
     // 正式名称に選べる場所。読めなくても設定画面は開く（選択肢が空になるだけ）。
     getNotionPlaceConnection(user.id)
       .then((place) => listPlaces(place))
-      .then((places) => places.map((place) => ({ id: place.id, name: place.name, address: place.address })))
       .catch(() => []),
   ]);
 

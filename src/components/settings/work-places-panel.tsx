@@ -1,14 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, ExternalLink, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Briefcase,
+  Check,
+  ChevronRight,
+  ExternalLink,
+  House,
+  Pencil,
+  Plus,
+  Tag,
+  Trash2,
+  Type,
+  X,
+} from "lucide-react";
 
+import { FormRow, ToggleCard } from "@/components/calendar/event-form-row";
 import { TagChip } from "@/components/tags/tag-chip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { ColorPicker } from "@/components/settings/tag-section";
 import {
   PlaceDefaultFields,
@@ -44,7 +59,10 @@ function ConfirmField({
   disabled,
   validate,
   onConfirm,
+  onClose,
 }: {
+  /** 確定・取り消しのあとに呼ぶ（鉛筆で開いた編集欄を閉じるため・issue #1707）。 */
+  onClose?: () => void;
   value: string;
   ariaLabel: string;
   placeholder?: string;
@@ -59,7 +77,12 @@ function ConfirmField({
   const problem = dirty ? validate(trimmed) : null;
   const canConfirm = dirty && !problem && !disabled;
   const confirm = () => {
-    if (canConfirm) void onConfirm(trimmed);
+    if (!canConfirm) return;
+    void Promise.resolve(onConfirm(trimmed)).then(() => onClose?.());
+  };
+  const cancel = () => {
+    setDraft(value);
+    onClose?.();
   };
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -78,7 +101,7 @@ function ConfirmField({
               event.preventDefault();
               confirm();
             }
-            if (event.key === "Escape") setDraft(value);
+            if (event.key === "Escape") cancel();
           }}
         />
         <Button size="icon-sm" aria-label={`${ariaLabel}を確定`} disabled={!canConfirm} onClick={confirm}>
@@ -88,13 +111,45 @@ function ConfirmField({
           variant="ghost"
           size="icon-sm"
           aria-label={`${ariaLabel}の変更を取り消す`}
-          disabled={!dirty}
-          onClick={() => setDraft(value)}
+          disabled={!dirty && !onClose}
+          onClick={cancel}
         >
           <X className="size-4" />
         </Button>
       </div>
       {problem && <p className="type-body-small text-error">{problem}</p>}
+    </div>
+  );
+}
+
+/**
+ * 値を表示し、鉛筆を押すと入力欄に切り替わる行（issue #1707）。✓で確定・✕で取り消すと表示へ戻る。
+ * 入力欄の中身は ConfirmField（名前・1文字と同じ確定の動線）。
+ */
+function InlineEdit({
+  display,
+  badge,
+  editLabel,
+  children,
+}: {
+  display: string;
+  badge?: string;
+  editLabel: string;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (editing) return <>{children(() => setEditing(false))}</>;
+  return (
+    <div className="flex min-h-10 items-center gap-2">
+      <span className="type-body-large min-w-0 truncate">{display}</span>
+      {badge && (
+        <span className="type-label-small shrink-0 rounded-md bg-surface-container-high px-2 py-0.5 text-on-surface-variant">
+          {badge}
+        </span>
+      )}
+      <Button variant="ghost" size="icon-sm" aria-label={editLabel} onClick={() => setEditing(true)}>
+        <Pencil className="size-4" />
+      </Button>
     </div>
   );
 }
@@ -448,7 +503,7 @@ export function WorkPlacesPanel({
     const index = entry.option && options ? options.findIndex((item) => item.id === entry.option?.id) : -1;
     return (
       <Card>
-        <CardContent className="flex flex-col gap-5">
+        <CardContent className="flex flex-col gap-3">
           <Button variant="ghost" size="sm" className="-ml-2 self-start @3xl/main:hidden" onClick={() => select(null)}>
             <ArrowLeft className="size-4" />
             勤務場所
@@ -498,67 +553,88 @@ export function WorkPlacesPanel({
           </div>
 
           {entry.option && (
-            <div className="flex flex-col gap-3">
-              <h3 className="type-title-small">表示と扱い</h3>
-              <div className="flex flex-col gap-1">
-                  <span className="type-label-medium text-on-surface-variant">名前</span>
-                  <ConfirmField
-                    key={`name:${entry.key}`}
-                    value={entry.key}
-                    ariaLabel={`${entry.key} の名前`}
-                    disabled={busy}
-                    validate={(draft) =>
-                      !draft
-                        ? "名前を入力してください。"
-                        : optionNames.includes(draft)
-                          ? `「${draft}」はすでにあります。`
-                          : null
-                    }
-                    onConfirm={async (draft) => {
-                      if (entry.option) await rename(entry.option, draft);
-                    }}
-                  />
-                  <p className="type-body-small text-on-surface-variant">
-                    名前を変えても移るのは、Notionの記録・出張扱い・月表示の1文字までです。在宅扱い・勤務時間などの
-                    既定値・正式名称は、変更後の名前で入れ直してください。
-                  </p>
-                </div>
-              <div className="flex flex-col gap-1">
-                <span className="type-label-medium text-on-surface-variant">
-                  スマホの月表示に出す1文字（空欄は先頭の1文字）
-                </span>
-                <ConfirmField
-                  key={`short:${entry.key}:${shortLabels[entry.key] ?? ""}`}
-                  value={shortLabels[entry.key] ?? ""}
-                  ariaLabel={`${entry.key} の月表示の1文字`}
-                  placeholder={Array.from(entry.key)[0] ?? ""}
-                  inputClassName="w-24 text-center"
-                  validate={(draft) =>
-                    !draft || isSingleCharacter(draft)
-                      ? null
-                      : `1文字にしてください（現在${[...new Intl.Segmenter("ja", { granularity: "grapheme" }).segment(draft)].length}文字）`
-                  }
-                  onConfirm={(draft) => saveShortLabel(entry.key, draft)}
-                />
-              </div>
-              {tripAvailable ? (
-                <label className="flex items-center gap-3">
-                  <Switch
-                    checked={entry.isTrip}
-                    onCheckedChange={(next) => toggleTrip(entry.key, next)}
-                  />
-                  <span className="type-body-medium">出張扱いにする（行き先はこの場所の名前）</span>
-                </label>
-              ) : (
+            <div className="flex flex-col">
+              <FormRow icon={<Type />} divider={false}>
+                <span className="type-label-medium text-on-surface-variant">名前</span>
+                <InlineEdit display={entry.key} editLabel={`${entry.key} の名前を編集`}>
+                  {(close) => (
+                    <ConfirmField
+                      key={`name:${entry.key}`}
+                      value={entry.key}
+                      ariaLabel={`${entry.key} の名前`}
+                      disabled={busy}
+                      onClose={close}
+                      validate={(draft) =>
+                        !draft
+                          ? "名前を入力してください。"
+                          : optionNames.includes(draft)
+                            ? `「${draft}」はすでにあります。`
+                            : null
+                      }
+                      onConfirm={async (draft) => {
+                        if (entry.option) await rename(entry.option, draft);
+                      }}
+                    />
+                  )}
+                </InlineEdit>
                 <p className="type-body-small text-on-surface-variant">
-                  勤務記録DBに出張（チェックボックス）のプロパティがないため、出張扱いは決められません。
+                  名前を変えても移るのは、Notionの記録・出張扱い・月表示の1文字までです。在宅扱い・勤務時間などの
+                  既定値・正式名称は、変更後の名前で入れ直してください。
                 </p>
-              )}
+              </FormRow>
+              <FormRow icon={<Tag />}>
+                <span className="type-label-medium text-on-surface-variant">スマホの月表示に出す1文字</span>
+                <InlineEdit
+                  key={`short:${entry.key}:${shortLabels[entry.key] ?? ""}`}
+                  display={shortLabels[entry.key] ?? Array.from(entry.key)[0] ?? ""}
+                  badge={shortLabels[entry.key] ? undefined : "名前から自動"}
+                  editLabel={`${entry.key} の月表示の1文字を編集`}
+                >
+                  {(close) => (
+                    <ConfirmField
+                      value={shortLabels[entry.key] ?? ""}
+                      ariaLabel={`${entry.key} の月表示の1文字`}
+                      placeholder={Array.from(entry.key)[0] ?? ""}
+                      inputClassName="w-24 text-center"
+                      onClose={close}
+                      validate={(draft) =>
+                        !draft || isSingleCharacter(draft)
+                          ? null
+                          : `1文字にしてください（現在${[...new Intl.Segmenter("ja", { granularity: "grapheme" }).segment(draft)].length}文字）`
+                      }
+                      onConfirm={(draft) => saveShortLabel(entry.key, draft)}
+                    />
+                  )}
+                </InlineEdit>
+                <p className="type-body-small text-on-surface-variant">
+                  名前の先頭1文字が自動で入ります。変えたいときは鉛筆から。空にして確定すると自動に戻ります。
+                </p>
+              </FormRow>
+              <FormRow icon={<Briefcase />}>
+                {tripAvailable ? (
+                  <div className="flex flex-wrap gap-2">
+                    <ToggleCard pressed={entry.isTrip} onToggle={() => toggleTrip(entry.key, !entry.isTrip)}>
+                      出張扱いにする
+                    </ToggleCard>
+                  </div>
+                ) : (
+                  <p className="type-body-small text-on-surface-variant">
+                    勤務記録DBに出張（チェックボックス）のプロパティがないため、出張扱いは決められません。
+                  </p>
+                )}
+                {tripAvailable && (
+                  <p className="type-body-small pt-1 text-on-surface-variant">行き先はこの場所の名前になります。</p>
+                )}
+              </FormRow>
               {!entry.isTrip && (
-                <label className="flex items-center gap-3">
-                  <Switch checked={remote} onCheckedChange={(next) => toggleRemote(entry.key, next)} />
-                  <span className="type-body-medium">在宅として扱う（通勤の移動を作らない）</span>
-                </label>
+                <FormRow icon={<House />}>
+                  <div className="flex flex-wrap gap-2">
+                    <ToggleCard pressed={remote} onToggle={() => toggleRemote(entry.key, !remote)}>
+                      在宅として扱う
+                    </ToggleCard>
+                  </div>
+                  <p className="type-body-small pt-1 text-on-surface-variant">通勤の移動を作りません。</p>
+                </FormRow>
               )}
             </div>
           )}
