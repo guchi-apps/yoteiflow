@@ -52,6 +52,8 @@ import { HANDOFF_QUERY_KEYS, hasHandoffQuery, joinLocationText, linkedTravelTime
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
 import { applyGoogleShare, applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
+import { parseWorkTrainTarget, rememberWorkTrainImport, workTrainImportPath } from "@/lib/work-train-import";
+import { trainFromSharedRoute } from "@/lib/work-sync/train";
 import { retargetYahooWalk } from "@/lib/yahoo-transit-import";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
@@ -414,6 +416,19 @@ export function CalendarShell({
       // 移動の入力から「Yahoo!乗換案内で検索」して戻ってきた共有は、予定を選ばせずにその下書きへ反映する（issue #1330）。
       // 自動では保存しない。入力画面で確かめて保存し、閉じれば元の移動・下書きは変わらない。
       const session = handoff.session ? takeTransitSession(handoff.session) : null;
+      const workTrain = session ? parseWorkTrainTarget(session.draft.workTrain) : null;
+      if (session && workTrain) {
+        // 勤務先の登録の公共交通から調べた電車（issue #1716）。移動は作らず、勤務先の登録画面の確認枠へ渡す。
+        // 電車の発着は経路の詳細から読む（共有の発着時刻は徒歩込みのため使わない）。保存してから移る
+        const train = trainFromSharedRoute(handoff.link.note);
+        if (!train) {
+          window.alert("経路の詳細から電車の発着を読み取れませんでした。勤務先の登録の公共交通から「コピーした経路を取り込む」で入れてください。");
+        } else if (!rememberWorkTrainImport(workTrain, train)) {
+          window.alert("取り込んだ電車をこの端末に一時保存できませんでした。勤務先の登録の公共交通から「コピーした経路を取り込む」で入れてください。");
+        }
+        router.push(workTrainImportPath(workTrain));
+        return;
+      }
       if (session) {
         const link = handoff.link;
         void (async () => {
@@ -436,7 +451,7 @@ export function CalendarShell({
         return;
       }
       if (handoff.session) {
-        window.alert("検索したときの入力が見つかりませんでした（30分を過ぎた・別の端末で検索したなど）。紐づける予定を選ぶか、やめて移動を新しく入力してください。");
+        window.alert("検索したときの入力が見つかりませんでした（30分を過ぎた・別の端末で検索したなど）。紐づける予定を選ぶか、やめて移動を新しく入力してください。勤務先の電車を取り込むつもりだった場合は、勤務先の登録の公共交通からもう一度調べてください。");
       }
       setSharedLink({ origin: handoff.origin, destination: handoff.destination, mode: handoff.mode, ...handoff.link });
       return;
