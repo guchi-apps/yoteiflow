@@ -253,17 +253,26 @@ function PickerDialog({
             </div>
 
             {!dateOnly && (
-            <button
-              type="button"
-              onClick={openTime}
-              className="flex items-center justify-between rounded-lg border border-outline-variant px-3.5 py-3 text-sm"
-            >
-              <span>時刻</span>
-              <span className="flex items-center gap-1 text-base text-on-surface-variant tabular-nums">
-                {time ?? NO_TIME_LABEL}
-                <ChevronRight className="size-4" />
-              </span>
-            </button>
+            <div className="flex items-center gap-2 rounded-lg border border-outline-variant py-1.5 pl-3.5 pr-2 text-sm">
+              <button type="button" onClick={openTime} className="flex flex-1 items-center justify-between py-1.5 text-left">
+                <span>時刻</span>
+                <span className="flex items-center gap-1 text-base text-on-surface-variant tabular-nums">
+                  {time ?? NO_TIME_LABEL}
+                  <ChevronRight className="size-4" />
+                </span>
+              </button>
+              {allowNoTime && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={time === null ? "default" : "outline"}
+                  aria-pressed={time === null}
+                  onClick={() => setTime(time === null ? (initial.time ?? defaultTime) : null)}
+                >
+                  時刻なし
+                </Button>
+              )}
+            </div>
             )}
 
             <div className="flex gap-2">

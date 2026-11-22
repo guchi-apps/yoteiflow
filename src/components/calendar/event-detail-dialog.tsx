@@ -178,6 +178,7 @@ export function EventDetailDialog({
 }) {
   // 既存の移動を後から結ぶ（issue #1105）。選ぶ画面を出す間は表示画面を閉じる。
   const [linkingTravel, setLinkingTravel] = useState(false);
+  const displayedLinkedTasks = (linkedTasks ?? []).filter((task) => !task.bring);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
@@ -649,10 +650,11 @@ export function EventDetailDialog({
             この予定に紐づいているタスク（issue #835）。予定を見ただけで、どのタスクが
             紐づいているか分かるようにする。1つのタスクが期限・予定日の両方でこの予定に
             紐づくこともあるため、その予定に対するlinkを行き先ごと並べる（docs/spec.md §31）。
+            持ち物（bring）は下の「持ち物」に出るため、ここには重ねて出さない（issue #1722）。
           */}
-          {linkedTasks && linkedTasks.length > 0 && (
+          {displayedLinkedTasks.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              {linkedTasks.map((task) => {
+              {displayedLinkedTasks.map((task) => {
                 const links = task.links.filter((link) => link.eventId === event.id);
                 if (links.length === 0) return null;
 
