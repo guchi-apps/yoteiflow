@@ -70,7 +70,7 @@ export function SleepScreen({
         <>
           <SleepHealthButton title={activityTitle} timeZone={timeZone} exportedLabel={exportedLabel} />
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/settings/activities">
+            <Link href="/settings/sleep">
               <Settings2 className="size-4" />
               <span className="hidden sm:inline">設定</span>
             </Link>

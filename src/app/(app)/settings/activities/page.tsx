@@ -2,11 +2,10 @@ import { redirect } from "next/navigation";
 
 import { ActivitySection } from "@/components/settings/activity-section";
 import { LiveActivitySection } from "@/components/settings/live-activity-section";
-import { SleepSection } from "@/components/settings/sleep-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
 import { listActivityPresets } from "@/services/activity/presets";
-import { getActivityCalendarId, getSleepSettings } from "@/services/activity/settings";
+import { getActivityCalendarId } from "@/services/activity/settings";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import { SESSION_UNLINKED_LOGIN_PATH } from "@/lib/login-errors";
 
@@ -16,11 +15,10 @@ export default async function ActivitySettingsPage() {
 
   // 記録の保存先はGoogle Calendar。接続していないと保存先が選べないため、
   // 先にGoogleの設定へ回ってもらう。
-  const [presets, calendars, activityCalendarId, sleep] = await Promise.all([
+  const [presets, calendars, activityCalendarId] = await Promise.all([
     listActivityPresets(user.id),
     loadWritableCalendars(user.id),
     getActivityCalendarId(user.id),
-    getSleepSettings(user.id),
   ]);
 
   if (calendars.length === 0) redirect("/settings/google");
@@ -39,13 +37,6 @@ export default async function ActivitySettingsPage() {
       {/* iOSアプリの中だけ出る（端末ごとの設定・issue #1297） */}
       <LiveActivitySection />
 
-      {/* 睡眠は活動記録の1項目そのもので、どの項目を睡眠として数えるかは
-          項目の一覧を見ながらでないと決められない（docs/spec.md §39）。 */}
-      <SleepSection
-        presets={presets}
-        title={sleep.title}
-        targetMinutes={sleep.targetMinutes}
-      />
     </SettingsShell>
   );
 }
