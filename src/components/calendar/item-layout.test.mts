@@ -110,10 +110,31 @@ test("stackMarkTops: 下限を超える印は上へ返す", () => {
   assert.equal(tops.get("a"), 980);
 });
 
-test("stackMarkTops: 予定の見出し帯にかかる印は帯の下へ送る（issue #1675）", () => {
+test("stackMarkTops: 帯の上端に近い印は帯の上へ逃がす（issue #1733）", () => {
   const band = eventHeaderBand(100, 150);
   const tops = stackMarkTops([{ key: "a", top: 105 }], undefined, [band]);
+  assert.equal(tops.get("a"), band.top - MARK_ROW_HEIGHT / 2);
+});
+
+test("stackMarkTops: 帯の下端に近い印は帯の下へ送る（issue #1675）", () => {
+  const band = eventHeaderBand(100, 150);
+  const tops = stackMarkTops([{ key: "a", top: band.bottom - 2 }], undefined, [band]);
   assert.equal(tops.get("a"), band.bottom + MARK_ROW_HEIGHT / 2);
+});
+
+test("stackMarkTops: 上が帯・前の印で塞がっていれば下へ送る", () => {
+  const band = eventHeaderBand(100, 150);
+  // 上は先頭の印の行（上端 half）に近く、帯の上へ置くと前の印と重なる。
+  const tops = stackMarkTops(
+    [
+      { key: "a", top: 90 },
+      { key: "b", top: 105 },
+    ],
+    undefined,
+    [band],
+  );
+  assert.equal(tops.get("a"), 90);
+  assert.equal(tops.get("b"), band.bottom + MARK_ROW_HEIGHT / 2);
 });
 
 test("stackMarkTops: 帯から離れた印は動かさない", () => {
