@@ -32,3 +32,14 @@ export function SettingsBreadcrumb({ title }: { title: string }) {
     </nav>
   );
 }
+
+/** 読み込み中の骨組み用。子画面のときだけパンくず行ぶんの高さを確保する。 */
+export function SettingsBreadcrumbSkeleton() {
+  const isChild = useIsSettingsChild();
+  if (!isChild) return null;
+  return (
+    <div className="px-6 pt-4" aria-hidden>
+      <div className="h-5 w-40 animate-pulse rounded-md bg-surface-container-high" />
+    </div>
+  );
+}
