@@ -15,7 +15,7 @@ import type { ActivityPresetItem } from "@/types/activity";
 /**
  * 睡眠の横通し表示の設定（docs/spec.md §39）。
  *
- * 活動記録の設定と同じ画面に置く。睡眠は活動記録の1項目そのもので、
+ * 睡眠の設定ページ（/settings/sleep）に置く。睡眠は活動記録の1項目そのもので、
  * どの項目を睡眠として数えるかは項目の一覧を見ながらでないと決められない。
  */
 export function SleepSection({

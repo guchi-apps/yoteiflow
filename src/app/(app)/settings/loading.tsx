@@ -1,3 +1,4 @@
+import { SettingsBreadcrumbSkeleton } from "@/components/settings/settings-heading";
 import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 import { LoadingRefreshMark } from "@/components/ui/refresh-button";
 
@@ -16,6 +17,8 @@ export default function Loading() {
         <span className="flex-1" />
         <LoadingRefreshMark className="size-8 md:size-8" />
       </header>
+
+      <SettingsBreadcrumbSkeleton />
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">

@@ -71,8 +71,9 @@ export const MARK_ELBOW_WIDTH = 6;
  * 固定しているのとは逆の判断で、あちらは倍率を変えるたびに左右の並び順が入れ替わると
  * 読み直しになるのに対し、印は縦の押し出しが解けるだけで並び順は変わらないため。
  *
- * 基本は下へ送る（先に読んだ位置から印が上がると、時刻の順に読んでいる目とすれ違う）。
- * ただし 24:00 の側へはみ出すぶんは上へ返す。時間グリッドの外は切り落とされるため、
+ * 予定・移動の見出し帯を避けるときは、下だけでなく上も候補にし、本来の位置にいちばん
+ * 近い空きへ置く（issue #1733。下へしか送らないと、上が空いていても予定の本文に載る）。
+ * 印どうしの並び順（時刻順）は保つ。24:00 の側へはみ出すぶんは上へ返す。時間グリッドの外は切り落とされるため、
  * 深夜の印を下へ送り続けると、重なりの代わりにラベルが画面から消える。
  *
  * @param bottom ラベルを置ける下限（px）。省略すると下へ送りっぱなしにする。
@@ -96,12 +97,27 @@ export function stackMarkTops(
   let last = Number.NEGATIVE_INFINITY;
 
   for (const mark of sorted) {
-    last = Math.max(mark.top, last + MARK_ROW_HEIGHT);
-    // 予定の見出し帯にかかるなら、帯の下へ送る（帯は結合済みで、1回の送りで次の帯へ
-    // かかることもあるため、動かなくなるまで繰り返す）。
-    for (let band = hitBand(last); band; band = hitBand(last)) {
-      last = band.bottom + half;
+    // 前の印との間隔（印どうしの並び順）は保つ。ここより上へは行かない。
+    const floor = Math.max(last + MARK_ROW_HEIGHT, half);
+    // 下へ送った位置（従来の置き場所）。帯は結合済みだが、1回の送りで次の帯へかかることも
+    // あるため、動かなくなるまで繰り返す。必ず有効な候補になる。
+    let down = Math.max(mark.top, floor);
+    for (let band = hitBand(down); band; band = hitBand(down)) {
+      down = band.bottom + half;
     }
+    // 本来の位置にいちばん近い、帯にかからない位置へ置く。上も候補にする（issue #1733）。
+    // 帯の上端・下端に接する位置と本来の位置を候補にし、同じ距離なら下を採る。
+    let best = down;
+    const candidates = [
+      mark.top,
+      ...bands.flatMap((band) => [band.top - half, band.bottom + half]),
+    ];
+    for (const candidate of candidates) {
+      if (candidate < floor || hitBand(candidate)) continue;
+      const better = Math.abs(candidate - mark.top) - Math.abs(best - mark.top);
+      if (better < 0 || (better === 0 && candidate > best)) best = candidate;
+    }
+    last = best;
     placed.push(last);
   }
 

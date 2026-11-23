@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
 import { ArrowRight, ArrowUpDown, Eye, EyeOff, Heart, Plus, ShoppingCart } from "lucide-react";
 
+import { TaskPriorityIcon } from "@/components/calendar/task-priority-badges";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
@@ -506,8 +507,6 @@ function ShoppingRow({
 }) {
   return (
     <li className="flex items-start gap-2 border-b border-rule/50 py-1.5 pr-3 pl-2">
-      <PriorityBar priority={item.priority} />
-
       {wishlist ? (
         <Heart className="mt-[3px] size-5 shrink-0 text-primary" aria-label="欲しいもの" />
       ) : (
@@ -522,6 +521,7 @@ function ShoppingRow({
 
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
         <div className="flex min-w-0 items-center gap-1.5">
+          <TaskPriorityIcon priority={item.priority} className="-mr-0.5" />
           {/* min-w-0 が要る。flexの子は既定で min-width:auto のため、付けないと長い名前が
               縮まず、右の予定日が枠の外へ押し出される。 */}
           <span
@@ -583,32 +583,5 @@ function PlannedDateChip({ dateKey, todayKey }: { dateKey: string; todayKey: str
       <span className="sr-only">購入予定日{tone === "past" ? "（過ぎています）" : ""} </span>
       {shoppingDateLabel(dateKey, todayKey)}
     </span>
-  );
-}
-
-/**
- * 行の左端に出す優先度の印。高＝3本・中＝2本・低＝1本の短い横線を縦に積む（issue #741）。
- *
- * 色だけだと「高」と「中」の差が読み取りにくいため、本数でも分ける。幅は6pxに収め、
- * 従来の縦帯（3px）に近い細さを保つ。色は従来のまま（高=error・中=tertiary）で、低だけ
- * 控えめな outline にする。読み上げ用の文字も添える。
- * タスク画面の帯とは形が分かれるが、対象はIssueの範囲どおり買い物リストのみ。
- */
-const PRIORITY_LINES = { 高: 3, 中: 2, 低: 1 } as const;
-
-function PriorityBar({ priority }: { priority: ShoppingItem["priority"] }) {
-  if (!priority) return <span className="w-1.5 shrink-0" aria-hidden />;
-
-  const tone = priority === "高" ? "bg-destructive" : priority === "中" ? "bg-tertiary" : "bg-outline";
-
-  return (
-    <>
-      <span className="mt-[5px] flex w-1.5 shrink-0 flex-col gap-[2px]" aria-hidden>
-        {Array.from({ length: PRIORITY_LINES[priority] }, (_, i) => (
-          <span key={i} className={cn("h-[2px] w-full rounded-full", tone)} />
-        ))}
-      </span>
-      <span className="sr-only">優先度 {priority}</span>
-    </>
   );
 }
