@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Timer,
   UserRound,
+  Moon,
 } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
@@ -198,6 +199,14 @@ export default async function SettingsPage() {
                   ? "項目なし"
                   : `${activityPresetCount}件の項目`
               }
+            />
+          )}
+          {googleAccounts.length > 0 && (
+            <MenuItem
+              href="/settings/sleep"
+              icon={Moon}
+              label="睡眠"
+              value="睡眠の項目と目標時間"
             />
           )}
           {/* 移動の本体はDaySpanのDBにあるため、Google・Notionが未接続でも使える。常に出す。 */}
