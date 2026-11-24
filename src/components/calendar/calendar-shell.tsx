@@ -2297,6 +2297,10 @@ function CalendarBody({
           travelCalendarId={travelCalendarId}
           onOpenTravel={onOpenStandaloneTravel}
           activityCalendarIds={activityCalendars}
+          findLinkedEvent={(eventId) => {
+            const event = data.events.find((item) => item.id === eventId);
+            return event ? { start: event.start, end: event.end, allDay: event.allDay, location: event.location ?? null } : null;
+          }}
         />
       )}
 

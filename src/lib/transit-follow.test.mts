@@ -158,6 +158,25 @@ describe("Google側の変更（取り直しで検知）", () => {
     assert.equal(detectTransitFollow({ travel: { ...legacy, start: at("14:10"), end: at("14:30") }, current: evt("14:00", "15:00"), formatAt }), null);
   });
 
+  it("探したときの予定を保存済みなら、予定の最中に出る旧データの移動でも帯を出さない（issue #1747）", () => {
+    // 予定は15:00終了。14:50発の電車を選んだ（意図は未保存・予定の終了をまたいで出る）
+    const rechecked = travel({
+      start: at("14:50"),
+      end: at("15:20"),
+      searchPurpose: null,
+      searchMarginMinutes: null,
+      searchEvent: { start: at("14:00"), end: at("15:00"), location: "本社" },
+    });
+    assert.equal(detectTransitFollow({ travel: rechecked, current: evt("14:00", "15:00"), formatAt }), null);
+    // 保存していない旧データは従来どおり食い違いとして拾う
+    assert.ok(detectTransitFollow({ travel: { ...rechecked, searchEvent: null }, current: evt("14:00", "15:00"), formatAt }));
+    // 保存後に予定が動けば、前後が分からない移動として出る
+    const moved = detectTransitFollow({ travel: rechecked, current: evt("14:00", "15:30"), formatAt });
+    assert.ok(moved);
+    assert.equal(moved.intent, null);
+    assert.ok(moved.missing.length > 0);
+  });
+
   it("複数の移動はそれぞれ判定する", () => {
     const before = travel();
     const after = travel({ id: "tr2", start: at("15:05"), end: at("15:40"), searchPurpose: "AFTER_EVENT", searchMarginMinutes: 0 });
