@@ -51,7 +51,7 @@ import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, hasHandoffQuery, joinLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
-import { applyGoogleShare, applySharedRoute, takeTransitSession } from "@/lib/transit-search-session";
+import { applyGoogleShare, applySharedRoute, isResearchDraft, takeTransitSession } from "@/lib/transit-search-session";
 import { parseWorkTrainTarget, rememberWorkTrainImport, workTrainImportPath } from "@/lib/work-train-import";
 import { trainFromSharedRoute } from "@/lib/work-sync/train";
 import { retargetYahooWalk } from "@/lib/yahoo-transit-import";
@@ -172,6 +172,16 @@ async function retargetSharedWalk(
   } catch {
     return link;
   }
+}
+
+/** 共有で戻った経路から、サーバーが足した徒歩を引いて電車の発着時刻へ戻す。経路を読めなければ元のまま（issue #1746） */
+function withoutSharedWalk(link: { departAt: string; arriveAt: string; note: string }): {
+  departAt: string;
+  arriveAt: string;
+  note: string;
+} {
+  const stripped = retargetYahooWalk({ ...link, routeDetail: link.note }, { before: 0, after: 0 });
+  return stripped ? { departAt: stripped.departAt, arriveAt: stripped.arriveAt, note: stripped.routeDetail } : link;
 }
 
 export function CalendarShell({
@@ -434,7 +444,10 @@ export function CalendarShell({
         void (async () => {
           // 検索したときの出発地・目的地が勤務場所なら、サーバーが足した共通の徒歩をその場所の値へ足し直す（issue #1471）。
           // 取れなければ（オフライン・勤務場所に当たらない）共通値のまま反映する。
-          const route = await retargetSharedWalk(session.draft.origin, session.draft.destination, link);
+          // 移動メモの再検索から戻った経路は駅〜駅の電車の時刻のまま入れ、サーバーが足した徒歩を引く（issue #1746）。
+          const route = isResearchDraft(session.draft)
+            ? withoutSharedWalk(link)
+            : await retargetSharedWalk(session.draft.origin, session.draft.destination, link);
           setItemDialog({
             initialKind: "travel",
             drafts: {
@@ -2297,6 +2310,10 @@ function CalendarBody({
           travelCalendarId={travelCalendarId}
           onOpenTravel={onOpenStandaloneTravel}
           activityCalendarIds={activityCalendars}
+          findLinkedEvent={(eventId) => {
+            const event = data.events.find((item) => item.id === eventId);
+            return event ? { start: event.start, end: event.end, allDay: event.allDay, location: event.location ?? null } : null;
+          }}
         />
       )}
 

@@ -150,3 +150,14 @@ test("鉄道と確認できる経路では出発地・目的地に「駅」を�
   assert.equal(result.travel.origin, "草津駅");
   assert.equal(result.travel.destination, "高槻駅");
 });
+
+test("再検索の反映では、サーバーが足した徒歩を引いて電車の発着へ戻す（#1746）", () => {
+  const built = buildYahooTravelImport(SAMPLE, "Asia/Tokyo", { before: 20, after: 20 });
+  assert.ok(built.ok);
+  assert.equal(built.travel.departAt, "2026-08-28T11:38:00.000Z");
+  const stripped = retargetYahooWalk(built.travel, { before: 0, after: 0 });
+  assert.ok(stripped);
+  assert.equal(stripped.departAt, "2026-08-28T11:58:00.000Z");
+  assert.equal(stripped.arriveAt, "2026-08-28T12:46:00.000Z");
+  assert.ok(!stripped.routeDetail.includes("電車の発着"));
+});

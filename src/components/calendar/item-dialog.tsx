@@ -10,7 +10,7 @@ import type { WritableCalendar } from "@/types/calendar";
 import { EventForm, type EventDraft } from "./event-form";
 import { ReminderForm, type ReminderDraft } from "./reminder-form";
 import { TaskForm, type TaskDraft } from "./task-form";
-import { TravelForm, type TravelDraft } from "./travel-form";
+import { TravelForm, type LinkedEventLookup, type TravelDraft } from "./travel-form";
 import type { OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -69,6 +69,7 @@ export function ItemDialog({
   travelCalendarId,
   onOpenTravel,
   activityCalendarIds,
+  findLinkedEvent,
 }: {
   initialKind: ItemKind;
   drafts: ItemDrafts;
@@ -90,6 +91,7 @@ export function ItemDialog({
   onOpenTravel?: (range: { start: string; end: string }) => void;
   /** 活動記録の保存先カレンダー。予定の入力で終了の追従を止めるのに使う（issue #1309）。 */
   activityCalendarIds?: ReadonlySet<string>;
+  findLinkedEvent?: LinkedEventLookup;
 }) {
   const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
@@ -175,6 +177,7 @@ export function ItemDialog({
             placeCatalog={placeCatalog}
             timeZone={timeZone}
             onSaved={finish}
+            findLinkedEvent={findLinkedEvent}
           />
         )}
       </DialogContent>

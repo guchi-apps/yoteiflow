@@ -162,6 +162,16 @@ export function originResearchDraft(
   };
 }
 
+/**
+ * 移動メモの「再検索」（出発駅からの更新 #1645・途中駅からの続き #1642）で置いた下書きか（issue #1746）。
+ *
+ * 再検索は駅から探し直す操作で、戻した経路の出発地・目的地も駅名に置き換わる。電車の前後に徒歩
+ * （#1463・#1471）を足すと、選んだ電車と全く違う時刻で登録されるため、呼び出し元は徒歩を足さない。
+ */
+export function isResearchDraft(draft: TransitSearchDraft): boolean {
+  return Boolean(draft.replaceRouteDetail || draft.continueFrom);
+}
+
 /** 共有で戻ってきたIDが一致したときだけ取り出し、取り出したら消す（同じ共有で2回反映しない）。 */
 export function takeTransitSession(id: string, now = Date.now(), kind: TransitSearchKind = "yahoo"): TransitSearchSession | null {
   try {
