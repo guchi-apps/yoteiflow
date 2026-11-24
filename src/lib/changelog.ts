@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.55.4",
+    date: "2026-11-24",
+    changes: [
+      "移動の詳細から通勤経路を登録したとき、他の日にすでにある往路・復路の移動まで新しい経路の時刻に書き換わってしまう問題を直しました。登録した経路は、これから新しく作られる移動にだけ使われます。",
+    ],
+  },
+  {
     version: "4.55.3",
     date: "2026-11-24",
     changes: [
