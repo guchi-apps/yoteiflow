@@ -1,11 +1,10 @@
 "use client";
 
+import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { followEnd } from "@/lib/date-range-picker";
 import { classifyQuickTaskFailure, newQuickTaskClientId } from "@/lib/quick-task-create";
 import { cn } from "@/lib/utils";
@@ -16,6 +15,7 @@ import { DateRangePickerFields } from "./date-range-picker";
 import { DateTimeInput } from "./date-time-input";
 import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-form";
+import { FormRow, ToggleCard } from "./event-form-row";
 import { ItemFormActions } from "./item-form-actions";
 import { MINUTES_PER_DAY } from "./item-layout";
 import { buildOptimisticEvent, type OptimisticEventChange } from "./optimistic-events";
@@ -353,13 +353,15 @@ export function QuickEventSheet({
         {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、min-w-0が無いと
             保存先カレンダーのチップ列の幅がそのままシートの最小幅になり、行の中ではなく
             シートごと横に広がってしまう。 */}
-        <div className="flex min-w-0 flex-col gap-3">
-          <Input
+        <div className="flex min-w-0 flex-col">
+          {/* 予定・タスクの入力画面と同じ、枠も面も持たないタイトル（issue #1743）。 */}
+          <input
             id="quick-event-title"
-            label="タイトル"
+            aria-label="タイトル"
+            placeholder="タイトルを追加"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onClear={() => setTitle("")}
+            className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
 
           {/* 予定とタスクの欄を同じセルに重ね、高い方に合わせる。切り替えるたびにシートの高さが
@@ -369,7 +371,7 @@ export function QuickEventSheet({
           <div className="grid min-w-0">
             <div
               className={cn(
-                "col-start-1 row-start-1 flex min-w-0 flex-col gap-3",
+                "col-start-1 row-start-1 flex min-w-0 flex-col",
                 isTask && "invisible pointer-events-none opacity-0",
               )}
               inert={isTask}
@@ -377,9 +379,10 @@ export function QuickEventSheet({
             >
               {/* 開始・終了のどちらを押しても同じ1枚の「日時を設定」画面が開き、日をまたぐ予定も作れる
                   （issue #1551。旧: 同じ日の中だけ）。 */}
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <FormRow icon={<Clock />}>
                 <DateRangePickerFields
                   idPrefix="quick-event"
+                  flat
                   start={join(date, startTime)}
                   end={join(endDate, endTime)}
                   allDay={false}
@@ -391,17 +394,20 @@ export function QuickEventSheet({
                     setEndTime(nextEnd.slice(11, 16));
                   }}
                 />
-              </div>
+              </FormRow>
 
-              <CalendarChipSelect
-                label="保存先カレンダー"
-                value={calendarId}
-                calendars={calendars}
-                onChange={(next) => {
-                  setCalendarId(next);
-                  setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
-                }}
-              />
+              <FormRow icon={<CalendarDays />} className="items-center">
+                <CalendarChipSelect
+                  flat
+                  label="保存先カレンダー"
+                  value={calendarId}
+                  calendars={calendars}
+                  onChange={(next) => {
+                    setCalendarId(next);
+                    setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
+                  }}
+                />
+              </FormRow>
 
               {pickedTravel && calendarId === travelCalendarId && onOpenTravel && (
                 <TravelEntryHint
@@ -421,32 +427,30 @@ export function QuickEventSheet({
             {taskAvailable && (
               <div
                 className={cn(
-                  "col-start-1 row-start-1 flex min-w-0 flex-col gap-3",
+                  "col-start-1 row-start-1 flex min-w-0 flex-col",
                   !isTask && "invisible pointer-events-none opacity-0",
                 )}
                 inert={!isTask}
                 aria-hidden={!isTask}
               >
-                <div className="flex flex-col gap-1.5">
-                  <Label>入れる日付</Label>
-                  <div className="flex gap-1">
+                <FormRow icon={<CalendarClock />} className="items-center">
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="入れる日付">
                     {(["due", "planned"] as const).map((option) => (
-                      <Button
+                      <ToggleCard
                         key={option}
-                        type="button"
-                        variant={taskTarget === option ? "secondary" : "outline"}
-                        size="sm"
-                        aria-pressed={taskTarget === option}
-                        onClick={() => setTaskTarget(option)}
+                        pressed={taskTarget === option}
+                        onToggle={() => setTaskTarget(option)}
                       >
                         {TASK_TARGET_LABELS[option]}
-                      </Button>
+                      </ToggleCard>
                     ))}
                   </div>
-                </div>
+                </FormRow>
 
                 {/* 時刻なし（ー:ー）にすると日付だけのタスクになる。 */}
+                <FormRow icon={<Clock />}>
                 <DateTimeInput
+                  flat
                   id="quick-task-date"
                   label={`${TASK_TARGET_LABELS[taskTarget]}の日時`}
                   value={taskTime ? join(date, taskTime) : date}
@@ -459,6 +463,7 @@ export function QuickEventSheet({
                     setTaskTime(next.slice(11, 16));
                   }}
                 />
+                </FormRow>
               </div>
             )}
           </div>
