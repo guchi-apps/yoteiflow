@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 
-import { applySharedRoute, isTransitSessionId, originResearchDraft, matchTransitSession, type TransitSearchSession } from "@/lib/transit-search-session";
+import { applySharedRoute, isResearchDraft, isTransitSessionId, originResearchDraft, matchTransitSession, type TransitSearchSession } from "@/lib/transit-search-session";
 import type { TravelItem } from "@/types/calendar";
 
 const session: TransitSearchSession = {
@@ -141,5 +141,22 @@ describe("出発駅からの再検索（issue #1645）", () => {
     const draft = originResearchDraft(legacy, input);
     assert.equal(draft.note, "");
     assert.equal(draft.routeDetail, legacy.note);
+  });
+});
+
+describe("isResearchDraft（issue #1746）", () => {
+  it("出発駅からの再検索・途中駅からの続きは再検索として扱う", () => {
+    assert.equal(isResearchDraft({ ...session.draft, replaceRouteDetail: true }), true);
+    assert.equal(
+      isResearchDraft({
+        ...session.draft,
+        continueFrom: { travelId: "t1", title: "大日→高槻市", destination: "南茨木", arriveAt: "2026-11-24T08:24:00.000Z", routeDetail: null },
+      }),
+      true,
+    );
+  });
+
+  it("移動の入力からの通常の検索は再検索として扱わない（徒歩を足す）", () => {
+    assert.equal(isResearchDraft(session.draft), false);
   });
 });
