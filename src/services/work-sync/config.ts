@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import type { WorkPlaceLinkRow } from "@/lib/work-place-link";
 import type { TrainInput } from "@/lib/work-sync/train";
+import { parseCommuteTitle, pickRowsToFreeze } from "@/lib/work-sync/freeze";
 import { readStoredOverride } from "@/lib/work-sync/override";
 import { MAX_ROUTE_MINUTES, transitMinutes } from "@/lib/work-sync/route-modes";
 import type {
@@ -183,4 +184,29 @@ export async function loadWorkPlaceLinks(userId: string): Promise<WorkPlaceLinkR
     shortLabel2: row.shortLabel2,
     shortLabel1: row.shortLabel1,
   }));
+}
+
+/**
+ * 移動詳細の「通勤経路に登録」の契機で、他の日の既存の往路・復路を据え置く（issue #1753）。
+ * 登録は残し、同じ組の他の日の自動生成の移動だけ手動調整（`MANUAL`）にして同期で更新させない。
+ * 元の移動が勤務由来でなければ何もしない。据え置いた件数を返す。
+ */
+export async function freezeOtherDays(userId: string, travelId: string): Promise<number> {
+  const own = await db.workGenerated.findFirst({
+    where: { userId, travelPlanId: travelId, kind: { in: ["OUTBOUND", "RETURN"] } },
+    select: { snapshot: true, date: true },
+  });
+  const pair = parseCommuteTitle((own?.snapshot as { title?: unknown } | null)?.title);
+  if (!pair || !own) return 0;
+  const rows = await db.workGenerated.findMany({
+    where: { userId, status: "ACTIVE", kind: { in: ["OUTBOUND", "RETURN"] } },
+    select: { id: true, travelPlanId: true, date: true, status: true, snapshot: true },
+  });
+  const ids = pickRowsToFreeze(rows, pair, travelId, own.date);
+  if (ids.length === 0) return 0;
+  const result = await db.workGenerated.updateMany({
+    where: { id: { in: ids }, userId, status: "ACTIVE" },
+    data: { status: "MANUAL" },
+  });
+  return result.count;
 }

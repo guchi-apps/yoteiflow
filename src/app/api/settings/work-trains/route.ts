@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { parseTrainInput } from "@/lib/work-sync/train";
-import { deleteTrain, loadTrains, saveTrain } from "@/services/work-sync/config";
+import { deleteTrain, freezeOtherDays, loadTrains, saveTrain } from "@/services/work-sync/config";
 
 /** よく使う電車（出発地 → 行き先ごとに複数・docs/spec.md §46・issue #1347）。 */
 const MAX_TRAINS = 200;
@@ -39,6 +39,9 @@ export async function PUT(request: Request) {
     }
     await saveTrain(userId, null, parsed.train);
   }
+  // 移動詳細からの登録は、他の日の既存の移動を据え置く（issue #1753）
+  const keep = (raw?.keepOtherDays as { travelId?: unknown } | undefined)?.travelId;
+  if (typeof keep === "string" && keep) await freezeOtherDays(userId, keep);
   return NextResponse.json({ trains: await loadTrains(userId) });
 }
 

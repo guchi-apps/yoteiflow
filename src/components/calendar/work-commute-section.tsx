@@ -64,7 +64,7 @@ export function WorkCommuteSection({
         response = await fetch("/api/settings/work-trains", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(train),
+          body: JSON.stringify({ ...train, keepOtherDays: { travelId: travel.id } }),
         });
       } else {
         response = await fetch("/api/settings/work-routes", {
@@ -75,6 +75,7 @@ export function WorkCommuteSection({
             destination: commute.destination,
             mode: travel.mode,
             minutes,
+            keepOtherDays: { travelId: travel.id },
           }),
         });
       }
@@ -85,8 +86,8 @@ export function WorkCommuteSection({
       setMessage({
         ok: true,
         text: hasRoute
-          ? "よく使う電車へ登録しました（設定 ▸ 勤務）。勤務の入力で選ぶと、この時刻で移動を作ります。"
-          : "既定の移動時間として登録しました。",
+          ? "よく使う電車へ登録しました（設定 ▸ 勤務）。勤務の入力で選ぶと、この時刻で移動を作ります。他の日の既に作った移動は変更していません。"
+          : "既定の移動時間として登録しました。他の日の既に作った移動は変更していません。",
       });
     } catch (error) {
       setMessage({ ok: false, text: error instanceof Error ? error.message : "登録できませんでした。" });
