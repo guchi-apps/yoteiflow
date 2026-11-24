@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { freezeOtherDays } from "@/services/work-sync/config";
 import { MAX_ROUTE_MINUTES, pickDefaultRoute, transitMinutes } from "@/lib/work-sync/route-modes";
 import { isTravelMode } from "@/types/calendar";
 
@@ -24,6 +25,8 @@ type Body = {
   /** 公共交通の徒歩の分（issue #1458）。公共交通でだけ使う。 */
   walkMinutes?: number;
   isDefault?: boolean;
+  /** 移動詳細からの登録。他の日の既存の移動を据え置く（issue #1753） */
+  keepOtherDays?: { travelId?: string };
 };
 
 /**
@@ -102,6 +105,7 @@ export async function PUT(request: Request) {
     });
     return tx.workRouteDefault.findMany({ where: pair });
   });
+  if (body.keepOtherDays?.travelId) await freezeOtherDays(userId, body.keepOtherDays.travelId);
   return NextResponse.json({ routes, route: routes.find((row) => row.mode === mode) ?? null });
 }
 
