@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.55.2",
+    date: "2026-11-24",
+    changes: [
+      "カレンダーの空き枠を押して開く簡易入力の見た目を、予定・タスクの入力画面と同じ、アイコン付きの行で区切る形にそろえました。入力できる項目や操作は今までと変わりません。",
+    ],
+  },
+  {
     version: "4.55.1",
     date: "2026-11-23",
     changes: [
