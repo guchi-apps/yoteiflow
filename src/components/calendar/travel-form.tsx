@@ -111,6 +111,9 @@ export type TravelDraft = {
   continueFrom?: TravelContinueFrom;
 };
 
+/** 取得済みの予定から、紐づく予定の今の状態を引く（再検索・通常の編集で「探したときの状態」を残すため・issue #1747） */
+export type LinkedEventLookup = (eventId: string) => { start: string; end: string; allDay?: boolean; location: string | null } | null;
+
 type AdoptCheck =
   | { kind: "checking" }
   | { kind: "same" }
@@ -137,12 +140,14 @@ export function TravelForm({
   placeCatalog,
   timeZone,
   onSaved,
+  findLinkedEvent,
 }: {
   draft: TravelDraft;
   /** 出発地・目的地の入力候補。Notionの場所DBに登録済みのもの。 */
   placeCatalog: PlaceCatalog;
   timeZone: string;
   onSaved: (touched: TouchedRange[] | null) => void;
+  findLinkedEvent?: LinkedEventLookup;
 }) {
   // 元の移動が消えた・紐づけが外れていたとき、更新をやめて新しい移動として保存する（issue #1332）
   const [asNew, setAsNew] = useState(false);
@@ -804,6 +809,19 @@ export function TravelForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolveUrl]);
 
+  // 保存で「探したときの予定の状態」として残す予定。予定から開いた入力はその予定、再検索・通常の編集は
+  // 紐づく予定を取得済みの予定から引く（引けなければ残さない）。終日は基準の時刻が無いため対象外
+  const searchedEvent = (() => {
+    if (suggestTarget) {
+      return suggestTarget.allDay ? null : { start: suggestTarget.start, end: suggestTarget.end, location: suggestTarget.location };
+    }
+    const id = editing?.linkedEventId;
+    if (!id) return null;
+    const found: { start: string; end: string; allDay?: boolean; location: string | null } | null =
+      adoptLive ?? findLinkedEvent?.(id) ?? null;
+    return found && !found.allDay ? { start: found.start, end: found.end, location: found.location } : null;
+  })();
+
   const save = async () => {
     if (offline) {
       setError(OFFLINE_WRITE_MESSAGE);
@@ -828,13 +846,12 @@ export function TravelForm({
         estimateSource,
         // 予定の前後として探した移動だけ、その意図と余裕分を残す（#1332 の再提案が使う・issue #1331）
         // 探したときの予定の状態も残し、あとで予定が変わったら再提案する（issue #1332）
+        // 意図（purpose）が未保存の旧データでも、確かめた予定の状態は残す。残さないと保存後も
+        // 「予定が変わった移動」の帯が、探し直した移動に対して出続ける（issue #1747）
         ...(suggestTarget && mode === "PUBLIC_TRANSIT" && purpose
-          ? {
-              searchPurpose: purpose,
-              searchMarginMinutes: marginMinutes ?? 0,
-              searchEvent: { start: suggestTarget.start, end: suggestTarget.end, location: suggestTarget.location },
-            }
+          ? { searchPurpose: purpose, searchMarginMinutes: marginMinutes ?? 0 }
           : {}),
+        ...(searchedEvent && mode === "PUBLIC_TRANSIT" ? { searchEvent: searchedEvent } : {}),
         // 戻した経路での更新は、紐づけが変わっていないときだけ（外れていたら409で断られる・issue #1332）
         ...(editing && adoptBase ? { expectLinkedEventId: adoptBase.id } : {}),
         ...(!editing && draft.continueFrom
