@@ -22,19 +22,24 @@ export function parseCommuteTitle(title: unknown): CommutePair | null {
 export type FreezeCandidate = {
   id: string;
   travelPlanId: string | null;
+  /** 勤務日（YYYY-MM-DD）。 */
+  date: string;
   status: "ACTIVE" | "MANUAL";
   snapshot: unknown;
 };
 
-/** 据え置く（手動調整にする）行。登録の元の移動以外で、同じ組の、まだ自動更新される行だけ。 */
+/** 据え置く（手動調整にする）行。登録の元の移動と別の勤務日で、同じ組の、まだ自動更新される行だけ。 */
 export function pickRowsToFreeze(
   rows: FreezeCandidate[],
   pair: CommutePair,
   keepTravelId: string,
+  keepDate: string,
 ): string[] {
   return rows
     .filter((row) => {
       if (row.status !== "ACTIVE" || row.travelPlanId === keepTravelId) return false;
+      // 同じ日の別の移動（時間帯の内訳で同日に複数できる）は他の日ではないので据え置かない。
+      if (row.date === keepDate) return false;
       const snapshot = row.snapshot as { title?: unknown } | null;
       const other = parseCommuteTitle(snapshot?.title);
       return other !== null && other.origin === pair.origin && other.destination === pair.destination;

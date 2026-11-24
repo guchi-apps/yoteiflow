@@ -194,15 +194,15 @@ export async function loadWorkPlaceLinks(userId: string): Promise<WorkPlaceLinkR
 export async function freezeOtherDays(userId: string, travelId: string): Promise<number> {
   const own = await db.workGenerated.findFirst({
     where: { userId, travelPlanId: travelId, kind: { in: ["OUTBOUND", "RETURN"] } },
-    select: { snapshot: true },
+    select: { snapshot: true, date: true },
   });
   const pair = parseCommuteTitle((own?.snapshot as { title?: unknown } | null)?.title);
-  if (!pair) return 0;
+  if (!pair || !own) return 0;
   const rows = await db.workGenerated.findMany({
     where: { userId, status: "ACTIVE", kind: { in: ["OUTBOUND", "RETURN"] } },
-    select: { id: true, travelPlanId: true, status: true, snapshot: true },
+    select: { id: true, travelPlanId: true, date: true, status: true, snapshot: true },
   });
-  const ids = pickRowsToFreeze(rows, pair, travelId);
+  const ids = pickRowsToFreeze(rows, pair, travelId, own.date);
   if (ids.length === 0) return 0;
   const result = await db.workGenerated.updateMany({
     where: { id: { in: ids }, userId, status: "ACTIVE" },

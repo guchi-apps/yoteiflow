@@ -7,6 +7,7 @@ const pair = { origin: "勤務先", destination: "自宅" };
 const row = (over: Partial<FreezeCandidate>): FreezeCandidate => ({
   id: "r",
   travelPlanId: "t",
+  date: "2026-11-02",
   status: "ACTIVE",
   snapshot: { title: "勤務先 → 自宅" },
   ...over,
@@ -26,5 +27,13 @@ test("他の日の同じ組の ACTIVE だけ据え置く", () => {
     row({ id: "reverse", snapshot: { title: "自宅 → 勤務先" } }),
     row({ id: "notitle", snapshot: {} }),
   ];
-  assert.deepEqual(pickRowsToFreeze(rows, pair, "mine"), ["other"]);
+  assert.deepEqual(pickRowsToFreeze(rows, pair, "mine", "2026-11-01"), ["other"]);
+});
+
+test("同日・同組・別travelIdの行は据え置かない", () => {
+  const rows = [
+    row({ id: "sameDay", travelPlanId: "t3", date: "2026-11-01" }),
+    row({ id: "nextDay", travelPlanId: "t4", date: "2026-11-02" }),
+  ];
+  assert.deepEqual(pickRowsToFreeze(rows, pair, "mine", "2026-11-01"), ["nextDay"]);
 });
