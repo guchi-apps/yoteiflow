@@ -26,7 +26,7 @@ export function describeSync(sync: SyncSummary): string | null {
   }
   if (sync.missingTrains && sync.missingTrains > 0) {
     parts.push(
-      "選んだ電車が見つからないため、その移動は所要時間から作りました。勤務の入力で電車を選び直せます。",
+      "選んだ電車が見つからないため、その移動は作り直さず今のまま残しました。勤務の入力で電車を選び直すか、所要時間に切り替えると作り直します。",
     );
   }
   if (sync.errors && sync.errors.length > 0) {

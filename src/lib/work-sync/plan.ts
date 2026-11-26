@@ -132,6 +132,12 @@ export type PlanResult = {
    * 黙って所要時間の逆算に戻すと電車の時刻のつもりで見てしまうため、呼び出し側が知らせる。
    */
   missingTrains: string[];
+  /**
+   * 電車が見つからないため作り直さない区分（issue #1759）。呼び出し側はこの区分の生成物を
+   * 今のまま残す（削除も更新もしない）。電車を消しただけで既存の移動が所要時間の時刻へ
+   * 書き換わったり消えたりしないようにするため。
+   */
+  keepKinds?: ("OUTBOUND" | "RETURN")[];
 };
 
 /** 期間の勤務記録で一度に展開する日数の上限。壊れた期間で大量に作らないため。 */
@@ -277,6 +283,7 @@ export function planWorkItems(
   const items: ExpectedItem[] = [];
   const missingRoutes: MissingRoute[] = [];
   const missingTrains: string[] = [];
+  const keepKinds: ("OUTBOUND" | "RETURN")[] = [];
 
   const trip = record.businessTrip;
   const destination = trip
@@ -322,7 +329,7 @@ export function planWorkItems(
     .filter((day): day is { date: string; window: { start: number; end: number } } =>
       day.window !== null,
     );
-  if (days.length === 0) return { items, missingRoutes, missingTrains };
+  if (days.length === 0) return { items, missingRoutes, missingTrains, keepKinds };
 
   const label = trip ? "出張" : "勤務";
   const title = destination ? `${label}（${destination}）` : label;
@@ -346,7 +353,7 @@ export function planWorkItems(
   // 通勤・出張移動は、在宅でも場所未選択でもないときだけ。
   const commutes = Boolean(destination) && (trip || !settings.remotePlaces.includes(destination!));
   if (!commutes || !destination || (!outboundEnabled && !returnEnabled)) {
-    return { items, missingRoutes, missingTrains };
+    return { items, missingRoutes, missingTrains, keepKinds };
   }
 
   const home = settings.homeOrigin?.trim() || null;
@@ -354,7 +361,7 @@ export function planWorkItems(
   const destinationText = placeLocationText(destination, places);
   if (!home) {
     missingRoutes.push({ origin: null, destination });
-    return { items, missingRoutes, missingTrains };
+    return { items, missingRoutes, missingTrains, keepKinds };
   }
 
   /** 選んだ電車。見つからない・区間が違うときは null にして `missingTrains` へ挙げる。 */
@@ -377,7 +384,10 @@ export function planWorkItems(
     const legMode: TravelMode = chosen ?? route?.mode ?? lookup(home, destination)?.mode ?? "PUBLIC_TRANSIT";
     const train = usesTrain(chosen) ? pickTrain(override?.outbound?.trainId, home, destination) : null;
     const minutes = override?.outbound?.minutes ?? route?.minutes ?? null;
-    if (train) {
+    if (usesTrain(chosen) && override?.outbound?.trainId && !train) {
+      // 選んだ電車が見つからない。所要時間で作り直さず、今の往路を残す（issue #1759）。
+      keepKinds.push("OUTBOUND");
+    } else if (train) {
       const departAt = zonedTime(first.date, train.departMinutes, settings.timeZone);
       items.push({
         kind: "OUTBOUND",
@@ -415,7 +425,9 @@ export function planWorkItems(
     const legMode: TravelMode = chosen ?? route?.mode ?? lookup(destination, home)?.mode ?? "PUBLIC_TRANSIT";
     const train = usesTrain(chosen) ? pickTrain(override?.return?.trainId, destination, home) : null;
     const minutes = override?.return?.minutes ?? route?.minutes ?? null;
-    if (train) {
+    if (usesTrain(chosen) && override?.return?.trainId && !train) {
+      keepKinds.push("RETURN");
+    } else if (train) {
       const departAt = zonedTime(last.date, train.departMinutes, settings.timeZone);
       items.push({
         kind: "RETURN",
@@ -447,7 +459,7 @@ export function planWorkItems(
     }
   }
 
-  return { items, missingRoutes, missingTrains };
+  return { items, missingRoutes, missingTrains, keepKinds };
 }
 
 /** その日の勤務時間帯。日ごとの指定（`days`）があればそれを、無ければ記録全体の時間帯を使う。 */
