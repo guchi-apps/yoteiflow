@@ -9,6 +9,7 @@ import {
   describePlan,
   rebase,
   resolveKey,
+  missingTrainLegs,
   trainMissing,
   trainsFor,
   withDefaultTrains,
@@ -130,11 +131,22 @@ test("電車を選んだ送信内容は所要時間を持たず trainId を持�
   assert.deepEqual(result.payload.outbound, { enabled: true, minutes: null, trainId: "o1" });
 });
 
-test("選んだ電車が見つからないときは保存前に断る", () => {
+test("選んだ電車が見つからなくても保存は止めず、指定を残して要確認に挙げる（issue #1759）", () => {
   const form = { ...defaultForm(trainConfig, ctx("門真", true)), outTrainId: "gone" };
   assert.equal(trainMissing(trainConfig, ctx("門真", true), "out", "gone"), true);
   const result = checkForm(form, trainConfig, ctx("門真", true), { fullDayOff: false });
-  assert.ok(!result.ok && result.message.includes("電車"));
+  assert.ok(result.ok);
+  assert.deepEqual(result.payload.outbound, { enabled: true, minutes: null, trainId: "gone" });
+  assert.deepEqual(missingTrainLegs(form, trainConfig, ctx("門真", true)), ["out"]);
+  const lines = describePlan(form, trainConfig, ctx("門真", true), dates);
+  assert.ok(lines.includes("往路：今の移動のまま（電車が見つからないため）"));
+});
+
+test("反映オフ・公共交通以外の見つからない電車は要確認にしない", () => {
+  const base = defaultForm(trainConfig, ctx("門真", true));
+  assert.deepEqual(missingTrainLegs({ ...base, outTrainId: "gone", outEnabled: false }, trainConfig, ctx("門真", true)), []);
+  assert.deepEqual(missingTrainLegs({ ...base, outTrainId: "gone", outMode: "CAR" }, trainConfig, ctx("門真", true)), []);
+  assert.deepEqual(missingTrainLegs({ ...base, outTrainId: "o1" }, trainConfig, ctx("門真", true)), []);
 });
 
 test("保存した電車は既定の上に重なり、確認文面に電車の時刻が出る", () => {

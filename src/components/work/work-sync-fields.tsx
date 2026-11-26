@@ -18,6 +18,7 @@ import {
   describePlan,
   type DayEdits,
   rebase,
+  missingTrainLegs,
   resolveKey,
   trainMissing,
   trainsFor,
@@ -183,6 +184,10 @@ export function useWorkSyncFields({
 
   const withCommute = config ? commutes(config, context) : false;
   const lines = config && form && !fullDayOff ? describePlan(form, config, context, { startDate, endDate }, daysEnabled ? dayEdits : {}) : [];
+  // 電車が見つからない往路・復路（issue #1759）。保存は止めず、反映の欄を開いて知らせる。
+  const needsAttention =
+    Boolean(config?.enabled && form && !fullDayOff && !segmented) &&
+    missingTrainLegs(form!, config!, context).length > 0;
   const warnings =
     config && form && !fullDayOff && !segmented
       ? trainWarnings(form, config, context, { startDate, endDate }, daysEnabled ? dayEdits : {})
@@ -344,8 +349,9 @@ export function useWorkSyncFields({
                 </p>
               )}
               {missing && (
-                <p className="type-body-small text-error">
-                  選んでいた電車が見つかりません（削除されたか、勤務先が変わりました）。電車を選び直すか、所要時間に切り替えてください。
+                <p role="alert" className="type-body-small rounded-md border border-error px-2 py-1.5 text-error">
+                  {label}の電車が見つかりません（削除・差し替えされたか、勤務先が変わりました）。このまま保存すると、
+                  {label}の移動は今のまま残します。作り直すときは電車を選び直すか、所要時間に切り替えてください。
                 </p>
               )}
             </div>
@@ -492,5 +498,5 @@ export function useWorkSyncFields({
       }
     : null;
 
-  return { node, build, window };
+  return { node, build, window, needsAttention };
 }

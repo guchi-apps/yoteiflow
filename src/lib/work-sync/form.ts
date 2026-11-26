@@ -111,6 +111,22 @@ export function trainsFor(config: SyncConfig, context: SyncContext, leg: Leg): W
     .sort((a, b) => a.departMinutes - b.departMinutes);
 }
 
+/**
+ * 反映オンで電車を選んでいるのに、その電車が候補に無い往路・復路（issue #1759）。
+ * 保存は止めず、この区分の移動は作り直さず今のまま残す。画面はこれで「要確認」を出す。
+ */
+export function missingTrainLegs(form: SyncForm, config: SyncConfig, context: SyncContext): Leg[] {
+  if (!commutes(config, context)) return [];
+  const legs: Leg[] = [];
+  if (form.outEnabled && modeUsesTrain(form.outMode) && trainMissing(config, context, "out", form.outTrainId)) {
+    legs.push("out");
+  }
+  if (form.backEnabled && modeUsesTrain(form.backMode) && trainMissing(config, context, "back", form.backTrainId)) {
+    legs.push("back");
+  }
+  return legs;
+}
+
 /** 保存済みの電車が、いまの勤務先の候補に無い（削除された・勤務先が変わった）か。 */
 export function trainMissing(
   config: SyncConfig,
@@ -329,9 +345,8 @@ export function checkForm(
       if (!enabled) return { enabled: false, minutes: null };
       const modePart = mode ? { mode } : {};
       if (trainId && modeUsesTrain(mode)) {
-        if (trainMissing(config, context, kind, trainId)) {
-          return `${label}で選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。`;
-        }
+        // 電車が見つからなくても保存は止めない（issue #1759）。指定は残し、サーバーはその往路・復路を
+        // 作り直さず今の移動のまま残す。画面は `missingTrainLegs()` で警告する。
         return { enabled: true, minutes: null, trainId, ...modePart };
       }
       const minutes = Number(text);
@@ -427,6 +442,8 @@ export function describePlan(
       lines.push(
         `往路 ${range(outTrain.departMinutes, outTrain.departMinutes + outTrain.durationMinutes)}（${outTrain.label}）${span ? `（${dates.startDate}）` : ""}`,
       );
+    } else if (form.outEnabled && form.outTrainId && modeUsesTrain(form.outMode)) {
+      lines.push("往路：今の移動のまま（電車が見つからないため）");
     } else if (first && form.outEnabled && !form.outTrainId && out > 0) {
       lines.push(`往路 ${range(first.start - out, first.start)}${span ? `（${dates.startDate}）` : ""}`);
     }
@@ -436,6 +453,8 @@ export function describePlan(
       lines.push(
         `復路 ${range(backTrain.departMinutes, backTrain.departMinutes + backTrain.durationMinutes)}（${backTrain.label}）${span ? `（${dates.endDate}）` : ""}`,
       );
+    } else if (form.backEnabled && form.backTrainId && modeUsesTrain(form.backMode)) {
+      lines.push("復路：今の移動のまま（電車が見つからないため）");
     } else if (last && form.backEnabled && !form.backTrainId && back > 0) {
       lines.push(`復路 ${range(last.end, last.end + back)}${span ? `（${dates.endDate}）` : ""}`);
     }
