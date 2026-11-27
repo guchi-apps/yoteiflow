@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.55.5",
+    date: "2026-11-27",
+    changes: [
+      "勤務の入力で選んだ電車が見つからない場合でも、保存できなくなる問題を直しました。この場合、その日の移動は今のまま残ります。また、通勤経路を登録したときに、同じ日の別の移動まで据え置かれてしまう問題も直しました。",
+    ],
+  },
+  {
     version: "4.55.4",
     date: "2026-11-24",
     changes: [
