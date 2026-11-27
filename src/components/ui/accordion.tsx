@@ -17,8 +17,11 @@ export function Accordion({
   flat = false,
   defaultOpen = false,
   action,
+  badge,
   className,
 }: {
+  /** 見出しの後ろに添える印（「要確認」など・issue #1759）。未指定なら何も出さない。 */
+  badge?: ReactNode;
   /** 最初から開いておく（既定は閉じる）。持ち物のように、中身を先に見せたい欄で使う（issue #1567）。 */
   defaultOpen?: boolean;
   /** 見出し行の右端（開閉の矢印の左）に置く操作。見出しのボタンの外に置くため、押しても開閉しない。 */
@@ -54,6 +57,7 @@ export function Accordion({
         >
           <span className="flex min-w-0 items-baseline gap-2">
             {title}
+            {badge}
             {description && (
               <span className="type-body-small truncate font-normal text-on-surface-variant">{description}</span>
             )}

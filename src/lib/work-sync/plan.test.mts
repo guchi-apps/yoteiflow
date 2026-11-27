@@ -582,8 +582,8 @@ test("夜をまたぐ到着は出発 + 所要分で表す", () => {
   assert.equal(hhmm(back.end), "01:00");
 });
 
-test("電車が見つからないときは所要時間で作り、missingTrains に挙げる", () => {
-  const { items, missingTrains } = planWorkItems(
+test("電車が見つからないときは作り直さず今の往路を残し、missingTrains に挙げる（issue #1759）", () => {
+  const { items, missingTrains, missingRoutes, keepKinds } = planWorkItems(
     record({ businessTrip: true, title: "門真", place: null }),
     settings,
     [],
@@ -591,9 +591,10 @@ test("電車が見つからないときは所要時間で作り、missingTrains 
     { override: { outbound: { trainId: "gone" } }, trains },
   );
   assert.deepEqual(missingTrains, ["gone"]);
-  const out = items.find((item) => item.kind === "OUTBOUND")!;
-  // 門真への既定は50分。勤務開始 08:45 から逆算。
-  assert.equal(hhmm(out.start), "07:55");
+  assert.deepEqual(keepKinds, ["OUTBOUND"]);
+  assert.equal(items.some((item) => item.kind === "OUTBOUND"), false);
+  assert.equal(items.some((item) => item.kind === "RETURN"), true);
+  assert.equal(missingRoutes.length, 0);
 });
 
 test("区間が合わない電車（復路の電車を往路に指定）は見つからない扱い", () => {

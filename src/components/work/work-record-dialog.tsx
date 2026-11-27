@@ -720,6 +720,10 @@ export function WorkRecordDialog({
                 出張終了後に登録できます
               </p>
             )}
+            {/* 手続きだけを済ませる別の入口（issue #1759）。シートはチェックだけを保存する。 */}
+            <p className="type-body-small pl-[30px] text-on-surface-variant">
+              手続きだけなら、勤務画面右上の手続きからも済ませられます。
+            </p>
           </div>
         )}
 
@@ -784,7 +788,22 @@ export function WorkRecordDialog({
           </Accordion>
         )}
 
-        {workSync.node && <Accordion title="カレンダーへの反映">{workSync.node}</Accordion>}
+        {workSync.node && (
+          // 選んだ電車が見つからないときは開いたまま出す。閉じたままだと理由に気付けない（issue #1759）。
+          <Accordion
+            title="カレンダーへの反映"
+            forceOpen={workSync.needsAttention}
+            badge={
+              workSync.needsAttention ? (
+                <span className="type-label-small self-center rounded-sm border border-error px-1.5 font-normal text-error">
+                  要確認
+                </span>
+              ) : undefined
+            }
+          >
+            {workSync.node}
+          </Accordion>
+        )}
 
         {capabilities.memo && (
           <Textarea

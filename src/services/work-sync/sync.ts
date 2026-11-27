@@ -200,9 +200,11 @@ async function reconcile(
   timeZone: string,
   result: WorkSyncResult,
   skipTravel = false,
+  keepKinds: readonly string[] = [],
 ): Promise<void> {
   const placesUnavailable = skipTravel;
-  const isSkipped = (kind: string) => skipTravel && kind !== "WORK";
+  // 電車が見つからない往路・復路（issue #1759）は、場所DBを読めなかった回と同じく生成物を触らない。
+  const isSkipped = (kind: string) => (skipTravel && kind !== "WORK") || keepKinds.includes(kind);
   const rows = (await db.workGenerated.findMany({ where: { userId, workRecordId } })).filter(
     (row) => !isSkipped(row.kind),
   );
@@ -484,7 +486,7 @@ export async function syncWorkRecord(
     });
     result.missingRoutes = plan.missingRoutes;
     result.missingTrains = plan.missingTrains.length;
-    await reconcile(userId, record.id, plan.items, settings.timeZone, result, !available);
+    await reconcile(userId, record.id, plan.items, settings.timeZone, result, !available, plan.keepKinds);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] work sync failed:", message);
@@ -526,10 +528,8 @@ export async function validateOverrideForRecord(
     placeDefaults: placeDefaultsLookup(defaultRows),
     trains: trainLookup(trains),
   });
-  // 保存前に選んだ電車が無い（直前に削除された・区間が違う）ときは、黙って逆算に戻さず選び直させる。
-  if (plan.missingTrains.length > 0) {
-    return "選んだ電車が見つかりません。電車を選び直すか、所要時間に切り替えてください。";
-  }
+  // 選んだ電車が見つからない（削除・差し替えされた）ときは保存を止めない。その往路・復路は
+  // 作り直さず今の移動を残す（issue #1759。事後登録のチェックだけの保存が止まっていた）。
   // 時間帯の内訳（issue #1155）では、この画面に所要時間の欄が無く、1日に移動が複数ありうる。
   // どの組の既定の移動時間が無いのかを名指しして、設定で入れるか反映をオフにしてもらう。
   if (record.segments.length > 0 && plan.missingRoutes.length > 0) {
