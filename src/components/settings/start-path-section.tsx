@@ -47,7 +47,7 @@ export function StartPathSection({ startPath }: { startPath: string }) {
           </div>
 
           <Select value={value} onValueChange={change}>
-            <SelectTrigger id="start-path" className="w-32">
+            <SelectTrigger id="start-path" variant="flat" className="max-w-[60%] shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

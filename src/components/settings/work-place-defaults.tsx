@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronDown, Clock, Footprints, Route } from "lucide-react";
 
+import { TimeField } from "@/components/calendar/date-time-picker";
 import { FormRow, ToggleCard } from "@/components/calendar/event-form-row";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -544,28 +545,37 @@ export function PlaceDefaultFields({
               カレンダーへ反映
             </ToggleCard>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`start-${entry.key}`}>開始（空＝共通 {toTime(commonStart)}）</Label>
-              <Input
-                id={`start-${entry.key}`}
-                variant="flat"
-                type="time"
-                value={form.start}
-                onChange={(event) => patch({ start: event.target.value })}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`end-${entry.key}`}>終了（空＝共通 {toTime(commonEnd)}）</Label>
-              <Input
-                id={`end-${entry.key}`}
-                variant="flat"
-                type="time"
-                value={form.end}
-                onChange={(event) => patch({ end: event.target.value })}
-              />
-            </div>
+          {/* 両方空＝共通の勤務時間。空のときは共通の時刻を薄く出し、開くとその時刻から始める（issue #1774）。 */}
+          <div className="flex flex-col">
+            {(
+              [
+                ["start", "開始", commonStart],
+                ["end", "終了", commonEnd],
+              ] as const
+            ).map(([key, label, common]) => (
+              <div
+                key={key}
+                className="flex flex-wrap items-center justify-between gap-x-3 border-b border-rule py-1 last:border-b-0"
+              >
+                <Label htmlFor={`${key}-${entry.key}`}>{label}</Label>
+                <TimeField
+                  id={`${key}-${entry.key}`}
+                  label={`勤務${label}`}
+                  value={form[key]}
+                  defaultTime={toTime(common)}
+                  emptyLabel={`共通 ${toTime(common)}`}
+                  onChange={(next) => patch({ [key]: next })}
+                />
+              </div>
+            ))}
           </div>
+          {(form.start || form.end) && (
+            <div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => patch({ start: "", end: "" })}>
+                共通の勤務時間に戻す
+              </Button>
+            </div>
+          )}
         </div>
       </FormRow>
 

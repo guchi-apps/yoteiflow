@@ -480,6 +480,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <ConnectionStatusBadge tone="not_connected">未接続</ConnectionStatusBadge>
             <div className="flex flex-col gap-2">
               <Input
+                variant="flat"
                 id="notion-token"
                 label="Integration Token"
                 type="password"
@@ -977,6 +978,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                   </p>
 
                   <Input
+                    variant="flat"
                     id="new-database-title"
                     label="データベース名"
                     value={newDatabaseTitle}

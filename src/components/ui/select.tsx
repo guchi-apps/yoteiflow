@@ -41,7 +41,10 @@ function SelectTrigger({
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  /** `flat` は予定フォームのGoogleカレンダー風の行（issue #1563）。 */
+  /**
+   * `flat` は予定フォームのGoogleカレンダー風の行（issue #1563）。label なしで使うと、
+   * 設定の行の右端に置く枠なしの「値＋▾」になる（issue #1774）。
+   */
   variant?: "filled" | "flat"
   size?: "sm" | "default"
   /** 渡すとテキストフィールドと同じ枠になり、見出しを枠の中の上部に置く。 */
@@ -59,7 +62,10 @@ function SelectTrigger({
         // 枠を外側が持つ場合（label付き）、トリガー自身は線も背景も持たない中身だけの行になる。
         label
           ? "flex h-6 w-full min-w-0 items-center justify-between gap-1.5 bg-transparent text-base whitespace-nowrap outline-none select-none disabled:cursor-not-allowed data-placeholder:text-muted-foreground md:text-sm"
-          : // トリガーはOutlinedテキストフィールドと同じ枠（角丸4dp、outlineの縁）に揃える。
+          : variant === "flat"
+            ? // 設定の行の右端に置く値（issue #1774）。枠を持たず「値＋▾」の押せる文字にする。
+              "flex min-h-10 w-fit max-w-full min-w-0 items-center justify-end gap-1 rounded-md bg-transparent px-1.5 text-sm whitespace-nowrap text-foreground transition-colors outline-none select-none hover:bg-on-surface/8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-38 data-placeholder:text-muted-foreground data-[state=open]:text-primary"
+            : // トリガーはOutlinedテキストフィールドと同じ枠（角丸4dp、outlineの縁）に揃える。
             "flex w-fit items-center justify-between gap-1.5 rounded-xs border border-outline bg-transparent py-2 pr-2 pl-3 text-sm whitespace-nowrap transition-colors outline-none select-none hover:border-on-surface focus-visible:border-primary focus-visible:shadow-[inset_0_0_0_1px_var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-38 aria-invalid:border-destructive aria-invalid:shadow-[inset_0_0_0_1px_var(--color-destructive)] data-placeholder:text-muted-foreground data-[size=default]:h-10 data-[size=sm]:h-8",
         "*:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

@@ -88,6 +88,7 @@ function ConfirmField({
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <Input
+          variant="flat"
           className={`h-10 min-w-0 ${inputClassName ?? "flex-1"}`}
           aria-label={ariaLabel}
           aria-invalid={problem ? true : undefined}
@@ -710,6 +711,7 @@ export function WorkPlacesPanel({
                 <Label htmlFor="work-place-new">新しく追加</Label>
                 <div className="flex min-w-0 items-center gap-2">
                   <Input
+                    variant="flat"
                     id="work-place-new"
                     className="h-10 min-w-0 flex-1"
                     placeholder="名前"
@@ -735,6 +737,7 @@ export function WorkPlacesPanel({
 
                 <div className="flex min-w-0 items-center gap-2">
                   <Input
+                    variant="flat"
                     className="h-10 min-w-0 flex-1"
                     aria-label="出張先を追加"
                     placeholder="出張先を追加（例: 門真）"

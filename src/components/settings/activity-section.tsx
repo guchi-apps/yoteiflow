@@ -224,27 +224,28 @@ export function ActivitySection({
 
         {/* 保存先は項目より先に置く。どのカレンダーへ入るかは項目を足す前に決まっている必要がある。 */}
         <div className="flex flex-col gap-2">
-          <Label htmlFor="activity-calendar">記録の保存先</Label>
-
-          <Select
-            value={calendarId ?? DEFAULT_CALENDAR_VALUE}
-            disabled={busy}
-            onValueChange={changeCalendar}
-          >
-            <SelectTrigger id="activity-calendar" size="sm" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DEFAULT_CALENDAR_VALUE}>
-                既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
-              </SelectItem>
-              {calendars.map((calendar) => (
-                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                  {calendar.name}
+          <div className="flex min-h-10 items-center justify-between gap-3">
+            <Label htmlFor="activity-calendar">記録の保存先</Label>
+            <Select
+              value={calendarId ?? DEFAULT_CALENDAR_VALUE}
+              disabled={busy}
+              onValueChange={changeCalendar}
+            >
+              <SelectTrigger id="activity-calendar" variant="flat" className="max-w-[60%] shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_CALENDAR_VALUE}>
+                  既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                {calendars.map((calendar) => (
+                  <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                    {calendar.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <p className="type-body-small text-on-surface-variant">
             すべての項目がこのカレンダーへ保存されます。
@@ -267,6 +268,7 @@ export function ActivitySection({
               {/* 名前は打ち終えて欄から離れた時点で保存する。1文字ごとに送ると、
                   打っている途中の名前が保存されてしまう。 */}
               <Input
+                variant="flat"
                 aria-label={`${preset.name} の名前`}
                 className="h-10 min-w-0 flex-1"
                 defaultValue={preset.name}
@@ -319,6 +321,7 @@ export function ActivitySection({
 
           <div className="flex min-w-0 items-center gap-2">
             <Input
+              variant="flat"
               id="activity-preset-name"
               className="h-10 min-w-0 flex-1"
               placeholder="睡眠・移動・仕事など"
