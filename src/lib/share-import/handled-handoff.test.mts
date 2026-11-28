@@ -9,7 +9,7 @@ import {
   parseHandled,
 } from "@/lib/share-import/handled-handoff";
 
-test("引き継ぎのクエリだけで、並び順によらず同じキーになる", () => {
+test("同じ操作はクエリの並び順や他の値によらず同じキーになる", () => {
   const a = handoffKey("?newTravel=1&link=1&session=abc&date=2026-11-28");
   const b = handoffKey("?session=abc&view=day3&link=1&newTravel=1");
   assert.ok(a);
@@ -30,6 +30,11 @@ test("同じ内容を共有し直す（op が違う）と別の操作、同じUR
   const list = addHandled([], handoffKey(first)!, 1);
   assert.ok(isHandled(list, handoffKey(first)!));
   assert.ok(!isHandled(list, handoffKey("?newEvent=place&title=Tower&op=2")!));
+});
+
+test("キーに引き継ぎの内容を含めない（issue #1784）", () => {
+  assert.equal(handoffKey("?newEvent=place&title=Tower&address=%E5%A4%A7%E9%98%AA&op=1"), "op=1");
+  assert.equal(handoffKey("?link=1&note=memo&session=abc"), "session=abc");
 });
 
 test("op も session も無い旧い共有拡張の引き継ぎは覚えない（issue #1784）", () => {

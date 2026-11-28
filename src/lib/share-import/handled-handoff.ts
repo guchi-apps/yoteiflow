@@ -14,8 +14,6 @@
  * 判定はWeb側のこの記録だけで行う。ネイティブ側でクエリを外すと、画面が処理する前の再読み込みで
  * 未処理の共有を失うため（計画レビュー）。
  */
-import { HANDOFF_QUERY_KEYS } from "@/lib/share-import/handoff";
-
 export const HANDLED_HANDOFF_STORAGE_KEY = "yoteiflow:handled-handoffs";
 /** 覚えておく期間 */
 export const HANDLED_HANDOFF_TTL_MS = 24 * 60 * 60_000;
@@ -24,17 +22,15 @@ export const HANDLED_HANDOFF_MAX = 20;
 export type HandledHandoff = { key: string; at: number };
 
 /**
- * 引き継ぎのクエリだけを並べ替えて1つの文字列にする。
- * 引き継ぎではない、または共有の操作を見分ける値（`op`・`session`）が無いときは null（覚えない）。
+ * 共有の操作を表すキー。`op`（共有拡張が操作ごとに付ける）、無ければ旧い拡張の `session`。
+ * どちらも無ければ null（覚えない）。出発地・住所・経路メモなどの内容は端末に残さないため、キーに含めない。
  */
 export function handoffKey(search: string): string | null {
   const params = new URLSearchParams(search);
-  if (!params.get("op") && !params.get("session")) return null;
-  const pairs: string[] = [];
-  for (const key of HANDOFF_QUERY_KEYS) {
-    for (const value of params.getAll(key)) pairs.push(`${key}=${value}`);
-  }
-  return pairs.sort().join("&");
+  const op = params.get("op");
+  if (op) return `op=${op}`;
+  const session = params.get("session");
+  return session ? `session=${session}` : null;
 }
 
 /** 保存値を読み、期限切れ・壊れた項目を落とす */
