@@ -142,6 +142,13 @@ describe("出発駅からの再検索（issue #1645）", () => {
     assert.equal(draft.note, "");
     assert.equal(draft.routeDetail, legacy.note);
   });
+
+  it("直通（2駅）の旧データも、メモを空にして経路の詳細へ移す（issue #1763）", () => {
+    const legacy = { ...base, note: "■梅田\n｜ 13:00発\n｜ 13:10着\n■本社", routeDetail: null } as unknown as TravelItem;
+    const draft = originResearchDraft(legacy, input);
+    assert.equal(draft.note, "");
+    assert.equal(draft.routeDetail, legacy.note);
+  });
 });
 
 describe("isResearchDraft（issue #1746）", () => {

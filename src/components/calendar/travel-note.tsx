@@ -125,8 +125,8 @@ export function TravelNote({
   );
 }
 
-/** 再検索の確認シート。出発時刻は既定でその駅の発車時刻で、遅れたときは直せる。 */
-function ResearchSheet({
+/** 再検索の確認シート。出発時刻は既定でその駅の発車時刻で、遅れたときは直せる。経路カードからも開く（issue #1763）。 */
+export function ResearchSheet({
   stop,
   startIso,
   timeZone,

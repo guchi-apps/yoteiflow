@@ -34,10 +34,12 @@ import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TravelNote } from "./travel-note";
+import { TravelRouteCard } from "./travel-route-card";
 import { WorkCommuteSection } from "./work-commute-section";
 import { TravelLinkFlow } from "./travel-link-flow";
 import { CollapsibleNote } from "@/components/ui/collapsible-note";
-import { readYahooRouteEndpoints, readYahooRouteStops } from "@/lib/yahoo-transit-route";
+import { parseYahooRouteView } from "@/lib/yahoo-route-view";
+import { isYahooRouteText, readYahooRouteEndpoints, readYahooRouteStops } from "@/lib/yahoo-transit-route";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
@@ -179,9 +181,11 @@ export function TravelDetailDialog({
   }
 
   // 経路の詳細は専用項目から。旧データはメモに途中駅つきの経路が入っているため、そのときはメモを経路の詳細として扱う（issue #1634）
-  const legacyRouteInNote = !travel.routeDetail && readYahooRouteStops(travel.note ?? "").length > 0;
+  const legacyRouteInNote = !travel.routeDetail && isYahooRouteText(travel.note ?? "");
   const routeDetailText = travel.routeDetail || (legacyRouteInNote ? travel.note : null);
   const noteText = legacyRouteInNote ? null : travel.note;
+  // 読み解ける経路はカードで出す。読めない形は従来どおり文字のまま（issue #1763）
+  const routeView = routeDetailText ? parseYahooRouteView(routeDetailText) : null;
   const stations = readYahooRouteEndpoints(travel.routeDetail || travel.note || "");
   const routeStations = stations.origin && stations.destination ? { origin: stations.origin, destination: stations.destination } : null;
 
@@ -255,7 +259,7 @@ export function TravelDetailDialog({
 
           {/* 経路の駅（issue #1674）。出発地・目的地は勤務先名で保存されるため、実際に乗り降りする駅を示す。
               経路の詳細を優先し、無ければメモから1回だけ読む（旧データはメモに経路が入っている） */}
-          {routeStations && (
+          {!routeView && routeStations && (
             <DetailRow icon={<Route className="size-4" />}>
               <span>
                 経路: {routeStations.origin} → {routeStations.destination}
@@ -280,8 +284,20 @@ export function TravelDetailDialog({
           )}
 
           {/* 経路の詳細（Yahoo!乗換案内の取り込み）はメモと別の欄。旧データはメモに入っているためそちらから読む。
-              途中駅が読める経路は「ここから再検索」の導線を保つため既定で開く（issue #1581・#1515・#1634） */}
-          {routeDetailText && (
+              読み解けるものは経路カード、読めないものは文字のまま出す（issue #1634・#1763） */}
+          {routeDetailText && routeView && (
+            <TravelRouteCard
+              view={routeView}
+              text={routeDetailText}
+              startIso={travel.start}
+              timeZone={timeZone}
+              destination={travel.destination}
+              places={places}
+              readOnly={readOnly}
+              travel={travel}
+            />
+          )}
+          {routeDetailText && !routeView && (
             <CollapsibleNote defaultOpen={readYahooRouteStops(routeDetailText).length > 0}>
               <TravelNote
                 note={routeDetailText}
