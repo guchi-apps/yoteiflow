@@ -13,7 +13,7 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { fiscalYearLabel, normalizeStartMonth } from "@/lib/annual-leave";
-import { pad2 } from "@/lib/date-time-picker";
+import { joinTime } from "@/lib/date-time-picker";
 import { cn } from "@/lib/utils";
 import { DEFAULT_WORK_MINUTES_PER_DAY } from "@/types/work";
 
@@ -185,7 +185,8 @@ export function AnnualLeaveGrantDialog({
             {workTimeOpen && (
               <TimeWheels
                 units
-                time={`${pad2(Math.min(23, Number(workHours) || 0))}:${pad2(Math.min(59, Number(workMinutes) || 0))}`}
+                maxHour={24}
+                time={joinTime(Number(workHours) || 0, Number(workMinutes) || 0)}
                 onChange={(next) => {
                   setWorkHours(String(Number(next.slice(0, 2))));
                   setWorkMinutes(String(Number(next.slice(3, 5))));

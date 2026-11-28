@@ -506,12 +506,15 @@ export function TimeWheels({
   onChange,
   rows = VISIBLE_ROWS,
   units = false,
+  maxHour = 23,
 }: {
   time: string;
   onChange: (time: string) => void;
   rows?: number;
   /** 時刻ではなく「期間」を選ぶホイール用。コロンの代わりに各ホイールの右へ「時間」「分」を出す（issue #1580）。 */
   units?: boolean;
+  /** 「時」の上限。24 を渡すと `24:00` まで選べ、24のときは分を00だけにする（期間の指定用・issue #1783）。 */
+  maxHour?: 23 | 24;
 }) {
   const { hour, minute } = splitTime(time);
   const pad = (rows - 1) / 2;
@@ -521,9 +524,9 @@ export function TimeWheels({
         className="pointer-events-none absolute inset-x-2 rounded-lg bg-primary-container"
         style={{ top: ROW_HEIGHT * pad, height: ROW_HEIGHT }}
       />
-      <Wheel units={units} label="時" size={24} pad={pad} value={hour} onChange={(next) => onChange(joinTime(next, minute))} />
+      <Wheel units={units} label="時" size={maxHour + 1} pad={pad} value={hour} onChange={(next) => onChange(joinTime(next, next === 24 ? 0 : minute))} />
       {units ? <span className="relative mr-3 text-sm font-bold">時間</span> : <span className="relative text-xl font-bold">:</span>}
-      <Wheel units={units} label="分" size={60} pad={pad} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
+      <Wheel units={units} label="分" size={hour === 24 ? 1 : 60} pad={pad} value={minute} onChange={(next) => onChange(joinTime(hour, next))} />
       {units && <span className="relative text-sm font-bold">分</span>}
     </div>
   );
