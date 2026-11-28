@@ -6,27 +6,31 @@
  * 届かない。覚えておかないと、使い切った下書き（`session`）をもう一度探して
  * 「検索したときの入力が見つかりませんでした」を出したり、同じ入力画面を開き直したりする。
  *
+ * 覚えるのは内容ではなく共有の操作（issue #1784）。共有拡張は操作ごとに一意の `op` を付けるため、
+ * 同じ場所・経路を共有し直しても別の操作として扱い、同じURLの読み直しだけを捨てる。
+ * `op` を付けない配布済みの共有拡張からの引き継ぎは、検索ごとに一意の `session` があるものだけを覚える。
+ * どちらも無いものは操作を見分けられないため覚えない（利用者が始めた新しい共有を捨てない）。
+ *
  * 判定はWeb側のこの記録だけで行う。ネイティブ側でクエリを外すと、画面が処理する前の再読み込みで
  * 未処理の共有を失うため（計画レビュー）。
  */
-import { HANDOFF_QUERY_KEYS } from "@/lib/share-import/handoff";
-
 export const HANDLED_HANDOFF_STORAGE_KEY = "yoteiflow:handled-handoffs";
-/** 覚えておく期間。同じ内容をこの間に共有し直すケースは稀で、`session` 付きは毎回別のキーになる */
+/** 覚えておく期間 */
 export const HANDLED_HANDOFF_TTL_MS = 24 * 60 * 60_000;
 export const HANDLED_HANDOFF_MAX = 20;
 
 export type HandledHandoff = { key: string; at: number };
 
-/** 引き継ぎのクエリだけを並べ替えて1つの文字列にする。無ければ null（引き継ぎではない） */
+/**
+ * 共有の操作を表すキー。`op`（共有拡張が操作ごとに付ける）、無ければ旧い拡張の `session`。
+ * どちらも無ければ null（覚えない）。出発地・住所・経路メモなどの内容は端末に残さないため、キーに含めない。
+ */
 export function handoffKey(search: string): string | null {
   const params = new URLSearchParams(search);
-  const pairs: string[] = [];
-  for (const key of HANDOFF_QUERY_KEYS) {
-    for (const value of params.getAll(key)) pairs.push(`${key}=${value}`);
-  }
-  if (pairs.length === 0) return null;
-  return pairs.sort().join("&");
+  const op = params.get("op");
+  if (op) return `op=${op}`;
+  const session = params.get("session");
+  return session ? `session=${session}` : null;
 }
 
 /** 保存値を読み、期限切れ・壊れた項目を落とす */

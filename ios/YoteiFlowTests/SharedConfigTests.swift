@@ -31,6 +31,12 @@ final class SharedConfigTests: XCTestCase {
         XCTAssertFalse(path!.contains("evil"))
     }
 
+    func testHandoffKeepsOperationId() {
+        // 共有の操作ごとの識別子（issue #1784）は本体のURLまで残る
+        let url = SharedConfig.handoffURL(query: ["title": "会議", "op": "1A2B"])
+        XCTAssertTrue(SharedConfig.path(fromDeepLink: url)!.contains("op=1A2B"))
+    }
+
     func testHandoffTruncatesLongValuesButNotNote() {
         let long = String(repeating: "a", count: 3_000)
         let url = SharedConfig.handoffURL(query: ["title": long, "note": long])

@@ -184,6 +184,8 @@ final class ShareViewController: UIViewController {
             query["lng"] = item.coordinates.map { String($0.lng) }
             query["url"] = item.sourceUrl
         }
+        // 共有の操作ごとの識別子（issue #1784）。本体は同じURLの読み直しを捨て、共有し直しは受ける
+        query["op"] = UUID().uuidString
         let url = SharedConfig.handoffURL(query: query.compactMapValues { $0 })
 
         openHostApp(url) { [weak self] opened in
