@@ -272,6 +272,7 @@ export function TimeField({
   disabled = false,
   onClose,
   emptyLabel = NO_TIME_LABEL,
+  fillOnOpen = true,
   className,
 }: {
   id?: string;
@@ -290,6 +291,11 @@ export function TimeField({
   onClose?: (value: string) => void;
   /** 未入力のときに出す文字。 */
   emptyLabel?: string;
+  /**
+   * 未入力で開いたときに `defaultTime` を値として入れるか。false なら開いただけでは値を変えず、
+   * ホイールを回したときに初めて `onChange` する（空に意味がある欄＝勤務先の「共通の勤務時間」用・issue #1785）。
+   */
+  fillOnOpen?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -310,7 +316,7 @@ export function TimeField({
             close();
             return;
           }
-          if (!value) onChange(defaultTime);
+          if (!value && fillOnOpen) onChange(defaultTime);
           setOpen(true);
         }}
         className={cn(
