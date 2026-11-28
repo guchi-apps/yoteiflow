@@ -545,7 +545,7 @@ export function PlaceDefaultFields({
               カレンダーへ反映
             </ToggleCard>
           </div>
-          {/* 両方空＝共通の勤務時間。空のときは共通の時刻を薄く出し、開くとその時刻から始める（issue #1774）。 */}
+          {/* 両方空＝共通の勤務時間。空のときは共通の時刻を薄く出し、開くとその時刻から始める（issue #1774）。回すまで値は入れない（issue #1785）。 */}
           <div className="flex flex-col">
             {(
               [
@@ -564,7 +564,14 @@ export function PlaceDefaultFields({
                   value={form[key]}
                   defaultTime={toTime(common)}
                   emptyLabel={`共通 ${toTime(common)}`}
-                  onChange={(next) => patch({ [key]: next })}
+                  // 開いただけでは値を入れない。片側を回したら、空のもう片側は共通の時刻で埋め、
+                  // 保存が「両方入れるか両方空に」で止まらないようにする（issue #1785）
+                  fillOnOpen={false}
+                  onChange={(next) => {
+                    const other = key === "start" ? "end" : "start";
+                    const otherCommon = key === "start" ? commonEnd : commonStart;
+                    patch({ [key]: next, ...(form[other] ? {} : { [other]: toTime(otherCommon) }) });
+                  }}
                 />
               </div>
             ))}
