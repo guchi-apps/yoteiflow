@@ -144,6 +144,99 @@ export function parseYahooRouteView(text: string): YahooRouteView | null {
   return view;
 }
 
+/** 経路カードの1段。ふつうは駅1つ、徒歩を挟む乗換はまとめて1段。 */
+export type YahooRouteRow = {
+  /** まとめた段の先頭（到着する側）の駅。ふつうの段はその駅。 */
+  station: YahooRouteStationView;
+  /** この段の下に描く区間。到着駅の段は null。 */
+  leg: YahooRouteLegView | null;
+  /** 区間の線の色分けに使う、`legs` 内の位置。 */
+  legIndex: number;
+  /** 徒歩を挟む乗換をまとめた段だけ持つ。 */
+  transfer: YahooRouteTransfer | null;
+};
+
+export type YahooRouteTransfer = {
+  /** 乗り換えの駅名。前後で違えば順に並ぶ。 */
+  names: string[];
+  arriveTime: string;
+  departTime: string;
+  /** 到着から次の電車の発車までの分数。 */
+  minutes: number;
+  /** 内訳。徒歩の分数がどれか読めなければ、どちらも null。 */
+  walkMinutes: number | null;
+  waitMinutes: number | null;
+  /** まとめた徒歩の区間にあった番線・読み取らない行。 */
+  walkLines: string[];
+  /**
+   * 「再検索」を置く駅の行番号。駅名が同じなら降りた側、違えば次の電車に乗る側
+   * （乗り換え先の発車時刻を調べ直すことが多いため・issue #1769）。
+   */
+  restartLineIndex: number;
+};
+
+/**
+ * 「到着 → 徒歩 → 発車」と3段に分かれる乗換を1段にまとめる（issue #1769）。
+ *
+ * まとめるのは前後が徒歩でない区間で、降りた時刻と次の発車時刻が両方読めるときだけ。
+ * 出発地からの徒歩・到着地までの徒歩、`[乗換不要]` などの注記がある駅はそのまま残す。
+ */
+export function yahooRouteRows(view: YahooRouteView): YahooRouteRow[] {
+  const rows: YahooRouteRow[] = [];
+  let index = 0;
+  while (index < view.stations.length) {
+    const merged = readWalkTransfer(view, index);
+    const last = merged?.last ?? index;
+    rows.push({
+      station: view.stations[index],
+      leg: view.legs[last] ?? null,
+      legIndex: last,
+      transfer: merged?.transfer ?? null,
+    });
+    index = last + 1;
+  }
+  return rows;
+}
+
+/** `index` の駅で降りて歩き、`last` の駅から次の区間に乗る形なら、そのまとまり。 */
+function readWalkTransfer(
+  view: YahooRouteView,
+  index: number,
+): { last: number; transfer: YahooRouteTransfer } | null {
+  if (index === 0 || view.legs[index - 1].walk) return null;
+  let last = index;
+  while (view.legs[last]?.walk) last += 1;
+  if (last === index || last >= view.legs.length) return null;
+
+  const stations = view.stations.slice(index, last + 1);
+  const walks = view.legs.slice(index, last);
+  const { arriveTime } = stations[0];
+  const { departTime } = stations[stations.length - 1];
+  if (!arriveTime || !departTime || stations.some((station) => station.tag !== null)) return null;
+
+  const minutes = minutesBetween(arriveTime, departTime);
+  const walkMinutes = walks.reduce<number | null>(
+    (sum, leg) => (sum === null || leg.minutes === null ? null : sum + leg.minutes),
+    0,
+  );
+  const readable = walkMinutes !== null && walkMinutes <= minutes;
+  const names = stations.map((station) => station.name).filter((name, i, all) => name !== all[i - 1]);
+
+  return {
+    last,
+    transfer: {
+      names,
+      arriveTime,
+      departTime,
+      minutes,
+      walkMinutes: readable ? walkMinutes : null,
+      waitMinutes: readable ? minutes - walkMinutes : null,
+      walkLines: walks.flatMap((leg) => [...leg.platforms, ...leg.extras]),
+      restartLineIndex: stations[names.length > 1 ? stations.length - 1 : 0].lineIndex,
+    },
+  };
+}
+
 /** 先頭の概要の1行。読み取らなかった行は `notes` に残す。 */
 function readHeader(line: string, view: YahooRouteView): void {
   if (line === "" || SEPARATOR.test(line)) return;
