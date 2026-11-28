@@ -12,7 +12,7 @@
  * 別の日の共有を黙ってこの下書きへの反映に化けさせない。保持するのは直近の1件だけ。
  */
 
-import { readYahooRouteStops } from "@/lib/yahoo-transit-route";
+import { isYahooRouteText } from "@/lib/yahoo-transit-route";
 import type { WorkTrainTarget } from "@/lib/work-train-import";
 import type { EventNotificationOverride, TravelContinueFrom, TravelItem, TravelMode, TravelSearchPurpose } from "@/types/calendar";
 
@@ -143,7 +143,7 @@ export function originResearchDraft(
   travel: TravelItem,
   input: { departAt: string; arriveAt: string },
 ): TransitSearchDraft {
-  const legacyRouteInNote = !travel.routeDetail && readYahooRouteStops(travel.note ?? "").length > 0;
+  const legacyRouteInNote = !travel.routeDetail && isYahooRouteText(travel.note ?? "");
   return {
     travel,
     origin: travel.origin,
