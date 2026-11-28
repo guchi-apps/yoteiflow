@@ -27,6 +27,7 @@ import {
   mergeFailedItems,
   mergeStaleItems,
 } from "./range-data-merge";
+import { useRefreshTick } from "./use-refresh-tick";
 
 /**
  * 1ヶ月ぶんの保持データ。
@@ -542,6 +543,9 @@ export function useCalendarChunks({
     }
   }, [utils, scheduleUncertainRetry]);
 
+  // 開いたまま・裏から戻ったときも古くなった月を拾えるよう、判定をやり直すきっかけ（issue #1766）。
+  const refreshTick = useRefreshTick(enabled);
+
   // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
   // 「足りない月なし」で止まる。種（dataPromise）の解決を待つのは、まだ判定していない
   // うちに同じ月を二重に取りにいかないため。
@@ -560,7 +564,7 @@ export function useCalendarChunks({
 
     if (needed.length === 0) return;
     void fetchMonths(needed);
-  }, [enabled, seeded, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
+  }, [enabled, seeded, windowMonths, chunks, autoRefreshSeconds, fetchMonths, refreshTick]);
 
   // 窓のぶんを1つに束ねる。月をまたぐ予定は複数の月に入っているため、ここで重複を落とす。
   const { events, tasks, reminders, travels, workRecords } = useMemo(() => {

@@ -30,6 +30,7 @@ import {
   withWorkRecords,
   type TouchedRange,
 } from "./use-calendar-chunks";
+import { useRefreshTick } from "./use-refresh-tick";
 
 /** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
 const MIN_REFRESH_SECONDS = 30;
@@ -336,6 +337,9 @@ export function useCalendarRangeData({
     }
   }, []);
 
+  // 開いたまま・裏から戻ったときも古くなった期間を拾えるよう、判定をやり直すきっかけ（issue #1766）。
+  const refreshTick = useRefreshTick(enabled);
+
   // 表示中の期間が変わった・古くなったら取りにいく。判定（inFlight・fetchedRef）は
   // どちらも ref のため、この effect 自体は React state を読んで setState してはいない
   // （fetchRange の中で setState するのは、あくまで fetch の応答が届いたときだけ）。
@@ -350,7 +354,7 @@ export function useCalendarRangeData({
 
     const timer = setTimeout(() => void fetchRange(view, anchorKey), FETCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [enabled, seedSettled, key, view, anchorKey, autoRefreshSeconds, fetchRange, invalidateNonce]);
+  }, [enabled, seedSettled, key, view, anchorKey, autoRefreshSeconds, fetchRange, invalidateNonce, refreshTick]);
 
   /**
    * いま表示中の期間を取り直す。取得が終わるまでは、それまで持っていた内容を表示したままにする
