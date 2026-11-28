@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isYahooRouteText,
   parseYahooTransitRoute,
   readYahooRouteEndpoints,
   readYahooRouteRestartPoints,
@@ -346,4 +347,18 @@ test("readYahooRouteEndpoints: 印が2つ未満・住所の端は null（issue #
   assert.deepEqual(readYahooRouteEndpoints("メモだけ"), { origin: null, destination: null });
   const door = "■現在地\n↓ 徒歩\n■大阪府門真市御堂町1-1";
   assert.deepEqual(readYahooRouteEndpoints(door), { origin: null, destination: null });
+});
+
+test("「｜ 発／着」の形でも再検索の駅の時刻が読める（issue #1763）", () => {
+  const text = "■高槻市\n｜ 06:32発\n↓ ＪＲ京都線\n｜ 06:49着\n▼大日\n｜ 06:55発\n↓ 大阪モノレール\n｜ 07:00着\n■門真市";
+  assert.deepEqual(
+    readYahooRouteRestartPoints(text).map((s) => [s.station, s.departTime, s.arriveTime]),
+    [["高槻市", "06:32", null], ["大日", "06:55", "06:49"]],
+  );
+});
+
+test("isYahooRouteText: 乗換のある経路と直通を経路とみなし、手書きの印だけは違う（issue #1763）", () => {
+  assert.equal(isYahooRouteText(SAMPLE), true);
+  assert.equal(isYahooRouteText("■梅田\n↓ 13:00〜13:10\n■本社"), true);
+  assert.equal(isYahooRouteText("■買うもの\n牛乳\n■やること"), false);
 });

@@ -321,6 +321,8 @@ export type YahooRouteStop = {
 };
 
 const SEGMENT_TIME = /^↓?\s*(\d{1,2}):(\d{2})\s*[〜~～](?:\s*(\d{1,2}):(\d{2}))?/;
+/** 発車と到着が別の行になる形（`｜ 06:32発`・`｜ 06:49着`・issue #1763）。 */
+const BAR_TIME = /^[｜|]\s*(\d{1,2}):(\d{2})\s*(発|着)$/;
 
 /**
  * 経路のメモから途中駅（issue #1515）。先頭の印が出発、末尾の印が到着で、その間の `■`／`▼` が途中駅。
@@ -347,6 +349,15 @@ export function readYahooRouteRestartPoints(text: string): YahooRouteStop[] {
   return stops;
 }
 
+/**
+ * 旧データのメモが、経路の全文そのものか（issue #1763）。乗換のある経路（印が3つ以上）に加え、
+ * 発車時刻の行がある直通（2駅）も含む。詳細画面と再検索の下書きが同じ判定を使う。直通だけ別扱いにすると、
+ * 再検索で保存したあとに旧い経路がメモに残り、経路の詳細と二重になる。
+ */
+export function isYahooRouteText(text: string): boolean {
+  return readYahooRouteStops(text).length > 0 || readYahooRouteRestartPoints(text).length > 0;
+}
+
 function readStopsFrom(text: string, minMarks: number, skip: number): YahooRouteStop[] {
   const lines = text.split(/\r?\n/);
   const end = lines.findIndex((line) => line.includes("[Yahoo!乗換案内]"));
@@ -369,6 +380,12 @@ function readStopsFrom(text: string, minMarks: number, skip: number): YahooRoute
     let departTime: string | null = null;
     let arrive: { hour: string; minute: string } | null = null;
     for (const line of body.slice(mark + 1, next)) {
+      const bar = BAR_TIME.exec(line.trim());
+      if (bar) {
+        if (bar[3] === "発") departTime = toTime(bar[1], bar[2]);
+        else arrive = { hour: bar[1], minute: bar[2] };
+        continue;
+      }
       const matched = SEGMENT_TIME.exec(line.trim());
       if (matched) {
         departTime = toTime(matched[1], matched[2]);
