@@ -29,7 +29,10 @@ function Input({
   label?: string
   /** ラベルの右に小さく添える補足（住所など）。ラベルと同じ行で、幅が足りなければ末尾から切れる。 */
   labelAside?: string
-  /** M3のテキストフィールドは Filled と Outlined の2種類。ラベル付きの既定はFilled。 */
+  /**
+   * M3のテキストフィールドは Filled と Outlined の2種類。ラベル付きの既定はFilled。
+   * `flat` は予定フォームと同じ下線だけの欄（issue #1563）で、ラベルなしでも下線だけになる（issue #1774）。
+   */
   variant?: "filled" | "outlined" | "flat"
   /**
    * 渡すと、文字が入っている間だけ右端に ✕ を出す（issue #446）。
@@ -60,7 +63,12 @@ function Input({
         label ? cn(fieldControl, "h-6", variant === "flat" && "text-sm") : undefined,
         // 外観を落とすと iOS でも幅の指定どおりに描画され、ダイアログからはみ出さなくなる。
         type && NATIVE_SIZED_TYPES.has(type) && "appearance-none [-webkit-appearance:none]",
+        // ラベルなしの flat は下線だけの欄（issue #1774）。設定の改名・追加の欄など、見出しを横に置く場所で使う。
         !label &&
+          variant === "flat" &&
+          "h-10 w-full min-w-0 rounded-none border-0 border-b border-rule bg-transparent px-0 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground hover:border-on-surface-variant focus-visible:border-primary focus-visible:shadow-[inset_0_-1px_0_var(--color-primary)] disabled:pointer-events-none disabled:opacity-38",
+        !label &&
+          variant !== "flat" &&
           "h-14 w-full min-w-0 rounded-xs border border-outline bg-transparent px-4 text-base text-foreground transition-colors outline-none placeholder:text-muted-foreground hover:border-on-surface focus-visible:border-primary focus-visible:shadow-[inset_0_0_0_1px_var(--color-primary)] disabled:pointer-events-none disabled:opacity-38 md:text-sm",
         className
       )}

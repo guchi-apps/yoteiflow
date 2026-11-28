@@ -270,6 +270,8 @@ export function TimeField({
   onChange,
   defaultTime = "09:00",
   disabled = false,
+  onClose,
+  emptyLabel = NO_TIME_LABEL,
   className,
 }: {
   id?: string;
@@ -281,9 +283,20 @@ export function TimeField({
   /** 未入力で開いたときに最初に出す時刻。 */
   defaultTime?: string;
   disabled?: boolean;
+  /**
+   * ホイールを閉じたときに、そのときの値で呼ぶ（issue #1774）。変更ごとにAPIへ保存する
+   * 設定画面は、回している途中の値を送らないよう、ここで1回だけ保存する。
+   */
+  onClose?: (value: string) => void;
+  /** 未入力のときに出す文字。 */
+  emptyLabel?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const close = () => {
+    setOpen(false);
+    onClose?.(value);
+  };
   return (
     <>
       <button
@@ -293,8 +306,12 @@ export function TimeField({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => {
-          if (!open && !value) onChange(defaultTime);
-          setOpen((v) => !v);
+          if (open) {
+            close();
+            return;
+          }
+          if (!value) onChange(defaultTime);
+          setOpen(true);
         }}
         className={cn(
           "min-h-10 shrink-0 rounded-md px-1 text-left text-sm tabular-nums text-foreground hover:bg-on-surface/8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-38",
@@ -303,13 +320,13 @@ export function TimeField({
           className,
         )}
       >
-        {value || NO_TIME_LABEL}
+        {value || emptyLabel}
       </button>
       {open && (
         <div className="flex w-full basis-full flex-col gap-1">
           <TimeWheels time={value || defaultTime} onChange={onChange} />
           <div className="flex justify-end">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" size="sm" onClick={close}>
               閉じる
             </Button>
           </div>

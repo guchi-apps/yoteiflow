@@ -85,25 +85,26 @@ export function HolidayCalendarSection({
           </p>
         )}
 
-        <Label htmlFor="holiday-calendar">祝日カレンダー</Label>
-
-        <Select
-          value={calendarId ?? NONE_VALUE}
-          disabled={busy || visibleCalendars.length === 0}
-          onValueChange={change}
-        >
-          <SelectTrigger id="holiday-calendar" size="sm" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>指定しない</SelectItem>
-            {visibleCalendars.map((calendar) => (
-              <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                {calendar.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex min-h-10 items-center justify-between gap-3">
+          <Label htmlFor="holiday-calendar">祝日カレンダー</Label>
+          <Select
+            value={calendarId ?? NONE_VALUE}
+            disabled={busy || visibleCalendars.length === 0}
+            onValueChange={change}
+          >
+            <SelectTrigger id="holiday-calendar" variant="flat" className="max-w-[60%] shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>指定しない</SelectItem>
+              {visibleCalendars.map((calendar) => (
+                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                  {calendar.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <p className="type-body-small text-on-surface-variant">
           選んだカレンダーの予定は、カレンダー画面の終日の並びで他の予定より上に表示されます。

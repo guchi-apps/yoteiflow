@@ -177,6 +177,7 @@ export function TravelSection({
 
         <div className="flex flex-col gap-2">
           <Input
+            variant="flat"
             id="travel-arrive-margin"
             label="予定の何分前に着くか（分）"
             type="number"
@@ -194,6 +195,7 @@ export function TravelSection({
 
         <div className="flex flex-col gap-2">
           <Input
+            variant="flat"
             id="travel-walk-before"
             label="電車の前に歩く（分）"
             type="number"
@@ -205,6 +207,7 @@ export function TravelSection({
             onBlur={() => commitWalk("before")}
           />
           <Input
+            variant="flat"
             id="travel-walk-after"
             label="電車のあとに歩く（分）"
             type="number"
@@ -223,29 +226,30 @@ export function TravelSection({
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="travel-calendar">Googleカレンダーへの書き出し先</Label>
-
-          <Select
-            value={value.calendarId ?? DEFAULT_CALENDAR_VALUE}
-            disabled={busy || calendars.length === 0}
-            onValueChange={(next) =>
-              send({ calendarId: next === DEFAULT_CALENDAR_VALUE ? null : next })
-            }
-          >
-            <SelectTrigger id="travel-calendar" size="sm" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DEFAULT_CALENDAR_VALUE}>
-                既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
-              </SelectItem>
-              {calendars.map((calendar) => (
-                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                  {calendar.name}
+          <div className="flex min-h-10 items-center justify-between gap-3">
+            <Label htmlFor="travel-calendar">Googleカレンダーへの書き出し先</Label>
+            <Select
+              value={value.calendarId ?? DEFAULT_CALENDAR_VALUE}
+              disabled={busy || calendars.length === 0}
+              onValueChange={(next) =>
+                send({ calendarId: next === DEFAULT_CALENDAR_VALUE ? null : next })
+              }
+            >
+              <SelectTrigger id="travel-calendar" variant="flat" className="max-w-[60%] shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_CALENDAR_VALUE}>
+                  既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                {calendars.map((calendar) => (
+                  <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                    {calendar.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <p className="type-body-small text-on-surface-variant">
             {calendars.length === 0
