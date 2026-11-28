@@ -37,6 +37,7 @@ enum SharedConfig {
     static let handoffQueryKeys: [String] = [
         "newEvent", "newTravel", "title", "address", "lat", "lng", "url", "origin", "destination", "via", "mode", "minutes",
         "link", "departAt", "arriveAt", "note", "estimated", "resolve", "routeName", "routeDistance", "session",
+        "op",
     ]
     static let handoffPath = "/calendar"
     private static let handoffValueLimit = 2_048

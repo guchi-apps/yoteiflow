@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
+import { TimeField } from "@/components/calendar/date-time-picker";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -17,6 +17,8 @@ import type { WorkAutoSettings } from "@/services/work-sync/settings";
 import type { WritableCalendar } from "@/types/calendar";
 
 const DEFAULT_CALENDAR_VALUE = "__default__";
+
+type TimeKey = "startMinutes" | "endMinutes" | "lunchStartMinutes" | "lunchEndMinutes";
 
 const toTime = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -41,6 +43,8 @@ export function WorkAutoSection({
   const [value, setValue] = useState(settings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ホイールを回している途中の値。保存は閉じたときに1回だけ行う（issue #1774）。
+  const [drafts, setDrafts] = useState<Partial<Record<TimeKey, string>>>({});
 
   const send = async (patch: Partial<WorkAutoSettings>) => {
     const previous = value;
@@ -66,20 +70,22 @@ export function WorkAutoSection({
     }
   };
 
-  const timeField = (
-    id: string,
-    label: string,
-    key: "startMinutes" | "endMinutes" | "lunchStartMinutes" | "lunchEndMinutes",
-  ) => (
-    <div className="flex flex-col gap-1">
+  const timeField = (id: string, label: string, key: TimeKey) => (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-rule py-1 last:border-b-0">
       <Label htmlFor={id}>{label}</Label>
-      <Input
+      <TimeField
         id={id}
-        type="time"
-        value={toTime(value[key])}
+        label={label}
+        value={drafts[key] ?? toTime(value[key])}
         disabled={busy}
-        onChange={(event) => {
-          const next = fromTime(event.target.value);
+        onChange={(next) => setDrafts((current) => ({ ...current, [key]: next }))}
+        onClose={(closed) => {
+          setDrafts((current) => {
+            const rest = { ...current };
+            delete rest[key];
+            return rest;
+          });
+          const next = fromTime(closed);
           if (next !== null && next !== value[key]) void send({ [key]: next });
         }}
       />
@@ -110,7 +116,7 @@ export function WorkAutoSection({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col">
           {timeField("work-start", "勤務開始", "startMinutes")}
           {timeField("work-end", "勤務終了", "endMinutes")}
           {timeField("work-lunch-start", "昼休み開始", "lunchStartMinutes")}
@@ -122,26 +128,28 @@ export function WorkAutoSection({
         </p>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="work-calendar">勤務予定の書き出し先</Label>
-          <Select
-            value={value.calendarId ?? DEFAULT_CALENDAR_VALUE}
-            disabled={busy || calendars.length === 0}
-            onValueChange={(next) =>
-              send({ calendarId: next === DEFAULT_CALENDAR_VALUE ? null : next })
-            }
-          >
-            <SelectTrigger id="work-calendar" size="sm" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DEFAULT_CALENDAR_VALUE}>既定の保存先</SelectItem>
-              {calendars.map((calendar) => (
-                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                  {calendar.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex min-h-10 items-center justify-between gap-3">
+            <Label htmlFor="work-calendar">勤務予定の書き出し先</Label>
+            <Select
+              value={value.calendarId ?? DEFAULT_CALENDAR_VALUE}
+              disabled={busy || calendars.length === 0}
+              onValueChange={(next) =>
+                send({ calendarId: next === DEFAULT_CALENDAR_VALUE ? null : next })
+              }
+            >
+              <SelectTrigger id="work-calendar" variant="flat" className="max-w-[60%] shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_CALENDAR_VALUE}>既定の保存先</SelectItem>
+                {calendars.map((calendar) => (
+                  <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                    {calendar.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <p className="type-body-small text-on-surface-variant">
             移動の書き出し先は、設定の「移動」で選んだカレンダーです。
           </p>

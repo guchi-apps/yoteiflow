@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -159,13 +159,6 @@ function PickerDialog({
     dateOnly ? "calendar" : initialPanel,
   );
 
-  const grid = monthGrid(view.year, view.month);
-  const baseYear = Number(date.slice(0, 4));
-  const years = Array.from({ length: YEAR_SPAN * 2 + 1 }, (_, i) => baseYear - YEAR_SPAN + i);
-  if (!years.includes(view.year)) years.push(view.year);
-
-  const move = (delta: number) => setView((v) => shiftMonth(v.year, v.month, delta));
-
   const openTime = () => {
     // 時刻なしから開いたときは既定時刻から選び始める。
     if (time === null) setTime(defaultTime);
@@ -181,76 +174,12 @@ function PickerDialog({
 
         {panel === "calendar" ? (
           <>
-            <div className="flex items-center justify-center gap-2">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="前の月" onClick={() => move(-1)}>
-                <ChevronLeft />
-              </Button>
-              <select
-                aria-label="年"
-                value={view.year}
-                onChange={(e) => setView((v) => ({ ...v, year: Number(e.target.value) }))}
-                className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
-              >
-                {years.sort((a, b) => a - b).map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="月"
-                value={view.month}
-                onChange={(e) => setView((v) => ({ ...v, month: Number(e.target.value) }))}
-                className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                  <option key={month} value={month}>
-                    {month}月
-                  </option>
-                ))}
-              </select>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="次の月" onClick={() => move(1)}>
-                <ChevronRight />
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-7 text-center">
-              {WEEKDAY_HEADERS.map((name, index) => (
-                <span
-                  key={name}
-                  className={cn(
-                    "py-1 text-xs text-on-surface-variant",
-                    index === 0 && "text-error",
-                    index === 6 && "text-travel",
-                  )}
-                >
-                  {name}
-                </span>
-              ))}
-              {grid.map((cell, index) => {
-                const selected = cell.key === date;
-                return (
-                  <button
-                    key={cell.key}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setDate(cell.key);
-                      if (!cell.inMonth) setView({ year: Number(cell.key.slice(0, 4)), month: Number(cell.key.slice(5, 7)) });
-                    }}
-                    className={cn(
-                      "m-px grid h-9 place-items-center rounded-md text-sm tabular-nums",
-                      !cell.inMonth && "text-on-surface-variant/50",
-                      cell.inMonth && index % 7 === 0 && "text-error",
-                      cell.inMonth && index % 7 === 6 && "text-travel",
-                      selected ? "bg-primary font-bold text-on-primary" : "hover:bg-on-surface/8",
-                    )}
-                  >
-                    {cell.day}
-                  </button>
-                );
-              })}
-            </div>
+            <MonthCalendar
+              date={date}
+              view={view}
+              onViewChange={setView}
+              onSelect={setDate}
+            />
 
             {!dateOnly && (
             <div className="flex items-center gap-2 rounded-lg border border-outline-variant py-1.5 pl-3.5 pr-2 text-sm">
@@ -322,6 +251,250 @@ function PickerDialog({
             </div>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * 時刻だけ（`HH:mm`）の欄（issue #1771）。「09:00」の押せる文字を出し、押すとすぐ下に時刻ホイールを開く。
+ * 端末ネイティブの `type="time"` の代わりに使い、予定の「日時を設定」と同じ操作にそろえる。
+ *
+ * 開いた中身は `basis-full` の箱で返すため、親が `flex-wrap` の横並びでも次の行へ落ちる。
+ * ホイールを回すたびに `onChange` を呼ぶ（ネイティブの欄の `onChange` と同じ頻度で反映する）。
+ */
+export function TimeField({
+  id,
+  label,
+  value,
+  onChange,
+  defaultTime = "09:00",
+  disabled = false,
+  onClose,
+  emptyLabel = NO_TIME_LABEL,
+  className,
+}: {
+  id?: string;
+  /** 読み上げ用の名前（画面には出さない。見出しは呼び出し側が並べる）。 */
+  label: string;
+  /** `HH:mm`。未入力は空文字。 */
+  value: string;
+  onChange: (value: string) => void;
+  /** 未入力で開いたときに最初に出す時刻。 */
+  defaultTime?: string;
+  disabled?: boolean;
+  /**
+   * ホイールを閉じたときに、そのときの値で呼ぶ（issue #1774）。変更ごとにAPIへ保存する
+   * 設定画面は、回している途中の値を送らないよう、ここで1回だけ保存する。
+   */
+  onClose?: (value: string) => void;
+  /** 未入力のときに出す文字。 */
+  emptyLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = () => {
+    setOpen(false);
+    onClose?.(value);
+  };
+  return (
+    <>
+      <button
+        id={id}
+        type="button"
+        aria-label={`${label} ${value || "未設定"}`}
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => {
+          if (open) {
+            close();
+            return;
+          }
+          if (!value) onChange(defaultTime);
+          setOpen(true);
+        }}
+        className={cn(
+          "min-h-10 shrink-0 rounded-md px-1 text-left text-sm tabular-nums text-foreground hover:bg-on-surface/8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-38",
+          open && "text-primary",
+          !value && "text-on-surface-variant",
+          className,
+        )}
+      >
+        {value || emptyLabel}
+      </button>
+      {open && (
+        <div className="flex w-full basis-full flex-col gap-1">
+          <TimeWheels time={value || defaultTime} onChange={onChange} />
+          <div className="flex justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={close}>
+              閉じる
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 年月の切り替えと月の日付。選んだ日が前後の月なら、表示する月も移す。 */
+function MonthCalendar({
+  date,
+  view,
+  onViewChange,
+  onSelect,
+}: {
+  date: string;
+  view: { year: number; month: number };
+  onViewChange: (view: { year: number; month: number }) => void;
+  onSelect: (date: string) => void;
+}) {
+  const grid = monthGrid(view.year, view.month);
+  const baseYear = Number(date.slice(0, 4));
+  const years = Array.from({ length: YEAR_SPAN * 2 + 1 }, (_, i) => baseYear - YEAR_SPAN + i);
+  if (!years.includes(view.year)) years.push(view.year);
+
+  const move = (delta: number) => onViewChange(shiftMonth(view.year, view.month, delta));
+
+  return (
+    <>
+      <div className="flex items-center justify-center gap-2">
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="前の月" onClick={() => move(-1)}>
+          <ChevronLeft />
+        </Button>
+        <select
+          aria-label="年"
+          value={view.year}
+          onChange={(e) => onViewChange({ ...view, year: Number(e.target.value) })}
+          className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
+        >
+          {years.sort((a, b) => a - b).map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="月"
+          value={view.month}
+          onChange={(e) => onViewChange({ ...view, month: Number(e.target.value) })}
+          className="h-9 rounded-md border border-outline-variant bg-surface px-2 text-sm"
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+            <option key={month} value={month}>
+              {month}月
+            </option>
+          ))}
+        </select>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="次の月" onClick={() => move(1)}>
+          <ChevronRight />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-7 text-center">
+        {WEEKDAY_HEADERS.map((name, index) => (
+          <span
+            key={name}
+            className={cn(
+              "py-1 text-xs text-on-surface-variant",
+              index === 0 && "text-error",
+              index === 6 && "text-travel",
+            )}
+          >
+            {name}
+          </span>
+        ))}
+        {grid.map((cell, index) => {
+          const selected = cell.key === date;
+          return (
+            <button
+              key={cell.key}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => {
+                onSelect(cell.key);
+                if (!cell.inMonth) onViewChange({ year: Number(cell.key.slice(0, 4)), month: Number(cell.key.slice(5, 7)) });
+              }}
+              className={cn(
+                "m-px grid h-9 place-items-center rounded-md text-sm tabular-nums",
+                !cell.inMonth && "text-on-surface-variant/50",
+                cell.inMonth && index % 7 === 0 && "text-error",
+                cell.inMonth && index % 7 === 6 && "text-travel",
+                selected ? "bg-primary font-bold text-on-primary" : "hover:bg-on-surface/8",
+              )}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/**
+ * 時刻ホイールを開いた状態で始め、日付も同じ画面で選ぶモーダル（issue #1770）。
+ * 日付は1行で見せ、押すとカレンダーを開く。日を選ぶと閉じる。「完了」で日付と時刻をまとめて返す。
+ */
+export function TimeFirstPickerDialog({
+  title,
+  initialDate,
+  initialTime,
+  onCancel,
+  onDone,
+}: {
+  title: string;
+  initialDate: string;
+  initialTime: string;
+  onCancel: () => void;
+  onDone: (date: string, time: string) => void;
+}) {
+  const [date, setDate] = useState(initialDate);
+  const [time, setTime] = useState(initialTime);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [view, setView] = useState({
+    year: Number(initialDate.slice(0, 4)),
+    month: Number(initialDate.slice(5, 7)),
+  });
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-3 overflow-y-auto p-4 sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+
+        <button
+          type="button"
+          aria-expanded={calendarOpen}
+          onClick={() => setCalendarOpen((open) => !open)}
+          className="flex min-h-11 items-center gap-2 rounded-lg border border-outline-variant px-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <span className="flex-1 text-on-surface-variant">日付</span>
+          <span>{formatPickerDateLabel({ date, time: null })}</span>
+          {calendarOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+        </button>
+        {calendarOpen && (
+          <MonthCalendar
+            date={date}
+            view={view}
+            onViewChange={setView}
+            onSelect={(next) => {
+              setDate(next);
+              setCalendarOpen(false);
+            }}
+          />
+        )}
+
+        <TimeWheels time={time} onChange={setTime} />
+
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button type="button" className="flex-1" onClick={() => onDone(date, time)}>
+            完了
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -111,7 +111,7 @@ export function DisplaySection({
           </div>
 
           <Select value={view} onValueChange={changeView} >
-            <SelectTrigger id="initial-view" className="w-40">
+            <SelectTrigger id="initial-view" variant="flat" className="max-w-[60%] shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -139,7 +139,7 @@ export function DisplaySection({
             onValueChange={(next) => change(Number(next))}
             disabled={busy || pending}
           >
-            <SelectTrigger id="week-starts-on" className="w-32">
+            <SelectTrigger id="week-starts-on" variant="flat" className="max-w-[60%] shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -474,8 +474,18 @@ export function TaskDetailDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={close}>
+        <DialogFooter className="flex-col gap-2 sm:flex-col">
+          {/* 右上の鉛筆だけでは押しにくいため、閉じるの上にも置く。買い物の詳細と同じ形（issue #1775）。 */}
+          <Button
+            variant="outline"
+            className="min-h-11 w-full"
+            disabled={readOnly && !offlineEditable}
+            onClick={edit}
+          >
+            <Pencil className="size-4" />
+            編集する
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={close}>
             閉じる
           </Button>
         </DialogFooter>

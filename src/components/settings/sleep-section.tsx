@@ -87,6 +87,7 @@ export function SleepSection({
 
         <div className="flex flex-col gap-2">
           <Input
+            variant="flat"
             id="sleep-title"
             label="睡眠として数える項目名"
             value={name}
@@ -132,6 +133,7 @@ export function SleepSection({
         <div className="flex flex-col gap-2">
           <div className="grid grid-cols-2 gap-2">
             <Input
+              variant="flat"
               id="sleep-target-hours"
               label="1晩の目標睡眠時間（時）"
               type="number"
@@ -147,6 +149,7 @@ export function SleepSection({
               }}
             />
             <Input
+              variant="flat"
               id="sleep-target-minutes"
               label="（分）"
               type="number"

@@ -790,6 +790,7 @@ export function EventDetailDialog({
                       <Textarea
                         id="event-outcome-note"
                         label="メモ（任意）"
+                        variant="flat"
                         rows={2}
                         value={outcomeNote}
                         disabled={readOnly || outcomeBusy}

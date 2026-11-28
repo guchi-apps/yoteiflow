@@ -2,18 +2,17 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { Clock, ExternalLink, Info, MapPin, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { LinkifiedText } from "@/components/ui/linkified-text";
+import { formatPickerDateLabel, formatPickerLabel, NO_TIME_LABEL } from "@/lib/date-time-picker";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
 import { resolveResearchDestination, resolveYahooPlace, yahooTransitLink } from "@/lib/yahoo-transit-link";
@@ -22,7 +21,9 @@ import { readYahooRouteEndpoints, readYahooRouteRestartPoints, truncateYahooRout
 import type { PlaceItem } from "@/services/notion/places";
 import type { TravelContinueFrom, TravelItem } from "@/types/calendar";
 
+import { TimeFirstPickerDialog } from "./date-time-picker";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { FormRow } from "./event-form-row";
 
 type Segment = { kind: "text"; text: string } | { kind: "stop"; text: string; stop: YahooRouteStop };
 
@@ -151,8 +152,20 @@ export function ResearchSheet({
   const [time, setTime] = useState(stop.departTime ?? "");
   // 欄を直しても元の出発日時が分かるよう、開いた時点の値を別に持つ（発車時刻が読めない駅では出さない）
   const [originalDeparture] = useState(() =>
-    stop.departTime ? formatOriginalDeparture(addDays(zonedDateKey(startIso, timeZone), stop.dayOffset), stop.departTime) : "",
+    stop.departTime
+      ? formatPickerLabel({ date: addDays(zonedDateKey(startIso, timeZone), stop.dayOffset), time: stop.departTime })
+      : "",
   );
+  // 日時の選択画面。開いた時点の値を持つ（時刻が空の駅では、いまの時刻から選び始める）
+  const [picking, setPicking] = useState<{ date: string; time: string } | null>(null);
+
+  // 押した時点の日時（設定タイムゾーン）。追従はしない（issue #1770）
+  const readNow = () => isoToLocalInput(new Date().toISOString(), timeZone).split("T");
+  const setNow = () => {
+    const [nowDate, nowTime] = readNow();
+    setDate(nowDate);
+    setTime(nowTime);
+  };
 
   const close = () => {
     setOpen(false);
@@ -180,9 +193,11 @@ export function ResearchSheet({
       // 経路の詳細も置き換える（保存は利用者が確かめてから・issue #1645）
       const session = rememberTransitSession(
         `${stop.station}→${target?.name ?? destination}`,
+        // 共有で戻ったときの「検索した日と違う日です」は、実際に検索した日と比べる（issue #1770）。
+        // 日時を指定せずに開いたときは元の移動の日時のまま
         originResearchDraft(travel, {
-          departAt: isoToLocalInput(travel.start, timeZone),
-          arriveAt: isoToLocalInput(travel.end, timeZone),
+          departAt: departAt || isoToLocalInput(travel.start, timeZone),
+          arriveAt: departAt ? "" : isoToLocalInput(travel.end, timeZone),
         }),
       );
       setOpened(
@@ -228,42 +243,58 @@ export function ResearchSheet({
           <DialogTitle>{stop.station}から再検索</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 text-sm">
-          <p className="text-on-surface-variant">
-            {stop.station} → {target?.name ?? destination}
-          </p>
-          {originalDeparture && (
-            <p className="text-on-surface-variant">
-              元の出発 <span className="text-on-surface">{originalDeparture}</span>
+        <div className="flex min-w-0 flex-col text-sm">
+          <FormRow icon={<MapPin />} divider={false}>
+            <p className="flex min-h-10 items-center break-words">
+              {stop.station} → {target?.name ?? destination}
             </p>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-          </div>
+          </FormRow>
+          <FormRow icon={<Clock />}>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const now = readNow();
+                  setPicking({ date: date || now[0], time: time || now[1] });
+                }}
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <span className="shrink-0 text-on-surface-variant">出発</span>
+                <span className="flex min-w-0 flex-wrap gap-x-2">
+                  <span>{formatPickerDateLabel({ date, time: null })}</span>
+                  <span>{time || NO_TIME_LABEL}</span>
+                </span>
+              </button>
+              <Button type="button" variant="outline" className="shrink-0 px-3 has-[>svg]:pl-3" aria-label="現在時刻にする" onClick={setNow}>
+                <Clock />
+                現在
+              </Button>
+            </div>
+            {originalDeparture && <p className="pb-1 text-xs text-on-surface-variant">元の出発 {originalDeparture}</p>}
+            {!time && (
+              <p className="pb-1 text-xs text-on-surface-variant">
+                時刻を入れると、その時刻に出発する経路で調べます。空のままでは時刻を指定せずに開きます。
+              </p>
+            )}
+          </FormRow>
           {nativeTransit && updatesTravel && (
-            <p className="text-xs text-on-surface-variant">
-              出発駅からの再検索は、この移動を選んだ経路で更新します（保存の前に確かめられます）。
-            </p>
+            <FormRow icon={<Info />}>
+              <p className="py-2 text-xs text-on-surface-variant">
+                出発駅からの再検索は、この移動を選んだ経路で更新します（保存の前に確かめられます）。
+              </p>
+            </FormRow>
           )}
+        </div>
+
+        {/* 予定の入力画面の保存帯（ItemFormActions）と同じ形で、検索を下端の全幅に置く */}
+        <div className="sticky bottom-[calc(-1*env(safe-area-inset-bottom))] z-10 -mx-6 -mb-[env(safe-area-inset-bottom)] flex flex-col gap-2 border-t border-outline-variant bg-surface-container-high px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {opened && opened !== "app" && (
             <p className="text-xs text-on-surface-variant" role="status">
               {opened === "web" ? "アプリを開けなかったため、Web版で開きました。" : "Yahoo!乗換案内を開けませんでした。"}
             </p>
           )}
-          {!time && (
-            <p className="text-xs text-on-surface-variant">
-              時刻を入れると、その時刻に出発する経路で調べます。空のままでは時刻を指定せずに開きます。
-            </p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={close}>
-            閉じる
-          </Button>
           {nativeTransit ? (
-            <Button onClick={() => void openInNativeApp()}>
+            <Button className="w-full" onClick={() => void openInNativeApp()}>
               Yahoo!乗換案内で検索
               <ExternalLink className="size-3.5" />
             </Button>
@@ -271,14 +302,14 @@ export function ResearchSheet({
             <>
               {/* 素の<a>。アプリ未導入の端末でブラウザが警告を出すため、Web版を自動では試さず並べて選ばせる */}
               {appHref && (
-                <Button asChild variant="outline" className="hidden pointer-coarse:inline-flex">
+                <Button asChild variant="outline" className="hidden w-full pointer-coarse:inline-flex">
                   <a href={appHref}>
                     アプリで検索
                     <ExternalLink className="size-3.5" />
                   </a>
                 </Button>
               )}
-              <Button asChild>
+              <Button asChild className="w-full">
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   {appHref ? "Yahoo!乗換案内（Web版）で検索" : "Yahoo!乗換案内で検索"}
                   <ExternalLink className="size-3.5" />
@@ -286,7 +317,21 @@ export function ResearchSheet({
               </Button>
             </>
           )}
-        </DialogFooter>
+        </div>
+
+        {picking && (
+          <TimeFirstPickerDialog
+            title="出発日時を設定"
+            initialDate={picking.date}
+            initialTime={picking.time}
+            onCancel={() => setPicking(null)}
+            onDone={(nextDate, nextTime) => {
+              setDate(nextDate);
+              setTime(nextTime);
+              setPicking(null);
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -331,13 +376,6 @@ function zonedDateKey(iso: string, timeZone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(iso));
-}
-
-/** `2026/11/17(火) 22:52` の形。曜日は日付キーそのものから求める（実行環境のタイムゾーンに依存させない）。 */
-function formatOriginalDeparture(dateKey: string, time: string): string {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const weekday = "日月火水木金土"[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
-  return `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}(${weekday}) ${time}`;
 }
 
 function addDays(dateKey: string, days: number): string {

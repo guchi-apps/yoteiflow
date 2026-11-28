@@ -619,8 +619,15 @@ extension WebViewModel: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        // メモリ不足などでWebの描画プロセスが落ちると、白い画面のまま戻らない
-        load(lastRequestedURL ?? AppConfig.baseURL)
+        // メモリ不足などでWebの描画プロセスが落ちると、白い画面のまま戻らない。
+        // 描画済みだった画面（`history.replaceState` 後のURL）を優先して開き直す。`lastRequestedURL` は
+        // 共有から開いたときの引き継ぎクエリを持ったままで、読み直すと処理済みの共有をもう一度扱ってしまう
+        // （issue #1779）。通信エラーの `retry()` は未処理の要求を再試行するため `lastRequestedURL` のまま
+        if let current = webView.url, AppConfig.isAppURL(current) {
+            load(current)
+        } else {
+            load(lastRequestedURL ?? AppConfig.baseURL)
+        }
     }
 }
 

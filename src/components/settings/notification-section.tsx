@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { TimeField } from "@/components/calendar/date-time-picker";
 import { usePushSubscription } from "@/components/notifications/use-push-subscription";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { eventLeadLabel } from "@/lib/event-notification";
@@ -43,6 +43,8 @@ export function NotificationSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
+  // ホイールを回している途中の時刻。保存は閉じたときに1回だけ行う（issue #1774）。
+  const [digestDraft, setDigestDraft] = useState<string | null>(null);
 
   const send = async (patch: Partial<NotificationSettings>) => {
     // 応答を待ってから動かすと、押したのに変わらない時間ができる。先に反映し、失敗したら戻す。
@@ -229,14 +231,14 @@ export function NotificationSection({
                 </p>
               </div>
 
-              <Input
+              <TimeField
                 id="task-digest-time"
-                type="time"
-                className="h-10 w-32"
-                defaultValue={value.taskDigestTime}
+                label="時刻の無い期限"
+                value={digestDraft ?? value.taskDigestTime}
                 disabled={busy || !value.taskEnabled}
-                onBlur={(event) => {
-                  const next = event.target.value;
+                onChange={setDigestDraft}
+                onClose={(next) => {
+                  setDigestDraft(null);
                   if (next && next !== value.taskDigestTime) void send({ taskDigestTime: next });
                 }}
               />

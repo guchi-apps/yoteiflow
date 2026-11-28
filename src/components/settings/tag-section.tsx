@@ -201,6 +201,7 @@ export function TagSection({ state }: { state: TagSectionState }) {
                   {editingId === option.id ? (
                     <div className="flex min-w-0 items-center gap-2">
                       <Input
+                        variant="flat"
                         className="h-10 min-w-0 flex-1"
                         aria-label={`${option.name} の名前`}
                         value={editingName}
@@ -299,6 +300,7 @@ export function TagSection({ state }: { state: TagSectionState }) {
 
               <div className="flex min-w-0 items-center gap-2">
                 <Input
+                  variant="flat"
                   id={`tag-name-${state.kind}`}
                   className="h-10 min-w-0 flex-1"
                   placeholder="名前"
