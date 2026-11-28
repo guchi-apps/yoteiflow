@@ -270,6 +270,14 @@ export function ResearchSheet({
                 現在
               </Button>
             </div>
+            {time && (
+              <div>
+                {/* 時刻を入れたあとでも、時刻を指定しない検索へ戻せるようにする（issue #1785） */}
+                <Button type="button" variant="ghost" size="sm" onClick={() => setTime("")}>
+                  時刻を指定しない
+                </Button>
+              </div>
+            )}
             {originalDeparture && <p className="pb-1 text-xs text-on-surface-variant">元の出発 {originalDeparture}</p>}
             {!time && (
               <p className="pb-1 text-xs text-on-surface-variant">

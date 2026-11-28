@@ -91,6 +91,8 @@ export function joinPickerValue(
 }
 
 export function splitTime(time: string): { hour: number; minute: number } {
+  // `24:00` は期間（所定労働時間）だけが使う。時刻としては現れない（issue #1783）。
+  if (time === "24:00") return { hour: 24, minute: 0 };
   const match = TIME_PATTERN.exec(time);
   if (!match) return { hour: 0, minute: 0 };
   return { hour: Number(match[1]), minute: Number(match[2]) };

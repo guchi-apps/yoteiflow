@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.57.1",
+    date: "2026-11-29",
+    changes: [
+      "時刻の入力欄で、開いただけで勝手に値が入ってしまう問題と、一度入れた値を空に戻せない問題を直しました。年休設定の1日の所定労働時間で24時間も選べるようになりました。",
+    ],
+  },
+  {
     version: "4.57.0",
     date: "2026-11-29",
     changes: [
