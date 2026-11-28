@@ -49,6 +49,7 @@ import {
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { nowLocalInput } from "@/lib/share-import/candidate-times";
 import { HANDOFF_QUERY_KEYS, hasHandoffQuery, joinLocationText, linkedTravelTimes, parseShareHandoff } from "@/lib/share-import/handoff";
+import { rememberHandledHandoff, wasHandoffHandled } from "@/lib/share-import/handled-handoff";
 import { planLinkedTravelShifts, type TravelShift } from "@/lib/travel-follow";
 import { detectTransitFollow, type FollowEventState } from "@/lib/transit-follow";
 import { applyGoogleShare, applySharedRoute, isResearchDraft, takeTransitSession } from "@/lib/transit-search-session";
@@ -382,13 +383,18 @@ export function CalendarShell({
     // 同期でsetStateしない（react-hooks/set-state-in-effect）。StrictModeの再実行でも、
     // 解析とURLの掃除をタイマー内で行うため、取り消された1回目に読み取りを奪われない。
     const timer = setTimeout(() => {
-    const handoff = parseShareHandoff(window.location.search);
-    const failed = !handoff && hasHandoffQuery(window.location.search);
+    const search = window.location.search;
+    const handoff = parseShareHandoff(search);
+    const failed = !handoff && hasHandoffQuery(search);
     if (!handoff && !failed) return;
 
     const url = new URL(window.location.href);
     for (const key of HANDOFF_QUERY_KEYS) url.searchParams.delete(key);
     window.history.replaceState(window.history.state, "", url.toString());
+    // iOSアプリが描画プロセスの復帰などで共有から開いたときのURLを読み直すことがある。
+    // 一度処理した引き継ぎは、URLを掃除するだけで入力・案内を出し直さない（issue #1779）
+    if (wasHandoffHandled(search)) return;
+    rememberHandledHandoff(search);
     if (!handoff) {
       // 月表示だけが黙って開く状態にしない（issue #1143）
       window.alert("共有内容を読み取れませんでした。共有元のアプリからもう一度共有してください。");
