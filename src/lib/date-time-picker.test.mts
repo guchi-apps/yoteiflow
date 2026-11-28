@@ -61,6 +61,11 @@ test("splitTime と wrapIndex は時0〜23・分0〜59の循環に使える", ()
   assert.equal(wrapIndex(-1, 60), 59);
 });
 
+test("splitTime は期間の 24:00 を読む（issue #1783）", () => {
+  assert.deepEqual(splitTime("24:00"), { hour: 24, minute: 0 });
+  assert.deepEqual(splitTime("24:30"), { hour: 0, minute: 0 });
+});
+
 test("formatPickerLabel は時刻なしを ー:ー と出す", () => {
   assert.equal(formatPickerLabel({ date: "2026-11-15", time: "09:00" }), "2026年11月15日（日） 09:00");
   assert.equal(formatPickerLabel({ date: "2026-11-15", time: null }), "2026年11月15日（日） ー:ー");
