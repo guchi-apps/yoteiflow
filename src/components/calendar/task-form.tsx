@@ -848,8 +848,9 @@ function DateModeField({
       {mode !== "none" && (
         <DateTimeInput
           id={id}
-          label={`${label}の日時`}
+          label={label}
           value={value}
+          flat
           allowNoTime
           defaultTime={defaultTime}
           onChange={(next) => onChange({ mode: next.includes("T") ? "datetime" : "date", value: next })}

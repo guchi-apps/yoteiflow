@@ -2,14 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarDays, Clock, Hash, Repeat } from "lucide-react";
 import { useOffline } from "next/offline";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
+import { TimeWheels } from "@/components/calendar/date-time-picker";
+import { FormRow } from "@/components/calendar/event-form-row";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { fiscalYearLabel, normalizeStartMonth } from "@/lib/annual-leave";
+import { pad2 } from "@/lib/date-time-picker";
+import { cn } from "@/lib/utils";
 import { DEFAULT_WORK_MINUTES_PER_DAY } from "@/types/work";
 
 /**
@@ -50,6 +55,7 @@ export function AnnualLeaveGrantDialog({
   // （日時の入力を日付と時刻の欄に分けているのと同じ理由・issue #537）。
   const [workHours, setWorkHours] = useState(String(Math.floor(workMinutesPerDay / 60)));
   const [workMinutes, setWorkMinutes] = useState(String(workMinutesPerDay % 60));
+  const [workTimeOpen, setWorkTimeOpen] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -132,72 +138,83 @@ export function AnnualLeaveGrantDialog({
           </p>
         )}
 
-        <Input
-          id="leave-granted"
-          label="この年度に付与された日数"
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          min="0"
-          value={granted}
-          onChange={(event) => setGranted(event.target.value)}
-        />
+        {/* 予定の入力と同じアイコン付きの行＋区切り線にそろえる（issue #1771）。 */}
+        <div className="flex min-w-0 flex-col">
+          <FormRow icon={<Hash />} divider={false}>
+            <Input
+              id="leave-granted"
+              label="この年度に付与された日数"
+              variant="flat"
+              type="number"
+              inputMode="decimal"
+              step="0.5"
+              min="0"
+              value={granted}
+              onChange={(event) => setGranted(event.target.value)}
+            />
+          </FormRow>
 
-        <Input
-          id="leave-carried"
-          label="前年度からの繰越"
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          min="0"
-          value={carried}
-          onChange={(event) => setCarried(event.target.value)}
-        />
+          <FormRow icon={<Repeat />}>
+            <Input
+              id="leave-carried"
+              label="前年度からの繰越"
+              variant="flat"
+              type="number"
+              inputMode="decimal"
+              step="0.5"
+              min="0"
+              value={carried}
+              onChange={(event) => setCarried(event.target.value)}
+            />
+          </FormRow>
 
-        {/* 時間休が何日ぶんかを決める値（issue #537）。時と分を分けるのは、7.75 のような
-            小数を打たせないため。 */}
-        <div className="grid grid-cols-2 gap-2">
-          <Input
-            id="leave-work-hours"
-            label="1日の所定労働時間（時）"
-            type="number"
-            inputMode="numeric"
-            step="1"
-            min="0"
-            max="24"
-            value={workHours}
-            onChange={(event) => setWorkHours(event.target.value)}
-          />
-          <Input
-            id="leave-work-minutes"
-            label="（分）"
-            type="number"
-            inputMode="numeric"
-            step="1"
-            min="0"
-            max="59"
-            value={workMinutes}
-            onChange={(event) => setWorkMinutes(event.target.value)}
-          />
+          {/* 時間休が何日ぶんかを決める値（issue #537）。小数を打たせないよう、時と分の
+              ホイールで選ばせる（予定の通知の「何時間何分前」と同じ部品）。 */}
+          <FormRow icon={<Clock />}>
+            <button
+              type="button"
+              aria-expanded={workTimeOpen}
+              onClick={() => setWorkTimeOpen((v) => !v)}
+              className="flex min-h-10 w-full flex-col justify-center text-left"
+            >
+              <span className="text-xs leading-4 text-muted-foreground">1日の所定労働時間</span>
+              <span className={cn("text-sm tabular-nums", workTimeOpen && "text-primary")}>
+                {Number(workHours) || 0}時間 {Number(workMinutes) || 0}分
+              </span>
+            </button>
+            {workTimeOpen && (
+              <TimeWheels
+                units
+                time={`${pad2(Math.min(23, Number(workHours) || 0))}:${pad2(Math.min(59, Number(workMinutes) || 0))}`}
+                onChange={(next) => {
+                  setWorkHours(String(Number(next.slice(0, 2))));
+                  setWorkMinutes(String(Number(next.slice(3, 5))));
+                }}
+              />
+            )}
+            <p className="type-body-small pb-1 text-on-surface-variant">
+              時間休が何日ぶんかを決めます。すべての年度に効きます。
+            </p>
+          </FormRow>
+
+          <FormRow icon={<CalendarDays />}>
+            <Input
+              id="leave-start-month"
+              label="年度の開始月"
+              variant="flat"
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="1"
+              max="12"
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+            />
+            <p className="type-body-small pb-1 text-on-surface-variant">
+              開始月はすべての年度に効きます。変えると、これまでに入れた付与日数が指す期間も一緒に動きます。
+            </p>
+          </FormRow>
         </div>
-        <p className="type-body-small text-on-surface-variant">
-          時間休が何日ぶんかを決めます。すべての年度に効きます。
-        </p>
-
-        <Input
-          id="leave-start-month"
-          label="年度の開始月"
-          type="number"
-          inputMode="numeric"
-          step="1"
-          min="1"
-          max="12"
-          value={month}
-          onChange={(event) => setMonth(event.target.value)}
-        />
-        <p className="type-body-small text-on-surface-variant">
-          開始月はすべての年度に効きます。変えると、これまでに入れた付与日数が指す期間も一緒に動きます。
-        </p>
 
         <ItemFormActions saveDisabled={busy || offline} onSave={save} />
       </DialogContent>

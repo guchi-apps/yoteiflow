@@ -327,6 +327,69 @@ function PickerDialog({
   );
 }
 
+/**
+ * 時刻だけ（`HH:mm`）の欄（issue #1771）。「09:00」の押せる文字を出し、押すとすぐ下に時刻ホイールを開く。
+ * 端末ネイティブの `type="time"` の代わりに使い、予定の「日時を設定」と同じ操作にそろえる。
+ *
+ * 開いた中身は `basis-full` の箱で返すため、親が `flex-wrap` の横並びでも次の行へ落ちる。
+ * ホイールを回すたびに `onChange` を呼ぶ（ネイティブの欄の `onChange` と同じ頻度で反映する）。
+ */
+export function TimeField({
+  id,
+  label,
+  value,
+  onChange,
+  defaultTime = "09:00",
+  disabled = false,
+  className,
+}: {
+  id?: string;
+  /** 読み上げ用の名前（画面には出さない。見出しは呼び出し側が並べる）。 */
+  label: string;
+  /** `HH:mm`。未入力は空文字。 */
+  value: string;
+  onChange: (value: string) => void;
+  /** 未入力で開いたときに最初に出す時刻。 */
+  defaultTime?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        id={id}
+        type="button"
+        aria-label={`${label} ${value || "未設定"}`}
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => {
+          if (!open && !value) onChange(defaultTime);
+          setOpen((v) => !v);
+        }}
+        className={cn(
+          "min-h-10 shrink-0 rounded-md px-1 text-left text-sm tabular-nums text-foreground hover:bg-on-surface/8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-38",
+          open && "text-primary",
+          !value && "text-on-surface-variant",
+          className,
+        )}
+      >
+        {value || NO_TIME_LABEL}
+      </button>
+      {open && (
+        <div className="flex w-full basis-full flex-col gap-1">
+          <TimeWheels time={value || defaultTime} onChange={onChange} />
+          <div className="flex justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              閉じる
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** 時・分のホイール。`rows` は見える行数（奇数）で、範囲ピッカーは3行に詰めて使う（issue #1551）。 */
 export function TimeWheels({
   time,

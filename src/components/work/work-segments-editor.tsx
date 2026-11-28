@@ -1,6 +1,8 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Clock, Plus, Trash2 } from "lucide-react";
+
+import { TimeField } from "@/components/calendar/date-time-picker";
 
 import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
@@ -155,17 +157,17 @@ export function WorkSegmentsEditor({
   const renderRow = (row: SegmentRow, index: number) => (
     <div
             key={row.key}
-            className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
+            className="flex flex-col gap-1 border-t border-outline-variant py-1"
           >
-            <div className="flex items-end gap-2">
+            {/* 時刻は押すと下にホイールが開く（端末ネイティブの時刻欄は使わない・issue #1771）。 */}
+            <div className="flex flex-wrap items-center gap-x-2">
+              <Clock aria-hidden className="size-5 shrink-0 text-on-surface-variant" />
               {dates && (
-                <label className="flex min-w-0 flex-col gap-1">
-                  <span className="type-label-small text-on-surface-variant">日付</span>
-                  <select
+                <select
                     aria-label={`${index + 1}つ目の時間帯の日付`}
                     value={row.date ?? dates[0]}
                     onChange={(event) => update(row.key, { date: event.target.value })}
-                    className="type-body-medium h-10 rounded-lg border border-outline bg-surface px-2 text-on-surface"
+                    className="h-10 rounded-md bg-transparent px-1 text-sm text-on-surface hover:bg-on-surface/8"
                   >
                     {dates.map((date) => (
                       <option key={date} value={date}>
@@ -173,22 +175,18 @@ export function WorkSegmentsEditor({
                       </option>
                     ))}
                   </select>
-                </label>
               )}
-              <Input
-                aria-label={`${index + 1}つ目の時間帯の開始`}
-                type="time"
-                className="w-[6.5rem] min-w-0"
+              <TimeField
+                label={`${index + 1}つ目の時間帯の開始`}
                 value={row.start}
-                onChange={(event) => update(row.key, { start: event.target.value })}
+                onChange={(next) => update(row.key, { start: next })}
               />
-              <span className="pb-2 text-on-surface-variant">〜</span>
-              <Input
-                aria-label={`${index + 1}つ目の時間帯の終了`}
-                type="time"
-                className="w-[6.5rem] min-w-0"
+              <span className="text-on-surface-variant">〜</span>
+              <TimeField
+                label={`${index + 1}つ目の時間帯の終了`}
                 value={row.end}
-                onChange={(event) => update(row.key, { end: event.target.value })}
+                defaultTime={row.start || "09:00"}
+                onChange={(next) => update(row.key, { end: next })}
               />
               <Button
                 type="button"
@@ -201,7 +199,7 @@ export function WorkSegmentsEditor({
                 <Trash2 className="size-4" />
               </Button>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 pl-7">
               {placeOptions.map((option) =>
                 chip(!row.trip && row.place === option.name, option.color, option.name, () =>
                   update(row.key, { trip: false, place: option.name }),
@@ -210,14 +208,17 @@ export function WorkSegmentsEditor({
               {allowTrip && chip(row.trip, null, "出張", () => update(row.key, { trip: true }), true)}
             </div>
             {row.trip && (
+              <div className="pl-7">
               <Input
                 id={`work-segment-destination-${row.key}`}
                 label="この時間帯の行き先"
+                variant="flat"
                 placeholder={defaultDestination || "行き先"}
                 value={row.destination}
                 onChange={(event) => update(row.key, { destination: event.target.value })}
                 onClear={() => update(row.key, { destination: "" })}
               />
+              </div>
             )}
           </div>
   );

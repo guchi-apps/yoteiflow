@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { TimeField } from "@/components/calendar/date-time-picker";
 import {
   applyOverride,
   checkDays,
@@ -217,21 +218,6 @@ export function useWorkSyncFields({
     }
     if (!form) return null;
 
-    const timeInput = (id: string, label: string, field: "start" | "end", enabled: boolean) => (
-      <div className="flex flex-col gap-1">
-        <label htmlFor={id} className="type-label-medium text-on-surface-variant">
-          {label}
-        </label>
-        <Input
-          id={id}
-          type="time"
-          value={form[field]}
-          disabled={!enabled}
-          onChange={(event) => change({ [field]: event.target.value })}
-        />
-      </div>
-    );
-
     const leg = (
       label: string,
       kind: Leg,
@@ -299,9 +285,12 @@ export function useWorkSyncFields({
             </div>}
             {!useTrain && (
               <Input
+                id={`work-sync-${kind}-minutes`}
+                label="所要時間（分）"
+                variant="flat"
                 aria-label={`${label}の所要時間（分）`}
                 inputMode="numeric"
-                placeholder="所要（分）"
+                placeholder="分を入力"
                 className="min-w-0 flex-1"
                 disabled={!enabled}
                 value={form[minutesField]}
@@ -404,9 +393,23 @@ export function useWorkSyncFields({
           />
           <span className="type-body-medium">勤務予定</span>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {timeInput("work-sync-start", "勤務開始", "start", true)}
-          {timeInput("work-sync-end", "勤務終了", "end", true)}
+        {/* 時刻は押すと下にホイールが開く（端末ネイティブの時刻欄は使わない・issue #1771）。 */}
+        <div className="flex flex-wrap items-center gap-x-2 text-sm">
+          <span className="w-20 shrink-0 text-on-surface-variant">勤務時間</span>
+          <TimeField
+            id="work-sync-start"
+            label="勤務開始"
+            value={form.start}
+            onChange={(next) => change({ start: next })}
+          />
+          <span className="text-on-surface-variant">〜</span>
+          <TimeField
+            id="work-sync-end"
+            label="勤務終了"
+            value={form.end}
+            defaultTime={form.start || "18:00"}
+            onChange={(next) => change({ end: next })}
+          />
         </div>
         {daysEnabled && (
           <div className="flex flex-col gap-2">
@@ -415,24 +418,21 @@ export function useWorkSyncFields({
               const value = dayEdits[date] ?? { start: form.start, end: form.end };
               const role = index === 0 ? "初日" : index === all.length - 1 ? "最終日" : "途中";
               return (
-                <div key={date} className="flex items-center gap-2">
-                  <span className="type-body-small w-20 shrink-0">
+                <div key={date} className="flex flex-wrap items-center gap-x-2 text-sm">
+                  <span className="w-20 shrink-0 text-on-surface-variant">
                     {Number(date.slice(5, 7))}/{Number(date.slice(8, 10))} {role}
                   </span>
-                  <Input
-                    aria-label={`${date}の勤務開始`}
-                    type="time"
-                    className="min-w-0 flex-1"
+                  <TimeField
+                    label={`${date}の勤務開始`}
                     value={value.start}
-                    onChange={(event) => changeDay(date, { start: event.target.value })}
+                    onChange={(next) => changeDay(date, { start: next })}
                   />
-                  <span>〜</span>
-                  <Input
-                    aria-label={`${date}の勤務終了`}
-                    type="time"
-                    className="min-w-0 flex-1"
+                  <span className="text-on-surface-variant">〜</span>
+                  <TimeField
+                    label={`${date}の勤務終了`}
                     value={value.end}
-                    onChange={(event) => changeDay(date, { end: event.target.value })}
+                    defaultTime={value.start || "18:00"}
+                    onChange={(next) => changeDay(date, { end: next })}
                   />
                 </div>
               );

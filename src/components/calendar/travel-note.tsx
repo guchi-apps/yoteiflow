@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { DateTimeInput } from "./date-time-input";
+import { TimeField } from "./date-time-picker";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { clearTransitInNativeApp, hasNativeTransit, openTransitInNativeApp, type NativeTransitOpened } from "@/lib/native-transit";
 import { transitSearchCondition, yahooTransitAppLink } from "@/lib/yahoo-transit-app";
@@ -237,9 +238,15 @@ export function ResearchSheet({
               元の出発 <span className="text-on-surface">{originalDeparture}</span>
             </p>
           )}
-          <div className="grid grid-cols-2 gap-2">
-            <Input label="出発日" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            <Input label="出発時刻" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          {/* 端末ネイティブの日付・時刻欄ではなく、押して選ぶ1行にする（issue #1771）。 */}
+          <div className="flex flex-wrap items-center gap-x-2 border-t border-outline-variant">
+            <DateTimeInput id="travel-research-date" label="出発" value={date} onChange={setDate} dateOnly flat />
+            <TimeField label="出発時刻" value={time} onChange={setTime} />
+            {time && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setTime("")}>
+                時刻を外す
+              </Button>
+            )}
           </div>
           {nativeTransit && updatesTravel && (
             <p className="text-xs text-on-surface-variant">

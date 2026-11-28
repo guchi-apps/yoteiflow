@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useOffline } from "next/offline";
 import { AlignLeft, CalendarDays, Flag, Plus, ShoppingCart, Sparkles, Tag, Trash2 } from "lucide-react";
 
+import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { FormRow } from "@/components/calendar/event-form-row";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
@@ -376,6 +377,7 @@ export function ShoppingItemDialog({
             <div className="flex items-end gap-2">
               <Input
                 label="新しいカテゴリ"
+                variant="flat"
                 className="flex-1"
                 value={newCategory}
                 onChange={(event) => setNewCategory(event.target.value)}
@@ -449,11 +451,14 @@ export function ShoppingItemDialog({
           {/* 日付の欄には ✕（クリア）を出さない。消す操作は「未定」のチップが受けており、
               欄にも置くと同じことをする出口が2つ並ぶ（CLAUDE.md「入力欄の ✕」）。 */}
           {pickingDate && (
-            <Input
+            // 端末ネイティブの日付欄ではなく、押すとカレンダーのモーダルで選ぶ1行にする（issue #1771）。
+            <DateTimeInput
+              id="shopping-planned-date"
               label="日付"
-              type="date"
               value={plannedDate ?? ""}
-              onChange={(event) => setPlannedDate(event.target.value || null)}
+              onChange={(next) => setPlannedDate(next || null)}
+              dateOnly
+              flat
             />
           )}
         </div>

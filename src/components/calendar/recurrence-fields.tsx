@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { DateTimeInput } from "./date-time-input";
 import {
   Select,
   SelectContent,
@@ -104,13 +105,14 @@ export function RecurrenceFields({
           {/* 終了条件の詳細は、選んだ欄の下に続けて出す。 */}
           {value.end === "until" && (
             <div className="sm:col-start-2">
-              <Input
-                variant="flat"
+              {/* 端末ネイティブの日付欄ではなく、押すとカレンダーのモーダルで選ぶ1行（issue #1771）。 */}
+              <DateTimeInput
                 id="event-recurrence-until"
-                label="繰り返しの終了日"
-                type="date"
+                label="終了日"
                 value={value.until}
-                onChange={(e) => onChange({ ...value, until: e.target.value })}
+                onChange={(next) => onChange({ ...value, until: next })}
+                dateOnly
+                flat
               />
             </div>
           )}
