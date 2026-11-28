@@ -7,7 +7,14 @@ import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
-import { minutesBetween, type YahooRouteLegView, type YahooRouteStationView, type YahooRouteView } from "@/lib/yahoo-route-view";
+import {
+  minutesBetween,
+  yahooRouteRows,
+  type YahooRouteLegView,
+  type YahooRouteStationView,
+  type YahooRouteTransfer,
+  type YahooRouteView,
+} from "@/lib/yahoo-route-view";
 import { readYahooRouteRestartPoints, type YahooRouteStop } from "@/lib/yahoo-transit-route";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TravelItem } from "@/types/calendar";
@@ -52,6 +59,8 @@ export function TravelRouteCard({
     [text],
   );
 
+  const rows = yahooRouteRows(view);
+
   const summary = [
     view.minutes !== null ? formatMinutes(view.minutes) : null,
     view.transfers !== null ? `乗換 ${view.transfers}回` : null,
@@ -79,17 +88,24 @@ export function TravelRouteCard({
       </div>
 
       <ol className="flex flex-col px-3 py-2">
-        {view.stations.map((station, index) => {
-          const restart = restartPoints.get(station.lineIndex);
-          const leg = view.legs[index];
+        {rows.map(({ station, leg, legIndex, transfer }, index) => {
+          const restart = restartPoints.get(transfer?.restartLineIndex ?? station.lineIndex);
           return (
             <Fragment key={station.lineIndex}>
               <li className={cn(COLUMNS, "min-h-9 items-center")}>
-                <StationTimes station={station} />
+                <StationTimes
+                  arriveTime={transfer?.arriveTime ?? station.arriveTime}
+                  departTime={transfer?.departTime ?? station.departTime}
+                />
                 <span aria-hidden className="size-3.5 justify-self-center rounded-full border-[3px] border-travel" />
                 <span className="min-w-0 break-words">
-                  <span className="text-base font-bold">{station.name}</span>
-                  <TransferBadge station={station} middle={index > 0 && index < view.stations.length - 1} />
+                  <span className="text-base font-bold">{transfer?.names.join(" → ") ?? station.name}</span>
+                  {transfer ? (
+                    <Badge label={`乗換 ${formatMinutes(transfer.minutes)}`} />
+                  ) : (
+                    <TransferBadge station={station} middle={index > 0 && index < rows.length - 1} />
+                  )}
+                  {transfer && <TransferDetail transfer={transfer} />}
                 </span>
                 {restart && !readOnly ? (
                   <Button
@@ -105,7 +121,7 @@ export function TravelRouteCard({
                   <span />
                 )}
               </li>
-              {leg && <Leg leg={leg} alternate={index % 2 === 1} />}
+              {leg && <Leg leg={leg} alternate={legIndex % 2 === 1} />}
             </Fragment>
           );
         })}
@@ -150,18 +166,18 @@ export function TravelRouteCard({
 }
 
 /** 駅の左の時刻。乗換駅は到着と発車の2段。読み上げで区別できるよう「着」「発」を添える。 */
-function StationTimes({ station }: { station: YahooRouteStationView }) {
+function StationTimes({ arriveTime, departTime }: { arriveTime: string | null; departTime: string | null }) {
   return (
     <span className="flex flex-col items-end font-bold leading-tight tabular-nums">
-      {station.arriveTime && (
+      {arriveTime && (
         <span>
-          {station.arriveTime}
+          {arriveTime}
           <span className="sr-only">着</span>
         </span>
       )}
-      {station.departTime && (
+      {departTime && (
         <span>
-          {station.departTime}
+          {departTime}
           <span className="sr-only">発</span>
         </span>
       )}
@@ -174,9 +190,32 @@ function TransferBadge({ station, middle }: { station: YahooRouteStationView; mi
     middle && station.arriveTime && station.departTime ? minutesBetween(station.arriveTime, station.departTime) : null;
   const label = station.tag ?? (wait !== null ? `乗換 ${formatMinutes(wait)}` : null);
   if (!label) return null;
+  return <Badge label={label} />;
+}
+
+function Badge({ label }: { label: string }) {
   return (
     <span className="ml-1.5 inline-block rounded-xs bg-travel-container px-1.5 text-xs font-bold text-on-travel-container">
       {label}
+    </span>
+  );
+}
+
+/** まとめた乗換の内訳（徒歩と待ち）。徒歩の区間にあった番線なども落とさず添える。 */
+function TransferDetail({ transfer }: { transfer: YahooRouteTransfer }) {
+  const breakdown =
+    transfer.walkMinutes !== null && transfer.waitMinutes !== null
+      ? [
+          `徒歩 ${formatMinutes(transfer.walkMinutes)}`,
+          transfer.waitMinutes > 0 ? `待ち ${formatMinutes(transfer.waitMinutes)}` : null,
+        ]
+          .filter(Boolean)
+          .join("・")
+      : "徒歩を含む";
+  return (
+    <span className="block text-xs text-on-surface-variant">
+      {breakdown}
+      {transfer.walkLines.length > 0 && <LinkifiedText text={transfer.walkLines.join("\n")} />}
     </span>
   );
 }
