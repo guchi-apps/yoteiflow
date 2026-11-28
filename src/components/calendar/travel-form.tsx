@@ -989,6 +989,7 @@ export function TravelForm({
                   <Input
                     id="travel-search-margin"
                     label={purpose === "BEFORE_EVENT" ? "予定の何分前に着くか" : "予定の終了から何分後に出るか"}
+                    variant="flat"
                     type="number"
                     inputMode="numeric"
                     min={0}
@@ -1366,6 +1367,7 @@ export function TravelForm({
           <Textarea
             id="travel-google-route-url"
             label="Googleマップの経路URL"
+            variant="flat"
             rows={2}
             placeholder="共有した経路URLを貼り付ける"
             value={googleRouteUrl}

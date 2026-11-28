@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useOffline } from "next/offline";
-import { Clock, Trash2 } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, Flag, MapPin, Tag, Trash2 } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
+import { DateTimeInput } from "@/components/calendar/date-time-input";
+import { FormRow } from "@/components/calendar/event-form-row";
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import {
   buildSegments,
@@ -579,12 +581,15 @@ export function WorkRecordDialog({
 
         {/* 名称は任意。「夏季休業」「年末年始」のように名前が付いているときだけ入れれば足りる。 */}
         {isHoliday && (
-          <Input
-            id="work-holiday-name"
-            label="名称（任意）"
-            value={holidayName}
-            onChange={(event) => setHolidayName(event.target.value)}
-          />
+          <FormRow icon={<Tag />}>
+            <Input
+              id="work-holiday-name"
+              label="名称（任意）"
+              variant="flat"
+              value={holidayName}
+              onChange={(event) => setHolidayName(event.target.value)}
+            />
+          </FormRow>
         )}
 
         {/* 直近の出張の行き先から選べるようにする（issue #525）。選択肢ではなく入力の
@@ -614,12 +619,15 @@ export function WorkRecordDialog({
         )}
 
         {businessTrip && (
-          <Input
-            id="work-destination"
-            label="行き先"
-            value={destination}
-            onChange={(event) => setDestination(event.target.value)}
-          />
+          <FormRow icon={<MapPin />}>
+            <Input
+              id="work-destination"
+              label="行き先"
+              variant="flat"
+              value={destination}
+              onChange={(event) => setDestination(event.target.value)}
+            />
+          </FormRow>
         )}
 
         {/* 勤務場所・行き先の住所（issue #1319）。種類を切り替えても場所DBを読み直さないよう、
@@ -635,29 +643,33 @@ export function WorkRecordDialog({
           isTrip={businessTrip}
         />
 
-        <div className={cn("grid gap-2", spanned && "grid-cols-2")}>
-          <Input
+        {/* 日付は押すとカレンダーのモーダルで選ぶ（端末ネイティブの日付欄は使わない・issue #1771）。 */}
+        <FormRow icon={<CalendarDays />}>
+          <DateTimeInput
             id="work-start-date"
-            label={spanned ? "開始日" : "日付"}
-            type="date"
+            label={spanned ? "開始" : "日付"}
             value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
+            onChange={setStartDate}
+            dateOnly
+            flat
           />
           {/* 終了日は出張・全休の年休・会社休業日だけ。通常の勤務と半休・時間休は1日1件で、
               期間を持たせる意味が無い。 */}
           {spanned && (
-            <Input
+            <DateTimeInput
               id="work-end-date"
-              label="終了日"
-              type="date"
+              label="終了"
               value={endDate || startDate}
-              onChange={(event) => setEndDate(event.target.value)}
+              onChange={setEndDate}
+              dateOnly
+              flat
             />
           )}
-        </div>
+        </FormRow>
 
         {/* 年休が持つのは事前申請だけ。休んだことを後から届け出る手続きは無い。 */}
         {isLeave && capabilities.annualLeave && (
+          <FormRow icon={<Flag />}>
           <div className="flex flex-col gap-1">
             <label className="flex items-center gap-3 py-1.5">
               <Checkbox
@@ -680,9 +692,11 @@ export function WorkRecordDialog({
               </p>
             )}
           </div>
+          </FormRow>
         )}
 
         {businessTrip && capabilities.approval && (
+          <FormRow icon={<Flag />}>
           <div className="flex flex-col gap-1">
             {(["preApplied", "postRegistered"] as const).map((todo) => {
               const checked = todo === "preApplied" ? preApplied : postRegistered;
@@ -725,6 +739,7 @@ export function WorkRecordDialog({
               手続きだけなら、勤務画面右上の手続きからも済ませられます。
             </p>
           </div>
+          </FormRow>
         )}
 
         {segmentsAvailable && (
@@ -806,12 +821,16 @@ export function WorkRecordDialog({
         )}
 
         {capabilities.memo && (
-          <Textarea
-            id="work-memo"
-            label="メモ"
-            value={memo}
-            onChange={(event) => setMemo(event.target.value)}
-          />
+          <FormRow icon={<AlignLeft />}>
+            <Textarea
+              id="work-memo"
+              label="メモ"
+              variant="flat"
+              rows={3}
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+            />
+          </FormRow>
         )}
 
         {/* 削除は必ず確認を挟む。押し間違えても画面上に戻す手立てが無いため（docs/spec.md §15）。

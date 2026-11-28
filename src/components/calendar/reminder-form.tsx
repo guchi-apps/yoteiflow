@@ -3,18 +3,18 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { ExternalLink } from "lucide-react";
+import { AlignLeft, CalendarDays, ExternalLink, Repeat, Tag } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TagPicker } from "@/components/tags/tag-picker";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { FormRow } from "./event-form-row";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
@@ -119,49 +119,60 @@ export function ReminderForm({
         />
       )}
 
-      <div className="flex min-w-0 flex-col gap-4">
-        <Input
+      {/* 予定の入力と同じアイコン付きの行＋区切り線にそろえる（issue #1771）。 */}
+      <div className="flex min-w-0 flex-col">
+        <input
           id="reminder-title"
-          label="タイトル"
+          aria-label="タイトル"
+          placeholder="タイトルを追加"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          onClear={() => onTitleChange("")}
           autoFocus={autoFocusTitle}
+          className="min-h-10 w-full min-w-0 bg-transparent px-0 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
 
         {/* 時刻の有無はピッカーの中で選ぶ（issue #1527）。日付のみ・日時の別はここで持たず、
             値の `T` の有無から決める。 */}
-        <DateTimeInput id="reminder-date" label="日付" value={date} allowNoTime defaultTime="09:00" onChange={setDate} />
+        <FormRow icon={<CalendarDays />}>
+          <DateTimeInput id="reminder-date" label="日付" value={date} allowNoTime defaultTime="09:00" onChange={setDate} flat />
+        </FormRow>
+
+        <FormRow icon={<Repeat />}>
+          <label className="flex min-h-10 items-center gap-3 text-sm select-none">
+            <Checkbox checked={annual} onCheckedChange={(v) => setAnnual(v === true)} />
+            毎年
+          </label>
+        </FormRow>
 
         {/* 種類はNotionのselectで1件につき1つ。押し直すと未設定へ戻せるようにする。 */}
-        <TagPicker
-          label="種類"
-          options={categories}
-          value={category ? [category] : []}
-          multiple={false}
-          onChange={(next) => setCategory(next[0] ?? "")}
-        />
+        <FormRow icon={<Tag />}>
+          <TagPicker
+            label="種類"
+            options={categories}
+            value={category ? [category] : []}
+            multiple={false}
+            onChange={(next) => setCategory(next[0] ?? "")}
+          />
+        </FormRow>
 
-        <Textarea
-          id="reminder-memo"
-          label="メモ"
-          rows={3}
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-          onClear={() => setMemo("")}
-        />
-
-        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-          <Checkbox checked={annual} onCheckedChange={(v) => setAnnual(v === true)} />
-          毎年
-        </label>
+        <FormRow icon={<AlignLeft />}>
+          <Textarea
+            id="reminder-memo"
+            label="メモ"
+            variant="flat"
+            rows={3}
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            onClear={() => setMemo("")}
+          />
+        </FormRow>
 
         {editing?.url && (
           <a
             href={editing.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+            className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:underline"
           >
             <ExternalLink className="size-3" />
             Notionで開く

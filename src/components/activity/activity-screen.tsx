@@ -425,6 +425,7 @@ export function ActivityScreen({
                 <DateTimeInput
                   id="activity-start-at"
                   label="開始"
+                  flat
                   value={startAtInput}
                   onChange={(value) => {
                     setStartAtInput(value);
@@ -484,6 +485,7 @@ export function ActivityScreen({
               <Input
                 id="activity-title"
                 label="その他（1回だけ記録する）"
+                variant="flat"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => {
@@ -594,6 +596,7 @@ function RunningCard({
             <DateTimeInput
               id="activity-started-at"
               label="開始"
+              flat
               value={startInput}
               onChange={onStartInputChange}
               autoOpen
@@ -614,6 +617,7 @@ function RunningCard({
             <DateTimeInput
               id="activity-ended-at"
               label="終了"
+              flat
               value={endInput}
               onChange={onEndInputChange}
               autoOpen
